@@ -2,6 +2,7 @@
   "name": "@friday-friday/fp-ts-sandbox1",
   "version": "0.0.0",
   "private": true,
+  "license": "MIT",
   "description": "Sandbox for functional-programming TypeScript experiments",
   "type": "module",
   "packageManager": "pnpm@12.21.0",
