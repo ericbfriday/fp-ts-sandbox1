@@ -41,12 +41,12 @@ Rules: children read repo docs (IDEA.md, RFC, ADRs) — prompts stay lean; each 
 - [x] ADR-0004 Vitest + fast-check + size-limit + TS matrix + Actions CI
 - [x] RFC-0001 core spec (Result shape, error taxonomy, wire envelope, RFC 9457 mapping)
 - [x] Version/issue verification table (above)
-- [ ] Linter POC answer recorded → finalize ADR-0003 (part of Scaffold issue)
+- [x] Linter POC → **ADR-0003 Accepted** (PR #10): type-aware Oxlint works on Windows via oxlint-tsgolint; the 3 custom rules can't be Oxlint-native (no type-aware JS plugins) → local ESLint plugin pinned to `typescript ~6.0.3` (typescript-eslint peers `<6.1.0`); re-test at TS 7.1 stable.
 
 ### Phase 1 — MVP: `core` + `schema` + `next` + lint rules
 Exit criteria (from report §9): size budgets green, TS 6/7/7.1 matrix green, `examples/next-app` runs one feature on Result, redirects survive try/catch.
 
-1. **Scaffold** — workspace layout, tsconfig.base (`isolatedDeclarations`, `erasableSyntaxOnly`, `verbatimModuleSyntax`), tsdown POC (ADR-0002 gate), Vitest wiring, size-limit config, Actions CI, linter POC → finalize ADR-0003.
+1. **Scaffold** ✅ (PR #10, issue #2 closed; CI 6/6 green; tsdown gate PASSED; tsconfig.base strict+isolatedDeclarations+erasableSyntaxOnly; Vitest/--typecheck + fast-check + size-limit wired; `.size-limit.json` 600 B/3 kB; typecheck matrix TS 6.0/7.0/7.1-beta in CI).
 2. **`@friday-friday/core`** — `ok/err/isResult`, `taggedError`, dual combinators (`map mapErr andThen orElse tap tapErr unwrapOr match matchTag fromNullable all partition`), `pipe/flow` (16/12 overloads), `Panic` wrapping in callbacks; `/async` (`mapAsync andThenAsync allAsync retry timeout mapConcurrent`, `{ signal }` everywhere); `/gen` (`gen genAsync` + `$()`). Laws + JSON/structuredClone wire tests. Size gate 600 B / 3 kB.
 3. **`@friday-friday/schema`** — `parse parseAsync toFieldErrors toFormErrors branded toJsonSchema` over `@standard-schema/spec` 1.1 (types only).
 4. **`@friday-friday/next`** — `nextRethrow` (unstable_rethrow, cause depth 5), pre-bound `tryAsync`, `action` for `useActionState` (`{ ok: null }` idle), `orNotFound/orForbidden/orRedirect`, `toResponse`, `catchError`-based client boundary; `react-server`/`default` + `/client` export conditions.
