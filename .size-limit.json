@@ -26,5 +26,12 @@
     "import": "*",
     "limit": "3 kB",
     "gzip": true
+  },
+  {
+    "name": "@friday-friday/schema",
+    "path": "packages/schema/dist/index.js",
+    "import": "*",
+    "limit": "2 kB",
+    "gzip": true
   }
 ]
