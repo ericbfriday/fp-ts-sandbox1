@@ -1,0 +1,48 @@
+{
+  "name": "@friday-friday/next",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Result adapters for Next.js: sentinel-safe triage, useActionState actions, loaders, toResponse (Design Report section 5.1)",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": {
+      "@friday-friday/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "react-server": "./dist/index.js",
+      "default": "./dist/server-only-stub.js"
+    },
+    "./client": {
+      "@friday-friday/source": "./src/client.ts",
+      "types": "./dist/client.d.ts",
+      "default": "./dist/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@friday-friday/core": "workspace:*",
+    "@friday-friday/schema": "workspace:*"
+  },
+  "peerDependencies": {
+    "next": ">=16.3 <18",
+    "react": ">=19.2"
+  },
+  "devDependencies": {
+    "@standard-schema/spec": "1.1.0",
+    "@types/react": "^19.3.0",
+    "client-only": "^0.0.1",
+    "next": "16.4.6",
+    "react": "19.3.1",
+    "zod": "^4.6.7"
+  },
+  "scripts": {
+    "build": "tsdown"
+  }
+}
