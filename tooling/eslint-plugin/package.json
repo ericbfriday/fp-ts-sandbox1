@@ -1,0 +1,24 @@
+{
+  "name": "@friday-friday/eslint-plugin",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Local type-aware lint rules: must-use-result, no-try-around-redirect, no-instanceof-tagged-error (ADR-0003; rules land in #8)",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "lint": "cd ../.. && eslint --config tooling/eslint-plugin/eslint.config.js --max-warnings 0 packages"
+  },
+  "devDependencies": {
+    "eslint": "^10.15.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "~8.72.2"
+  }
+}
