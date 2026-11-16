@@ -48,3 +48,8 @@ export const arbTagged: fc.Arbitrary<NotFound | Forbidden | Timeout> = fc.oneof(
   fc.record({ reason: fc.string() }).map((p) => Forbidden(p)),
   fc.constant(Timeout({}))
 )
+
+export const arbTaggedResult: fc.Arbitrary<Result<unknown, NotFound | Forbidden | Timeout>> = fc.oneof(
+  jsonValue.map((x) => ok<unknown>(x)),
+  arbTagged.map((t) => err<NotFound | Forbidden | Timeout>(t))
+)

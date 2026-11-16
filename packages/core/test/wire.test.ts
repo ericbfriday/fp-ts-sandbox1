@@ -10,16 +10,20 @@ import {
   isResult,
   map,
   mapErr,
+  match,
+  matchTag,
   ok,
   orElse,
   partition,
   type Result,
   tap,
-  tapErr
+  tapErr,
+  trySync,
+  unwrapOr
 } from "@friday-friday/core"
 import * as fc from "fast-check"
 import { describe, expect, it } from "vitest"
-import { arbJsonResult, arbNotFound, arbTagged, jsonValue, NotFound } from "./_fixtures.js"
+import { arbJsonResult, arbNotFound, arbTagged, arbTaggedResult, jsonValue, NotFound } from "./_fixtures.js"
 
 const roundTrips = (x: unknown): void => {
   expect(JSON.parse(JSON.stringify(x))).toStrictEqual(x)
@@ -64,6 +68,33 @@ describe("wire stability", () => {
       roundTrips(all(rs))
       roundTrips(partition(rs))
     }))
+  })
+
+  it("match / matchTag / unwrapOr outputs", () => {
+    fc.assert(
+      fc.property(arbJsonResult, jsonValue, arbTaggedResult, (r, v, rTagged) => {
+        roundTrips(match(r, { ok: () => v, err: () => v }))
+        roundTrips(unwrapOr(r, v))
+        roundTrips(matchTag(rTagged, { ok: () => v, NotFound: () => v, Forbidden: () => v, Timeout: () => v }))
+      })
+    )
+  })
+
+  it("trySync outputs: success and mapped error", () => {
+    fc.assert(
+      fc.property(jsonValue, jsonValue, (value, error) => {
+        roundTrips(
+          trySync(() => value, {
+            catch: () => "mapped"
+          })
+        )
+        roundTrips(
+          trySync((): unknown => {
+            throw error
+          }, { catch: (cause: unknown) => cause })
+        )
+      })
+    )
   })
 
   it("tagged errors, bare and inside Err", () => {

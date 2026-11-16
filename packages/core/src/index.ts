@@ -135,6 +135,40 @@ const dual = (body: (self: any, arg: any) => unknown): any =>
   }
 
 // ---------------------------------------------------------------------------
+// §3 Boundary triage (sync half). Async triage (tryAsync + signal) lands with
+// the /async subpath; the options shape is shared by both.
+// ---------------------------------------------------------------------------
+
+export interface TryOptions<E> {
+  /** Map an unknown throw to a domain error, or return `undefined` to treat it as a defect (rethrow). */
+  readonly catch: (cause: unknown) => E | undefined
+  /** Framework sentinels to rethrow before mapping (e.g. Next.js redirect/notFound); called first. */
+  readonly rethrow?: (cause: unknown) => void
+  /** Cancellation is an async concern; accepted here so sync/async call sites can share options. */
+  readonly signal?: AbortSignal
+}
+
+export interface TrySync {
+  <T, E>(fn: () => T, opts: TryOptions<E>): Result<T, E>
+}
+
+/**
+ * Run `fn`, triaging every throw at the boundary (RFC-0001 §3):
+ * `rethrow` runs first so framework sentinels propagate untouched; then `catch` maps the
+ * cause to a domain error — returning `undefined` means "defect", rethrown as `Panic`.
+ */
+export const trySync: TrySync = /*#__PURE__*/ <T, E>(fn: () => T, opts: TryOptions<E>): Result<T, E> => {
+  try {
+    return ok(fn())
+  } catch (cause) {
+    opts.rethrow?.(cause)
+    const mapped = call(opts.catch, cause)
+    if (mapped === undefined) throw new Panic(cause)
+    return err(mapped)
+  }
+}
+
+// ---------------------------------------------------------------------------
 // §4 Combinators — pure, pipeable, dual, separate `/*#__PURE__*/` exports
 // ---------------------------------------------------------------------------
 
@@ -244,21 +278,44 @@ export const fromNullable: {
  * unions — TS infers only the `Err` branch per element), while a generic `ReadonlyArray` overload
  * handles array inputs (tuple params reject `Array<T>`: "no match at position 0").
  */
-export function all<R extends readonly [] | readonly [Result<unknown, unknown>, ...Array<Result<unknown, unknown>>]>(
-  results: R
-): Result<{ -readonly [K in keyof R]: InferOk<R[K]> }, InferErr<R[number]>>
-export function all<T, E>(results: ReadonlyArray<Result<T, E>>): Result<Array<T>, E>
-export function all(results: ReadonlyArray<Result<unknown, unknown>>): Result<Array<unknown>, unknown> {
+export interface All {
+  <R extends readonly [] | readonly [Result<unknown, unknown>, ...Array<Result<unknown, unknown>>]>(
+    results: R
+  ): Result<{ -readonly [K in keyof R]: InferOk<R[K]> }, InferErr<R[number]>>
+  <T, E>(results: ReadonlyArray<Result<T, E>>): Result<Array<T>, E>
+}
+
+/** All `Ok` → `Ok` of the values (tuple-aware); otherwise the first `Err` in input order (same object).
+ *
+ * Two overloads because TS can't do both jobs in one constraint: a variadic-tuple param forces
+ * tuple inference for literals (a plain `const R extends ReadonlyArray<...>` mangles element
+ * unions — TS infers only the `Err` branch per element), while a generic `ReadonlyArray` overload
+ * handles array inputs (tuple params reject `Array<T>`: "no match at position 0"). The
+ * implementation is a concrete-typed function cast to `All` — a generic body cannot satisfy the
+ * generic signature directly (unknown is not assignable to T), same trick as `dual`'s `any`.
+ */
+export const all: All = /*#__PURE__*/ (
+  results: ReadonlyArray<Result<unknown, unknown>>
+): Result<Array<unknown>, unknown> => {
   const values: Array<unknown> = []
   for (const r of results) {
     if (!r.ok) return r
     values.push(r.value)
   }
   return ok(values)
+  // The concrete impl cannot satisfy the mapped-tuple overload generically (unknown vs T) —
+  // same reason dual() leans on `any`. Deliberate idiom, not a shortcut.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see comment above
+}
+
+export interface Partition {
+  <T, E>(results: ReadonlyArray<Result<T, E>>): [Array<T>, Array<E>]
 }
 
 /** Split into `[values, errors]`, each in input order. */
-export function partition<T, E>(results: ReadonlyArray<Result<T, E>>): [Array<T>, Array<E>] {
+export const partition: Partition = /*#__PURE__*/ <T, E>(
+  results: ReadonlyArray<Result<T, E>>
+): [Array<T>, Array<E>] => {
   const values: Array<T> = []
   const errors: Array<E> = []
   for (const r of results) {

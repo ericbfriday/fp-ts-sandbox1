@@ -13,10 +13,22 @@ import {
   taggedError,
   tap,
   tapErr,
-  toThrowable
+  toThrowable,
+  trySync
 } from "@friday-friday/core"
 import { describe, expect, it } from "vitest"
 import { type Forbidden, NotFound, type NotFound as NotFoundT, Timeout } from "./_fixtures.js"
+
+/** Runs `run`, returns the thrown Panic; fails the test loudly if anything else happened. */
+const capturePanic = (run: () => unknown): Panic => {
+  try {
+    run()
+  } catch (x) {
+    if (x instanceof Panic) return x
+    throw new Error(`expected a Panic, got: ${String(x)}`, { cause: x })
+  }
+  throw new Error("expected a Panic, but nothing was thrown")
+}
 
 describe("taggedError", () => {
   it("builds plain data: { _tag, ...props } with Object.prototype only", () => {
@@ -111,17 +123,6 @@ describe("Panic", () => {
     ["fromNullable", () => fromNullable(null, throwing)]
   ]
 
-  /** Runs `run`, returns the thrown Panic; fails the test loudly if anything else happened. */
-  const capturePanic = (run: () => unknown): Panic => {
-    try {
-      run()
-    } catch (x) {
-      if (x instanceof Panic) return x
-      throw new Error(`expected a Panic, got: ${String(x)}`, { cause: x })
-    }
-    throw new Error("expected a Panic, but nothing was thrown")
-  }
-
   it.each(cases)("%s: a throwing callback is rethrown as Panic with the original as cause", (_name, run) => {
     const p = capturePanic(run)
     expect(p).toBeInstanceOf(Error)
@@ -159,5 +160,60 @@ describe("Panic", () => {
   it("matchTag with a tag that has no handler at runtime (off-the-wire data) is a defect", () => {
     const wire: Result<number, NotFoundT | Forbidden> = JSON.parse("{\"ok\":false,\"error\":{\"_tag\":\"Unknown\"}}")
     expect(() => matchTag(wire, { ok: () => 0, NotFound: () => 1, Forbidden: () => 2 })).toThrow(Panic)
+  })
+})
+
+describe("trySync (boundary triage, RFC-0001 §3)", () => {
+  it("returns ok when fn succeeds", () => {
+    expect(trySync(() => 42, { catch: () => "never" })).toEqual(ok(42))
+  })
+
+  it("maps a thrown cause to err via catch", () => {
+    const r = trySync<number, string>(() => {
+      throw "boom"
+    }, { catch: (c) => `mapped:${String(c)}` })
+    expect(r).toEqual(err("mapped:boom"))
+  })
+
+  it("treats an unmapped throw (catch returns undefined) as a defect: Panic with the original as cause", () => {
+    const p = capturePanic(() =>
+      trySync(() => {
+        throw "boom"
+      }, { catch: () => undefined })
+    )
+    expect(p.cause).toBe("boom")
+    expect(p.message).toBe("boom")
+  })
+
+  it("calls rethrow first, so framework sentinels propagate untouched (not mapped, not Panicked)", () => {
+    const sentinel = new Error("sentinel: framework control flow")
+    let caught: unknown
+    try {
+      trySync(() => {
+        throw sentinel
+      }, {
+        rethrow: (c) => {
+          if (c instanceof Error) throw c
+        },
+        catch: () => "mapped"
+      })
+    } catch (x) {
+      caught = x
+    }
+    expect(caught).toBe(sentinel)
+  })
+
+  it("a throwing catch handler is itself a defect: Panic with the handler's throw as cause", () => {
+    const boom = new Error("handler boom")
+    const p = capturePanic(() =>
+      trySync(() => {
+        throw "original"
+      }, {
+        catch: () => {
+          throw boom
+        }
+      })
+    )
+    expect(p.cause).toBe(boom)
   })
 })
