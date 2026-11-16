@@ -7,13 +7,17 @@
  * Results stay pure data — the wire contracts hold for every output.
  *
  * `$()` iterators are one-shot (a Generator is consumed once); create a fresh `$()` per use.
+ * Short-circuit note: `gen`/`genAsync` return the Err envelope WITHOUT calling `iterator.return()`,
+ * so a user body's `finally` cleanup does not run on the Err path — keep `finally`-worthy work
+ * out of generator bodies (use tryAsync/retry for resource safety).
  * Prefer plain `async/await` with early returns for flows of fewer than ~4 steps — generators
  * cost stack-trace quality and some inference time.
  */
 
 import { type AsyncResult, type Err, ok, Panic, type Result } from "./index.js"
 
-/** The error channel extracted from a yielded `Err` envelope. */
+/** The error channel extracted from a yielded `Err` envelope. `Err<any>` here is the deliberate
+ * idiom documented on `dual()` in index.ts: the envelope is returned verbatim, never sniffed. */
 type YieldedError<Y> = Y extends Err<infer E> ? E : never
 
 /**

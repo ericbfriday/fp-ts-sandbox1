@@ -80,25 +80,30 @@ describe("genAsync (async do-notation)", () => {
     expect(r).toEqual(ok("admin"))
   })
 
-  it("short-circuits on Err without running later steps", async () => {
+  it("short-circuits on Err without running later steps, preserving envelope identity", async () => {
     let afterRan = false
+    const envelope = err(NotFound({ id: "9" }))
     const r = await genAsync(async function*() {
-      yield* $(await Promise.resolve(err(NotFound({ id: "9" }))))
+      yield* $(await Promise.resolve(envelope))
       afterRan = true
       return "never"
     })
     expect(afterRan).toBe(false)
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toEqual({ _tag: "NotFound", id: "9" })
+    expect(r).toBe(envelope) // same envelope object, not a copy
   })
 
   it("wraps rejections as Panic", async () => {
     const boom = new Error("boom")
-    await expect(
-      genAsync(async function*() {
+    let caught: unknown
+    try {
+      await genAsync(async function*() {
         throw boom
       })
-    ).rejects.toThrow(Panic)
+    } catch (e) {
+      caught = e
+    }
+    if (!(caught instanceof Panic)) throw new Error("expected Panic")
+    expect(caught.cause).toBe(boom)
   })
 
   it("outputs are plain data (JSON + structuredClone)", async () => {
