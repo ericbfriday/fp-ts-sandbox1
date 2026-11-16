@@ -110,7 +110,7 @@ describe("branded", () => {
       const brandedValue: Brand<string, "UserId"> = r.value
       expect(brandedValue).toBe("u-123")
       // The brand key is type-level only: the unique symbol is absent at runtime.
-      expect(Reflect.has(brandedValue, brand)).toBe(false)
+      expect(Object.prototype.hasOwnProperty.call(brandedValue, brand)).toBe(false)
     }
   })
 
