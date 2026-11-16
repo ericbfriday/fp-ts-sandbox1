@@ -2,7 +2,7 @@ import { defineConfig, type UserConfig } from "tsdown"
 
 // ADR-0002: ESM-only, .d.ts via isolatedDeclarations (oxc transformer, no TS compiler API).
 const config: UserConfig = defineConfig({
-  entry: ["src/index.ts"],
+  entry: ["src/index.ts", "src/async.ts"],
   format: "esm",
   platform: "neutral",
   target: "es2024",

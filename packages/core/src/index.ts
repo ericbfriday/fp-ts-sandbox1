@@ -13,6 +13,8 @@
  * - Every export carries an explicit type so the package is `isolatedDeclarations` clean.
  */
 
+import { call, dual } from "./internal.js"
+
 // ---------------------------------------------------------------------------
 // §1 Result shape
 // ---------------------------------------------------------------------------
@@ -116,23 +118,13 @@ export class Panic extends Error {
   }
 }
 
-/** Run a user callback; anything it throws is rethrown as `Panic` (an existing `Panic` passes through). */
-const call = <A, B>(f: (a: A) => B, a: A): B => {
-  try {
-    return f(a)
-  } catch (e) {
-    throw e instanceof Panic ? e : new Panic(e)
-  }
-}
+/** Run a user callback; anything it throws is rethrown as `Panic` (an existing `Panic` passes through).
+ * Shared with the `/async` subpath via `./internal.js` (not part of the public API). */
 
 /**
  * Dual dispatch on `arguments.length`: `body(self, arg)` when both are given,
  * otherwise return `(self) => body(self, arg)` for use in `pipe`.
  */
-const dual = (body: (self: any, arg: any) => unknown): any =>
-  function(a: unknown, b: unknown) {
-    return arguments.length > 1 ? body(a, b) : (self: unknown) => body(self, a)
-  }
 
 // ---------------------------------------------------------------------------
 // §3 Boundary triage (sync half). Async triage (tryAsync + signal) lands with
