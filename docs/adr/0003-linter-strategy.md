@@ -22,5 +22,5 @@ IDEA.md §2/§10.2: use "the same linter Effect uses"; evidence points to Oxlint
 ## Notes
 
 - `must-use-result` flags discarded `Result`/`AsyncResult` expressions (TS does not force consumption).
-- `no-try-around-redirect` flags `redirect()`/`notFound()` inside `try` without a preceding rethrow.
+- `no-try-around-redirect` flags `redirect()`/`notFound()` inside `try`-block/finalizer unless the catch handler calls `unstable_rethrow` first (the documented remedy; rethrowing the sentinel from a catch handler is the escape hatch).
 - `no-instanceof-tagged-error` flags `instanceof` against tagged-error factories (use the structural `.is()`).
