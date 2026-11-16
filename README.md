@@ -20,3 +20,4 @@ pnpm workspace (ADR-0001): `packages/*` (publishable), `tooling/*` (internal), `
 - `pnpm build`: tsdown build of every `packages/*` (ESM + `.d.ts`, ADR-0002)
 - `pnpm size`: build, then size-limit budgets (ADR-0004)
 - `pnpm smoke`: run built `dist` output under plain Node
+- `pnpm ci`: run everything CI runs (lint, typecheck, test, size) locally before pushing
