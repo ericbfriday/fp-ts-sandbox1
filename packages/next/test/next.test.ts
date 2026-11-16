@@ -8,8 +8,8 @@
  * The sentinel fixtures use deliberate narrowing assertions (digest-bearing errors with known
  * shapes) \u2014 hence the file-scoped assertion disable.
  */
-/* eslint-disable @typescript-eslint/no-unsafe-type-assertion -- sentinel fixtures have known shapes */
-import { err, ok, taggedError, type Result } from "@friday-friday/core"
+/* oxlint-disable typescript/no-unsafe-type-assertion -- sentinel fixtures have known shapes */
+import { err, ok, type Result, taggedError } from "@friday-friday/core"
 const NotFound = taggedError("NotFound")<{ id: string }>()
 type NotFoundT = ReturnType<typeof NotFound>
 import { beforeEach, describe, expect, it, vi } from "vitest"

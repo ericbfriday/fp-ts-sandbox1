@@ -33,7 +33,6 @@ const extractTagged = (error: unknown): TaggedError<string> | undefined => {
   if (typeof data !== "object" || data === null || !("_tag" in data)) return undefined
   // The structural `_tag` check guards the deliberate narrowing assertion below: the attached
   // `data` is untrusted wire data, validated before the cast (same idiom as `All`; see ADR-0003).
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- checked above
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- checked above
   return data as TaggedError<string>
 }
@@ -48,7 +47,6 @@ export function resultBoundary<E extends TaggedError<string>>(
 ): ComponentType<{ children?: ReactNode }> {
   return catchError<CatchErrorProps>((props) => {
     const tagged = extractTagged(props.error)
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- E narrowed by the caller's Fallback signature
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- E narrowed by the caller's Fallback signature
     return createElement(Fallback, { error: props.error, tagged: tagged as E })
   })
