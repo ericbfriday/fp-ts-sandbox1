@@ -1,0 +1,92 @@
+# CI per ADR-0004: install (frozen) -> lint, typecheck matrix, test, size-limit.
+# Publishing is intentionally absent: never publish to npm from CI without Eric.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      # pnpm/action-setup@v4 reads the pnpm version from package.json#packageManager.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # oxlint (type-aware, needs TS 7 via tsgolint) + local ESLint plugin + dprint check.
+      - run: pnpm run lint
+
+  typecheck:
+    name: typecheck (TypeScript ${{ matrix.ts.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Matrix approach: install the frozen lockfile (pins TS 7.0), then swap the root
+        # `typescript` devDependency for an npm alias of the target version, e.g.
+        #   pnpm add -D -w typescript@npm:typescript@~6.0.3
+        # Everything that runs `tsc` (pnpm run check, vitest --typecheck) then resolves
+        # that version. The lockfile change is throwaway and never committed.
+        # tooling/eslint-plugin keeps its own pinned typescript ~6.0 and is unaffected.
+        # The empty spec means "use the lockfile version" (7.0.x, the repo default).
+        ts:
+          - { name: "6.0", spec: "~6.0.3" }
+          - { name: "7.0", spec: "" }
+          - { name: "7.1-beta", spec: "7.1.0-beta" }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install typescript@${{ matrix.ts.spec }} as npm alias
+        if: matrix.ts.spec != ''
+        run: pnpm add -D -w "typescript@npm:typescript@${{ matrix.ts.spec }}"
+      - run: pnpm exec tsc --version
+      - run: pnpm run check
+      - run: pnpm run test:types
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+
+  size:
+    name: build + size-limit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # `size` builds every package with tsdown first, then checks ADR-0004 budgets.
+      - run: pnpm run size
+      # ADR-0002 gate: the built dist output must run under plain Node 24.
+      - run: pnpm run smoke
