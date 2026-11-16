@@ -20,6 +20,11 @@
       "types": "./dist/async.d.ts",
       "default": "./dist/async.js"
     },
+    "./gen": {
+      "@friday-friday/source": "./src/gen.ts",
+      "types": "./dist/gen.d.ts",
+      "default": "./dist/gen.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
