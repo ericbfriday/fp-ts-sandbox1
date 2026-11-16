@@ -60,6 +60,7 @@ describe("no-try-around-redirect", () => {
     valid: [
       "import { redirect } from 'next/navigation'; function f() { redirect('/x') }",
       "import { redirect } from 'next/navigation'; function f() { try { risky() } catch (e) { redirect('/x') } }",
+      "import { redirect, unstable_rethrow } from 'next/navigation'; function f() { try { risky(); redirect('/x') } catch (e) { unstable_rethrow(e) } }",
       "import { notFound } from 'next/navigation'; function f() { if (!x) notFound() }",
       "function f() { try { other() } catch (e) { console.log(e) } }"
     ],
@@ -90,6 +91,7 @@ describe("no-instanceof-tagged-error", () => {
     valid: [
       // Real Error classes are legitimate instanceof targets.
       "function f(e: unknown) { return e instanceof Error }",
+      header + "function f(e: unknown) { return e instanceof Panic }",
       header +
       "function f(e: unknown) { if (typeof e === 'object' && e !== null && 'id' in e) return true; return false }",
       header + "declare const e: unknown; function f() { return Panic.prototype instanceof Error }"

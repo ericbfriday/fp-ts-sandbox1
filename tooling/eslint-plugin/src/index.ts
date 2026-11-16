@@ -25,25 +25,26 @@ function services(context: Rule.RuleContext): Services | undefined {
   }
 }
 
-/** True when the node's type is (a union containing) `Result` or `AsyncResult`. */
-function isResultType(context: Rule.RuleContext, node: TSESTree.Node): boolean {
+/** True when the node's type is (a union containing) a type whose symbol/alias name is in `names`. */
+function typeMatchesNames(context: Rule.RuleContext, node: TSESTree.Node, names: Set<string>): boolean {
   const svc = services(context)
   if (svc === undefined) return false
   const type = svc.checker.getTypeAtLocation(svc.toTSNode(node))
   const parts = type.isUnion() ? type.types : [type]
   return parts.some((part) => {
     const name = part.aliasSymbol?.name ?? part.symbol?.name
-    return name !== undefined && RESULT_TYPE_NAMES.has(name)
+    return name !== undefined && names.has(name)
   })
+}
+
+/** True when the node's type is (a union containing) `Result` or `AsyncResult`. */
+function isResultType(context: Rule.RuleContext, node: TSESTree.Node): boolean {
+  return typeMatchesNames(context, node, RESULT_TYPE_NAMES)
 }
 
 /** True when the node's type is (a union containing) an `ErrorFactory`. */
 function isErrorFactoryType(context: Rule.RuleContext, node: TSESTree.Node): boolean {
-  const svc = services(context)
-  if (svc === undefined) return false
-  const type = svc.checker.getTypeAtLocation(svc.toTSNode(node))
-  const parts = type.isUnion() ? type.types : [type]
-  return parts.some((part) => part.aliasSymbol?.name === "ErrorFactory" || part.symbol?.name === "ErrorFactory")
+  return typeMatchesNames(context, node, new Set(["ErrorFactory"]))
 }
 
 // ---------------------------------------------------------------------------
@@ -60,7 +61,7 @@ const mustUseResult: Rule.RuleModule = {
     schema: [],
     messages: {
       mustUse:
-        "A Result was discarded. Handle both branches (match/matchTag), unwrap explicitly (unwrapOr/orThrow), or return it."
+        "A Result was discarded. Handle both branches (match/matchTag), unwrap explicitly (unwrapOr), or return it."
     }
   },
   create(context) {
@@ -88,16 +89,15 @@ const mustUseResult: Rule.RuleModule = {
 
 const NAVIGATION_SENTINELS = new Set(["redirect", "permanentRedirect", "notFound", "forbidden", "unauthorized"])
 
-function containsSentinelCall(node: unknown, sentinels: Set<string>): boolean {
-  if (node === null || node === undefined || typeof node !== "object") return false
-  let found = false
+/** Walk `node`, returning the name of the first sentinel call found (cycles skipped). */
+function findSentinelCall(node: unknown, sentinels: Set<string>): string | undefined {
+  if (node === null || node === undefined || typeof node !== "object") return undefined
   const visited = new Set<unknown>()
-  const visit = (n: TSESTree.Node): void => {
-    if (found || visited.has(n)) return
+  const visit = (n: TSESTree.Node): string | undefined => {
+    if (visited.has(n)) return undefined
     visited.add(n)
     if (n.type === "CallExpression" && n.callee.type === "Identifier" && sentinels.has(n.callee.name)) {
-      found = true
-      return
+      return n.callee.name
     }
     for (const key of Object.keys(n)) {
       // `parent` back-references create cycles; never walk them.
@@ -105,15 +105,26 @@ function containsSentinelCall(node: unknown, sentinels: Set<string>): boolean {
       const value = (n as unknown as Record<string, unknown>)[key]
       if (Array.isArray(value)) {
         for (const child of value) {
-          if (child !== null && typeof child === "object" && "type" in child) visit(child as TSESTree.Node)
+          if (child !== null && typeof child === "object" && "type" in child) {
+            const found = visit(child as TSESTree.Node)
+            if (found !== undefined) return found
+          }
         }
       } else if (value !== null && typeof value === "object" && "type" in value) {
-        visit(value as TSESTree.Node)
+        const found = visit(value as TSESTree.Node)
+        if (found !== undefined) return found
       }
     }
+    return undefined
   }
-  visit(node as TSESTree.Node)
-  return found
+  return visit(node as TSESTree.Node)
+}
+
+/** True when `handler` contains an `unstable_rethrow` call — the documented remedy that makes
+ * sentinel-throwing code inside the `try` safe (Next.js docs / report §5.1). */
+function handlerCallsUnstableRethrow(handler: TSESTree.Node | undefined | null): boolean {
+  return handler !== undefined && handler !== null &&
+    findSentinelCall(handler, new Set(["unstable_rethrow"])) !== undefined
 }
 
 const noTryAroundRedirect: Rule.RuleModule = {
@@ -144,16 +155,19 @@ const noTryAroundRedirect: Rule.RuleModule = {
         }
       },
       TryStatement(node): void {
-        // Only the try block and finalizer are flagged — rethrowing a sentinel from a catch
-        // handler is the documented escape hatch.
+        // Try block/finalizer sentinel calls are flagged ONLY when the catch handler does not
+        // call unstable_rethrow \u2014 that call is the documented remedy (report \u00a75.1) which
+        // re-raises the sentinel before any mapping can swallow it.
+        if (handlerCallsUnstableRethrow(node.handler as unknown as TSESTree.Node)) return
         const parts: Array<unknown> = [node.block]
         if (node.finalizer !== null && node.finalizer !== undefined) parts.push(node.finalizer)
         for (const part of parts) {
-          if (containsSentinelCall(part, sentinels)) {
+          const found = findSentinelCall(part, sentinels)
+          if (found !== undefined) {
             context.report({
               node,
               messageId: "noTryAround",
-              data: { name: [...sentinels][0] ?? "redirect" }
+              data: { name: found }
             })
           }
         }
