@@ -205,8 +205,26 @@ export type TagHandlers<T, E extends Tagged> =
   & { readonly [K in E["_tag"]]: (error: Extract<E, { readonly _tag: K }>) => unknown }
 
 export const matchTag: {
+  /** Data-first: `T`/`E` come from `r`; `NoInfer` keeps the handlers from polluting inference.
+   * `E = never` default: a bare `Ok<number>` argument matches only the `Ok` branch, leaving `E`
+   * uninferred — without the default it falls back to `Tagged` and demands every tag handler. */
+  <T, E extends Tagged = never, H extends NoInfer<TagHandlers<T, E>> = NoInfer<TagHandlers<T, E>>>(
+    r: Result<T, E>,
+    handlers: H
+  ): ReturnType<H[keyof H]>
+  /** Data-last, unannotated handlers: `T`/`E` stay open here and unify where the returned function is applied. */
   <T, E extends Tagged, H extends TagHandlers<T, E>>(handlers: H): (r: Result<T, E>) => ReturnType<H[keyof H]>
-  <T, E extends Tagged, H extends TagHandlers<T, E>>(r: Result<T, E>, handlers: H): ReturnType<H[keyof H]>
+  /** Data-last, annotated handlers (standalone `const f = matchTag({ ok: (n: number) => ... })`):
+   * the strict overload rejects annotated params while `T` is unresolved (contravariance), so this
+   * loose overload carries exhaustiveness through the returned function's `E` constraint instead. */
+  <H extends { readonly ok: (value: any) => unknown } & { readonly [tag: string]: (error: any) => unknown }>(
+    handlers: H
+  ): <
+    T extends H extends { readonly ok: (value: infer T2) => unknown } ? T2 : never,
+    E extends Tagged & { readonly _tag: Exclude<keyof H, "ok"> & string }
+  >(
+    r: Result<T, E>
+  ) => ReturnType<H[keyof H]>
 } = /*#__PURE__*/ dual((r: Result<unknown, Tagged>, h: TagHandlers<unknown, Tagged>) =>
   r.ok ? call(h.ok, r.value) : call(h[r.error._tag]!, r.error)
 )
@@ -219,10 +237,17 @@ export const fromNullable: {
   value == null ? err(call(onNone, undefined)) : ok(value)
 )
 
-/** All `Ok` → `Ok` of the values (tuple-aware); otherwise the first `Err` in input order (same object). */
-export function all<const R extends ReadonlyArray<Result<unknown, unknown>>>(
+/** All `Ok` → `Ok` of the values (tuple-aware); otherwise the first `Err` in input order (same object).
+ *
+ * Two overloads because TS can't do both jobs in one constraint: a variadic-tuple param forces
+ * tuple inference for literals (a plain `const R extends ReadonlyArray<...>` mangles element
+ * unions — TS infers only the `Err` branch per element), while a generic `ReadonlyArray` overload
+ * handles array inputs (tuple params reject `Array<T>`: "no match at position 0").
+ */
+export function all<R extends readonly [] | readonly [Result<unknown, unknown>, ...Array<Result<unknown, unknown>>]>(
   results: R
 ): Result<{ -readonly [K in keyof R]: InferOk<R[K]> }, InferErr<R[number]>>
+export function all<T, E>(results: ReadonlyArray<Result<T, E>>): Result<Array<T>, E>
 export function all(results: ReadonlyArray<Result<unknown, unknown>>): Result<Array<unknown>, unknown> {
   const values: Array<unknown> = []
   for (const r of results) {
