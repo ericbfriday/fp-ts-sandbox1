@@ -1,5 +1,5 @@
 /**
- * `@friday-friday/schema` — Standard Schema validation → Result (RFC-0001 §5.7).
+ * `@friday-friday/schema` — Standard Schema validation → Result (Design Report §5.7).
  *
  * `@standard-schema/spec` is a TYPES-ONLY dependency: nothing is imported at runtime, so no
  * vendor (Zod/Valibot/ArkType) is ever a hard dependency — any Standard Schema V1 implementation
@@ -136,7 +136,7 @@ export interface Branded<S extends StandardSchemaV1, B extends string> {
 /**
  * Validate with `schema`, then stamp the phantom brand on the (already-validated) value.
  * The brand is a compile-time marker only — nothing is added to the object at runtime, so
- * wire contracts are unaffected.
+ * wire contracts are unaffected. (Spec source: Design Report §5.7.)
  */
 export function branded<const B extends string, S extends StandardSchemaV1>(
   schema: S,

@@ -4,6 +4,8 @@
  */
 import type { Result } from "@friday-friday/core"
 import { type Brand, type brand, branded, parse, parseAsync, type ValidationFailure } from "@friday-friday/schema"
+import { type } from "arktype"
+import * as v from "valibot"
 import { describe, expectTypeOf, test } from "vitest"
 import { z } from "zod"
 
@@ -28,6 +30,13 @@ describe("schema types", () => {
       // The brand key is present only at the type level.
       expectTypeOf(r.value).toExtend<{ [brand]: "UserId" }>()
     }
+  })
+
+  test("vendor output inference: valibot + arktype", () => {
+    const vr: Result<{ id: string }, ValidationFailure> = parse(v.object({ id: v.string() }), { id: "v" })
+    expectTypeOf(vr).toEqualTypeOf<Result<{ id: string }, ValidationFailure>>()
+    const ar: Result<{ id: string }, ValidationFailure> = parse(type({ id: "string" }), { id: "a" })
+    expectTypeOf(ar).toEqualTypeOf<Result<{ id: string }, ValidationFailure>>()
   })
 
   test("ValidationFailure shape is stable", () => {

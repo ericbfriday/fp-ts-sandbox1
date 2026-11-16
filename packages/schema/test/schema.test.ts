@@ -15,6 +15,8 @@ import {
   ValidationFailure
 } from "@friday-friday/schema"
 import type { StandardJSONSchemaV1, StandardSchemaV1 } from "@standard-schema/spec"
+import { type } from "arktype"
+import * as v from "valibot"
 import { describe, expect, it } from "vitest"
 import { z } from "zod"
 
@@ -157,6 +159,25 @@ describe("toJsonSchema", () => {
       expect(r.error._tag).toBe("Unsupported")
       expect(r.error.reason).toContain("no json schema")
     }
+  })
+})
+
+describe("vendor fixtures (dev-only; proving no runtime hard dep)", () => {
+  it("valibot schema parses", () => {
+    const VSchema = v.object({ id: v.string() })
+    expect(parse(VSchema, { id: "v1" })).toEqual(ok({ id: "v1" }))
+  })
+
+  it("arktype schema parses", () => {
+    const ASchema = type({ id: "string" })
+    expect(parse(ASchema, { id: "a1" })).toEqual(ok({ id: "a1" }))
+  })
+
+  it("valibot failures normalize to ValidationFailure", () => {
+    const VSchema = v.object({ id: v.string() })
+    const r = parse(VSchema, { id: 1 })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error._tag).toBe("ValidationFailure")
   })
 })
 
