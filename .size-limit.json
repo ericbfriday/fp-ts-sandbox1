@@ -1,0 +1,16 @@
+[
+  {
+    "name": "@friday-friday/core — { ok, err, map, andThen, pipe }",
+    "path": "packages/core/dist/index.js",
+    "import": "{ ok, err, map, andThen, pipe }",
+    "limit": "600 B",
+    "gzip": true
+  },
+  {
+    "name": "@friday-friday/core — full",
+    "path": "packages/core/dist/index.js",
+    "import": "*",
+    "limit": "3 kB",
+    "gzip": true
+  }
+]
