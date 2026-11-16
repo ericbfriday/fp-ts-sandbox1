@@ -47,8 +47,8 @@ describe("gen (sync do-notation)", () => {
     let caught: unknown
     try {
       gen(function* () {
-        throw boom
-        return "never" // unreachable; satisfies consistent-return
+        if (boom) throw boom
+        return "never"
       })
     } catch (e) {
       caught = e
