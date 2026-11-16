@@ -15,6 +15,7 @@ import {
   toThrowable
 } from "../dist/index.js"
 import { allAsync, mapAsync, retry, timeout, tryAsync } from "../dist/async.js"
+import { $, gen } from "../dist/gen.js"
 
 const NotFound = taggedError("NotFound")()
 
@@ -41,5 +42,13 @@ assert.deepEqual(
   await tryAsync(async () => { throw "boom" }, { catch: (c) => `m:${String(c)}` }),
   err("m:boom")
 )
+
+// /gen subpath (dist/gen.js)
+const genResult = gen(function* () {
+  const a = yield* $(ok(1))
+  const b = yield* $(ok(2))
+  return a + b
+})
+assert.deepEqual(genResult, ok(3))
 
 process.stdout.write("core dist smoke: ok\n")
