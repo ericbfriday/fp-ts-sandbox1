@@ -53,7 +53,7 @@ describe("gen (sync do-notation)", () => {
     } catch (e) {
       caught = e
     }
-    if (!(caught instanceof Panic)) return expect.unreachable("expected Panic")
+    if (!(caught instanceof Panic)) throw new Error("expected Panic")
     expect(caught.cause).toBe(boom)
   })
 
