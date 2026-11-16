@@ -260,6 +260,12 @@ importers:
 
   tooling/eslint-plugin:
     devDependencies:
+      '@friday-friday/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@typescript-eslint/utils':
+        specifier: ~8.72.2
+        version: 8.72.2(eslint@10.15.0)(typescript@6.0.3)
       eslint:
         specifier: ^10.15.0
         version: 10.15.0

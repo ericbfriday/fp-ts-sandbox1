@@ -13,7 +13,10 @@ export default [
     },
     linterOptions: { reportUnusedDisableDirectives: "error" },
     plugins: { "@friday-friday": friday },
-    // Rules are enabled here as they land in #8, e.g. "@friday-friday/must-use-result": "error".
-    rules: {}
+    rules: {
+      "@friday-friday/must-use-result": "error",
+      "@friday-friday/no-try-around-redirect": "error",
+      "@friday-friday/no-instanceof-tagged-error": "error"
+    }
   }
 ]

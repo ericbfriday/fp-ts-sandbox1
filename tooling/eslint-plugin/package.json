@@ -17,8 +17,10 @@
     "lint": "cd ../.. && eslint --config tooling/eslint-plugin/eslint.config.js --max-warnings 0 packages"
   },
   "devDependencies": {
+    "@typescript-eslint/utils": "~8.72.2",
     "eslint": "^10.15.0",
     "typescript": "~6.0.3",
-    "typescript-eslint": "~8.72.2"
+    "typescript-eslint": "~8.72.2",
+    "@friday-friday/core": "workspace:*"
   }
 }
