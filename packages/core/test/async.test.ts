@@ -95,7 +95,7 @@ describe("async-aware duals", () => {
   })
 
   it("outputs are plain data across helpers (JSON + structuredClone)", async () => {
-    fc.assert(
+    await fc.assert(
       fc.asyncProperty(jsonValue, jsonValue, async (v, e) => {
         roundTrips(await andThenAsync(Promise.resolve(ok(v)), async () => ok(e)))
         roundTrips(
