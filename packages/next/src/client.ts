@@ -10,6 +10,8 @@
  * zero markup of its own.
  */
 import type { TaggedError } from "@friday-friday/core"
+// oxlint-disable-next-line import/no-unassigned-import -- side-effect guard: throws under SSR
+import "client-only"
 import { catchError } from "next/error"
 import { type ComponentType, createElement, type ReactNode } from "react"
 

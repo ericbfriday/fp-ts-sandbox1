@@ -14,13 +14,13 @@ import {
   type AsyncResult,
   err,
   type ErrorFactory,
-  ok,
-  Panic,
   type Result,
   type TaggedError,
   taggedError,
-  toThrowable
+  toThrowable,
+  trySync as coreTrySync
 } from "@friday-friday/core"
+import { tryAsync as coreTryAsync } from "@friday-friday/core/async"
 import { parse, type ValidationFailure } from "@friday-friday/schema"
 import type { StandardSchemaV1 } from "@standard-schema/spec"
 import { forbidden, notFound, redirect, unstable_rethrow } from "next/navigation"
@@ -42,30 +42,15 @@ export interface NextCatch<E> {
   readonly catch: (cause: unknown) => E | undefined
 }
 
-/** Pre-bound triage: `unstable_rethrow` runs before mapping, so sentinels are never swallowed. */
+/** Pre-bound triage (report §5.1 snippet): delegates to core's tryAsync with nextRethrow, so
+ * `unstable_rethrow` runs before mapping and sentinels are never swallowed. */
 export function tryAsync<T, E>(fn: () => Promise<T>, opts: NextCatch<E>): AsyncResult<T, E> {
-  return (async () => {
-    try {
-      return ok(await fn())
-    } catch (cause) {
-      nextRethrow(cause)
-      const mapped = opts.catch(cause)
-      if (mapped === undefined) throw cause instanceof Panic ? cause : new Panic(cause)
-      return err(mapped)
-    }
-  })()
+  return coreTryAsync(fn, { catch: opts.catch, rethrow: nextRethrow })
 }
 
-/** Sync twin of {@link tryAsync}. */
+/** Sync twin of {@link tryAsync}, delegating to core's trySync with nextRethrow. */
 export function trySync<T, E>(fn: () => T, opts: NextCatch<E>): Result<T, E> {
-  try {
-    return ok(fn())
-  } catch (cause) {
-    nextRethrow(cause)
-    const mapped = opts.catch(cause)
-    if (mapped === undefined) throw cause instanceof Panic ? cause : new Panic(cause)
-    return err(mapped)
-  }
+  return coreTrySync(fn, { catch: opts.catch, rethrow: nextRethrow })
 }
 
 // ---------------------------------------------------------------------------
@@ -174,11 +159,9 @@ export const InternalDefect: ErrorFactory<"InternalDefect", { readonly reason?: 
   "InternalDefect"
 )<{ reason?: string }>()
 
-export interface ActionOptions<E extends TaggedError<string>> {
+export interface ActionOptions {
   /** Observe defects (they still return as `Err(InternalDefect)` data — never thrown). */
   readonly onDefect?: (cause: unknown) => void
-  /** Extra triage mapping used INSIDE the action (sentinels still rethrow first). */
-  readonly catch?: (cause: unknown) => E | undefined
 }
 
 export interface ActionFn<T, E extends TaggedError<string>> {
@@ -198,7 +181,7 @@ export interface ActionFn<T, E extends TaggedError<string>> {
 export function action<_S extends StandardSchemaV1, T, E extends TaggedError<string> = never>(
   schema: _S,
   handler: (input: StandardSchemaV1.InferOutput<_S>) => AsyncResult<T, E>,
-  opts?: ActionOptions<E>
+  opts?: ActionOptions
 ): ActionFn<T, E> {
   return async (_prev: ActionState<T, E>, formData: FormData): Promise<ActionState<T, E>> => {
     const raw: Record<string, string | File> = {}

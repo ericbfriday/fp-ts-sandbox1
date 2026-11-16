@@ -1,6 +1,6 @@
 import { defineConfig, type UserConfig } from "tsdown"
 
-// ADR-0002: ESM-only, .d.ts via isolatedDeclarations. Two entries:
+// ADR-0002: ESM-only, .d.ts via isolatedDeclarations. Three entries:
 // - index.js     -> the react-server condition (server helpers)
 // - client.js    -> the /client subpath (client-only boundary)
 // - server-only-stub.js -> the default condition (throws outside react-server)
