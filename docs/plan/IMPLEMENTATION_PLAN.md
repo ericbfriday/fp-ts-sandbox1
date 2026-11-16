@@ -52,7 +52,12 @@ Exit criteria (from report §9): size budgets green, TS 6/7/7.1 matrix green, `e
 3. **`@friday-friday/schema`** — `parse parseAsync toFieldErrors toFormErrors branded toJsonSchema` over `@standard-schema/spec` 1.1 (types only).
 4. **`@friday-friday/next`** — implemented on feat/next (PR #15, issue #7): server entry + server-only stub + /client boundary; unit-level sentinel-escape proofs (real-app e2e lands with examples/next-app #9). Base moduleResolution switched to bundler (next@16.4.6 subpaths unresolvable under NodeNext - empty exports map).
 5. **`tooling/eslint-plugin`** — `must-use-result`, `no-try-around-redirect`, `no-instanceof-tagged-error` (per ADR-0003 outcome).
-6. **`examples/next-app`** — one feature end-to-end on Result; proves redirect sentinel survival + action state + ValidationFailure field errors.
+6. **`examples/next-app`** — REMAINING (issue #9, unblocked). Implementation notes for the next session/agent:
+   - Scaffold with create-next-app@16.4 (App Router, TS), add @friday-friday/{core,schema,next} workspace deps.
+   - One feature (profile update): server action via next.action + useActionState ({ ok: null } idle), redirect-after-save thrown OUTSIDE the action catch (sentinel proof), ValidationFailure -> toFieldErrors field errors, toResponse route handler with problem+json, orNotFound loader.
+   - The AC proof "redirect survives try/catch" has unit-level coverage in packages/next/test/next.test.ts (sentinel escapes adapter triage unmapped); the example proves it live in a running app.
+   - next@16.4.6 note: empty exports map -> plain-Node dist smokes impossible; run everything via the dev server.
+   - create-next-app may try to init a git repo — use --disable-git or strip the nested .git; examples/* is covered by the workspace glob.
 
 ### Phase 2 — Data layer: `query`, `better-auth`, `http`, `otel`
 `toQueryFn` (throw E, `Ok(undefined)`→null, signal), `resultQueryOptions`, `retryUnless`; `authCall/fromAuthTuple/requireSession/requireRole/beforeDbHook` via `isAPIError`; `fetchResult` with schema decode + problem+json reconstruction; `traced` span helpers.
