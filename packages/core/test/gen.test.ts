@@ -1,7 +1,7 @@
 /**
  * `/gen` subpath tests (RFC-0001 §4 / Design Report §3.5).
  */
-import { andThen, err, ok, Panic, pipe, taggedError, type AsyncResult, type Result } from "@friday-friday/core"
+import { andThen, type AsyncResult, err, ok, Panic, pipe, type Result, taggedError } from "@friday-friday/core"
 import { $, gen, genAsync } from "@friday-friday/core/gen"
 import { describe, expect, it } from "vitest"
 
@@ -13,7 +13,7 @@ describe("gen (sync do-notation)", () => {
     const findUser = (id: string): Result<{ profile: string }, NotFoundT> =>
       id === "1" ? ok({ profile: "admin" }) : err(NotFound({ id }))
     const viaChain = pipe(findUser("1"), andThen((u) => ok(u.profile)))
-    const viaGen = gen(function* () {
+    const viaGen = gen(function*() {
       const u = yield* $(findUser("1"))
       return u.profile
     })
@@ -24,7 +24,7 @@ describe("gen (sync do-notation)", () => {
   it("short-circuits on the first Err, preserving the envelope identity", () => {
     const e = err(NotFound({ id: "9" }))
     let afterRan = false
-    const r = gen(function* () {
+    const r = gen(function*() {
       const never = yield* $(e)
       afterRan = true
       return ok(never)
@@ -34,7 +34,7 @@ describe("gen (sync do-notation)", () => {
   })
 
   it("returns the last Ok through multiple steps", () => {
-    const r = gen(function* () {
+    const r = gen(function*() {
       const a = yield* $(ok(1))
       const b = yield* $(ok(2))
       return a + b
@@ -46,7 +46,7 @@ describe("gen (sync do-notation)", () => {
     const boom = new Error("boom")
     let caught: unknown
     try {
-      gen(function* () {
+      gen(function*() {
         if (boom) throw boom
         return "never"
       })
@@ -58,7 +58,7 @@ describe("gen (sync do-notation)", () => {
   })
 
   it("outputs are plain data (JSON + structuredClone)", () => {
-    const r = gen(function* () {
+    const r = gen(function*() {
       const a = yield* $(ok({ id: 1 }))
       return { a }
     })
@@ -72,7 +72,7 @@ describe("genAsync (async do-notation)", () => {
     Promise.resolve(id === "1" ? ok("admin") : err({ _tag: "NotFound", id }))
 
   it("awaits and chains async steps", async () => {
-    const r = await genAsync(async function* () {
+    const r = await genAsync(async function*() {
       const id = yield* $(await Promise.resolve(ok("1")))
       const profile = yield* $(await findProfile(id))
       return profile
@@ -82,7 +82,7 @@ describe("genAsync (async do-notation)", () => {
 
   it("short-circuits on Err without running later steps", async () => {
     let afterRan = false
-    const r = await genAsync(async function* () {
+    const r = await genAsync(async function*() {
       yield* $(await Promise.resolve(err(NotFound({ id: "9" }))))
       afterRan = true
       return "never"
@@ -95,14 +95,14 @@ describe("genAsync (async do-notation)", () => {
   it("wraps rejections as Panic", async () => {
     const boom = new Error("boom")
     await expect(
-      genAsync(async function* () {
+      genAsync(async function*() {
         throw boom
       })
     ).rejects.toThrow(Panic)
   })
 
   it("outputs are plain data (JSON + structuredClone)", async () => {
-    const r = await genAsync(async function* () {
+    const r = await genAsync(async function*() {
       const v = yield* $(await Promise.resolve(ok({ deep: { id: 1 } })))
       return { v }
     })

@@ -11,7 +11,7 @@
  * cost stack-trace quality and some inference time.
  */
 
-import { ok, Panic, type AsyncResult, type Err, type Result } from "./index.js"
+import { type AsyncResult, type Err, ok, Panic, type Result } from "./index.js"
 
 /** The error channel extracted from a yielded `Err` envelope. */
 type YieldedError<Y> = Y extends Err<infer E> ? E : never
@@ -21,7 +21,7 @@ type YieldedError<Y> = Y extends Err<infer E> ? E : never
  * One-shot: the returned Generator is consumed by exactly one `yield*` delegation.
  */
 export function $<T, E>(r: Result<T, E>): Generator<Err<E>, T, unknown> {
-  return (function* () {
+  return (function*() {
     if (r.ok) return r.value
     // Yield hands the Err envelope to `gen`, which short-circuits and never resumes this
     // generator; a manual resume (misuse) throws instead of producing a bogus value.
