@@ -1,0 +1,27 @@
+{
+  "name": "@friday-friday/core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Result type, tagged errors and pipeable combinators (scaffold stub; real implementation lands in #3)",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": {
+      "@friday-friday/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "smoke": "node test/smoke.mjs"
+  }
+}

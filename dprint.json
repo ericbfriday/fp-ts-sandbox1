@@ -18,7 +18,9 @@
     "**/build",
     "**/coverage",
     "**/*.tsbuildinfo",
-    "pnpm-lock.yaml"
+    "pnpm-lock.yaml",
+    "IDEA.md",
+    "docs/**"
   ],
   "plugins": [
     "https://plugins.dprint.dev/typescript-0.93.4.wasm",
