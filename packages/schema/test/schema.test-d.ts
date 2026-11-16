@@ -3,8 +3,8 @@
  * without any vendor import in the runtime surface.
  */
 import type { Result } from "@friday-friday/core"
+import { type Brand, type brand, branded, parse, parseAsync, type ValidationFailure } from "@friday-friday/schema"
 import { describe, expectTypeOf, test } from "vitest"
-import { type brand, branded, parse, parseAsync, type Brand, type ValidationFailure } from "@friday-friday/schema"
 import { z } from "zod"
 
 describe("schema types", () => {

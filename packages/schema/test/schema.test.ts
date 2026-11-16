@@ -3,10 +3,20 @@
  * `@standard-schema/spec` types exclusively, proving no vendor hard-dependency.
  */
 import { err, ok, Panic, taggedError } from "@friday-friday/core"
+import {
+  type Brand,
+  brand,
+  branded,
+  parse,
+  parseAsync,
+  toFieldErrors,
+  toFormErrors,
+  toJsonSchema,
+  ValidationFailure
+} from "@friday-friday/schema"
 import type { StandardJSONSchemaV1, StandardSchemaV1 } from "@standard-schema/spec"
-import { brand, branded, parse, parseAsync, toFieldErrors, toJsonSchema, toFormErrors, ValidationFailure, type Brand } from "@friday-friday/schema"
-import { z } from "zod"
 import { describe, expect, it } from "vitest"
+import { z } from "zod"
 
 describe("parse", () => {
   const User = z.object({ id: z.string(), age: z.number() })
@@ -41,7 +51,7 @@ describe("parse", () => {
       "~standard": {
         version: 1,
         vendor: "fixture",
-        validate: (input: unknown) => ({
+        validate: (_input: unknown) => ({
           issues: [{ message: "bad", path: [sym, "field"] }]
         })
       }
@@ -56,7 +66,9 @@ describe("parseAsync", () => {
   it("awaits async-validating schemas", async () => {
     const AsyncSchema = z.string().refine(async (v) => v.length > 0, "empty")
     expect(await parseAsync(AsyncSchema, "ok")).toEqual(ok("ok"))
-    expect(await parseAsync(AsyncSchema, "")).toEqual(err(ValidationFailure({ issues: [{ message: "empty", path: [] }] })))
+    expect(await parseAsync(AsyncSchema, "")).toEqual(
+      err(ValidationFailure({ issues: [{ message: "empty", path: [] }] }))
+    )
   })
 
   it("works for sync schemas too", async () => {
@@ -98,7 +110,7 @@ describe("branded", () => {
       const brandedValue: Brand<string, "UserId"> = r.value
       expect(brandedValue).toBe("u-123")
       // The brand key is type-level only: the unique symbol is absent at runtime.
-      expect((brandedValue as unknown as Record<symbol, unknown>)[brand]).toBeUndefined()
+      expect(Reflect.has(brandedValue, brand)).toBe(false)
     }
   })
 
@@ -154,7 +166,9 @@ describe("no vendor hard-dependency", () => {
       "~standard": {
         version: 1,
         vendor: "fixture",
-        validate: (input: unknown) => (typeof input === "string" ? { value: input } : { issues: [{ message: "must be a string" }] })
+        validate: (
+          input: unknown
+        ) => (typeof input === "string" ? { value: input } : { issues: [{ message: "must be a string" }] })
       }
     }
     expect(parse(Vendor, "hi")).toEqual(ok("hi"))

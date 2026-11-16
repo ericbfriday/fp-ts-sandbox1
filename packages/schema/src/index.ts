@@ -11,14 +11,14 @@
  */
 
 import {
+  type AsyncResult,
   err,
+  type ErrorFactory,
   ok,
   Panic,
-  type AsyncResult,
-  type ErrorFactory,
   type Result,
-  taggedError,
-  type TaggedError
+  type TaggedError,
+  taggedError
 } from "@friday-friday/core"
 import type { StandardJSONSchemaV1, StandardSchemaV1 } from "@standard-schema/spec"
 
@@ -50,7 +50,7 @@ type PathPart = string | number
 const normalizePath = (path: NonNullable<StandardSchemaV1.Issue["path"]>): ReadonlyArray<PathPart> =>
   path.map((segment) => {
     const key = typeof segment === "object" && segment !== null && "key" in segment ? segment.key : segment
-    return typeof key === "symbol" ? "[symbol]" : (key)
+    return typeof key === "symbol" ? "[symbol]" : key
   })
 
 const toFailure = (issues: ReadonlyArray<StandardSchemaV1.Issue>): ValidationFailure =>
@@ -140,7 +140,9 @@ export interface Branded<S extends StandardSchemaV1, B extends string> {
  */
 export function branded<const B extends string, S extends StandardSchemaV1>(
   schema: S,
-  tag: B
+  // `_tag` names the brand for type-level readability; the runtime impl never reads it
+  // (the phantom brand is type-only, see `Brand`).
+  _tag: B
 ): Branded<S, B> {
   return (input: unknown): Result<Brand<StandardSchemaV1.InferOutput<S>, B>, ValidationFailure> => {
     const result = parse(schema, input)
