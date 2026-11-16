@@ -1,0 +1,22 @@
+{
+  "name": "@friday-friday/fp-ts-sandbox1",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Sandbox for functional-programming TypeScript experiments",
+  "type": "module",
+  "packageManager": "pnpm@12.21.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "lint": "oxlint -f unix && dprint check",
+    "lint-fix": "oxlint --fix && dprint fmt"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "dprint": "^0.57.4",
+    "oxlint": "^1.93.0",
+    "typescript": "^7.0.2"
+  }
+}
