@@ -65,6 +65,8 @@ Pure, pipeable, **dual** (data-first/data-last via `arguments.length`), separate
 `map, mapErr, andThen, orElse, tap, tapErr, unwrapOr, match, matchTag, fromNullable, all, partition`.
 `pipe` = explicit overloads to 16 arity; `flow` to 12. No HKTs, no recursive pipe types.
 `/async` subpath: `mapAsync, andThenAsync, allAsync, retry, timeout, mapConcurrent` — all accept `{ signal }`.
+
+> **Errata (2026-11-16, PR #12 review):** cancellation-capable helpers (`allAsync`, `mapConcurrent`, `retry`, `timeout`, `tryAsync`) take `{ signal }` and FORWARD it into the user callback/thunk so underlying work can observe cancellation. The pure duals (`mapAsync`, `andThenAsync`, `orElseAsync`, `tapAsync`, `tapErrAsync`) perform no cancellation of their own — callers bind their signal in the callback closure; they extend the named inventory, mirroring the sync surface. See `docs/decisions/2026-11-16-async-signal-handling.md`.
 `/gen` subpath (opt-in): `gen`, `genAsync` with a `$()` wrapper so Results stay pure data.
 
 ## 5. Wire envelope

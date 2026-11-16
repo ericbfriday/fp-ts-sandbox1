@@ -12,5 +12,12 @@
     "import": "*",
     "limit": "3 kB",
     "gzip": true
+  },
+  {
+    "name": "@friday-friday/core — full /async subpath",
+    "path": "packages/core/dist/async.js",
+    "import": "*",
+    "limit": "3 kB",
+    "gzip": true
   }
 ]

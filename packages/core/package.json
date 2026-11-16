@@ -15,6 +15,11 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./async": {
+      "@friday-friday/source": "./src/async.ts",
+      "types": "./dist/async.d.ts",
+      "default": "./dist/async.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
