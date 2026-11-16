@@ -11,14 +11,14 @@
  */
 
 import {
+  type AsyncResult,
   err,
+  type ErrorFactory,
   ok,
   Panic,
-  type AsyncResult,
-  type ErrorFactory,
   type Result,
-  taggedError,
   type TaggedError,
+  taggedError,
   toThrowable
 } from "@friday-friday/core"
 import { parse, type ValidationFailure } from "@friday-friday/schema"
@@ -28,7 +28,11 @@ import { forbidden, notFound, redirect, unstable_rethrow } from "next/navigation
 /** Walks a thrown cause chain (depth 5, per report §5.1 item 2) and hands every link to
  * `unstable_rethrow`, so framework sentinels rethrow before any mapping happens. */
 export const nextRethrow = (cause: unknown): void => {
-  for (let c: unknown = cause, i = 0; c !== null && c !== undefined && i < 5; c = (c as { cause?: unknown }).cause, i++) {
+  for (
+    let c: unknown = cause, i = 0;
+    c !== null && c !== undefined && i < 5;
+    c = (c as { cause?: unknown }).cause, i++
+  ) {
     unstable_rethrow(c)
   }
 }
@@ -96,7 +100,7 @@ export function orThrow<T>(r: Result<T, TaggedError<string>>): T {
 // toResponse: route handlers (RFC-0001 §6 Problem Details)
 // ---------------------------------------------------------------------------
 
-export interface StatusMap<E extends TaggedError<string>> {
+export interface StatusMap {
   readonly [tag: string]: number | undefined
 }
 
@@ -105,10 +109,7 @@ export interface StatusMap<E extends TaggedError<string>> {
  * tag-mapped status (RFC-0001 §6). Unmapped tags default to 500 as `InternalDefect`-shaped
  * problem details (`cause` and non-JSON-safe props are stripped before crossing the boundary).
  */
-export function toResponse<T, E extends TaggedError<string>>(
-  r: Result<T, E>,
-  statuses?: StatusMap<E>
-): Response {
+export function toResponse<T, E extends TaggedError<string>>(r: Result<T, E>, statuses?: StatusMap): Response {
   if (r.ok) return Response.json(r.value satisfies T)
   const tag = r.error._tag
   const status = statuses?.[tag] ?? defaultStatus(tag)
@@ -119,7 +120,17 @@ export function toResponse<T, E extends TaggedError<string>>(
 }
 
 const defaultStatus = (tag: string): number =>
-  tag === "NotFound" ? 404 : tag === "Forbidden" ? 403 : tag === "Unauthenticated" ? 401 : tag === "Conflict" ? 409 : tag === "ValidationFailure" ? 422 : 500
+  tag === "NotFound"
+    ? 404
+    : tag === "Forbidden"
+    ? 403
+    : tag === "Unauthenticated"
+    ? 401
+    : tag === "Conflict"
+    ? 409
+    : tag === "ValidationFailure"
+    ? 422
+    : 500
 
 /** RFC-0001 §6 problem body: `cause` and non-JSON-safe props never cross the boundary. */
 const problemBody = (error: TaggedError<string>, status: number): Record<string, unknown> => {
@@ -170,7 +181,7 @@ export interface ActionOptions<E extends TaggedError<string>> {
   readonly catch?: (cause: unknown) => E | undefined
 }
 
-export interface ActionFn<S extends StandardSchemaV1, T, E extends TaggedError<string>> {
+export interface ActionFn<T, E extends TaggedError<string>> {
   (
     prev: ActionState<T, E>,
     formData: FormData
@@ -188,7 +199,7 @@ export function action<_S extends StandardSchemaV1, T, E extends TaggedError<str
   schema: _S,
   handler: (input: StandardSchemaV1.InferOutput<_S>) => AsyncResult<T, E>,
   opts?: ActionOptions<E>
-): ActionFn<_S, T, E> {
+): ActionFn<T, E> {
   return async (_prev: ActionState<T, E>, formData: FormData): Promise<ActionState<T, E>> => {
     const raw: Record<string, string | File> = {}
     for (const [k, v] of formData.entries()) raw[k] = v
