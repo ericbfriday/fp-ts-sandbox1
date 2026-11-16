@@ -5,9 +5,16 @@
  *   `Promise<Result>` (`AsyncResult`).
  * - Defects stay defects: a rejecting thunk or mapper propagates as `Panic`, never as `Err`.
  * - Plain data in, plain data out: outputs survive `JSON` and `structuredClone` unchanged.
- * - Cancellation convention (documented choices, RFC §4 / Design Report §3.6):
- *   - `timeout()` translates a timeout abort into `Err(Timeout)`.
- *   - a *user* signal abort is a defect: `Panic(abort reason)`.
+ * - Signals (RFC §4 "all accept `{ signal }`", Design Report §3.6; see the RFC errata and the
+ *   2026-11-16 decisions note):
+ *   - cancellation-capable helpers take `{ signal }` and FORWARD it into the user callback/thunk
+ *     so underlying work can actually observe cancellation: `allAsync`, `mapConcurrent`,
+ *     `retry`, `timeout`, `tryAsync`;
+ *   - pure duals (`mapAsync`, `andThenAsync`, `orElseAsync`, `tapAsync`, `tapErrAsync`) perform
+ *     no cancellation of their own; callers bind their signal inside the callback closure.
+ * - Abort semantics (documented choices):
+ *   - `timeout()` translates a timeout abort into `Err(Timeout)`;
+ *   - a *user* signal abort is a defect: `Panic(abort reason)`;
  *   - `retry()` is the exception: an abort mid-retry returns the *last* `Err` when one exists
  *     (the domain error that got us here), and throws `Panic` only if nothing had settled yet.
  */
@@ -30,20 +37,24 @@ type AsyncInput<T, E> = Result<T, E> | Promise<Result<T, E>>
 /** A value that may be produced synchronously or asynchronously. */
 type MaybePromise<V> = V | Promise<V>
 
+export interface SignalOptions {
+  readonly signal?: AbortSignal
+}
+
 /** Infrastructure tag for a `timeout()` boundary (RFC-0001 §2 infrastructure errors).
  * Follows the RFC §2 usage pattern: explicit ErrorFactory annotation + ReturnType twin type. */
 export const Timeout: ErrorFactory<"Timeout", { ms: number }> = taggedError("Timeout")<{ ms: number }>()
 export type TimeoutError = ReturnType<typeof Timeout>
 
 // ---------------------------------------------------------------------------
-// Async-aware duals of the sync combinators
+// Async-aware duals of the sync combinators (pure: no cancellation of their own)
 // ---------------------------------------------------------------------------
 
 export interface MapAsync {
   <T, U>(f: (value: T) => MaybePromise<U>): <E = never>(r: AsyncInput<T, E>) => AsyncResult<U, E>
   <T, U, E = never>(r: AsyncInput<T, E>, f: (value: T) => MaybePromise<U>): AsyncResult<U, E>
 }
-export const mapAsync: MapAsync = dual(
+export const mapAsync: MapAsync = /*#__PURE__*/ dual(
   (r: AsyncInput<unknown, unknown>, f: (value: unknown) => unknown): Promise<Result<unknown, unknown>> =>
     (async () => {
       const res = await r
@@ -55,7 +66,7 @@ export interface AndThenAsync {
   <T, U, E2>(f: (value: T) => AsyncInput<U, E2>): <E = never>(r: AsyncInput<T, E>) => AsyncResult<U, E | E2>
   <T, U, E = never, E2 = never>(r: AsyncInput<T, E>, f: (value: T) => AsyncInput<U, E2>): AsyncResult<U, E | E2>
 }
-export const andThenAsync: AndThenAsync = dual(
+export const andThenAsync: AndThenAsync = /*#__PURE__*/ dual(
   (
     r: AsyncInput<unknown, unknown>,
     f: (value: unknown) => AsyncInput<unknown, unknown>
@@ -70,7 +81,7 @@ export interface OrElseAsync {
   <E, U, E2>(f: (error: E) => AsyncInput<U, E2>): <T>(r: AsyncInput<T, E>) => AsyncResult<T | U, E2>
   <T, E, U, E2>(r: AsyncInput<T, E>, f: (error: E) => AsyncInput<U, E2>): AsyncResult<T | U, E2>
 }
-export const orElseAsync: OrElseAsync = dual(
+export const orElseAsync: OrElseAsync = /*#__PURE__*/ dual(
   (
     r: AsyncInput<unknown, unknown>,
     f: (error: unknown) => AsyncInput<unknown, unknown>
@@ -85,7 +96,7 @@ export interface TapAsync {
   <T>(f: (value: T) => MaybePromise<void>): <E = never>(r: AsyncInput<T, E>) => AsyncResult<T, E>
   <T, E = never>(r: AsyncInput<T, E>, f: (value: T) => MaybePromise<void>): AsyncResult<T, E>
 }
-export const tapAsync: TapAsync = dual(
+export const tapAsync: TapAsync = /*#__PURE__*/ dual(
   (r: AsyncInput<unknown, unknown>, f: (value: unknown) => unknown): Promise<Result<unknown, unknown>> =>
     (async () => {
       const res = await r
@@ -98,7 +109,7 @@ export interface TapErrAsync {
   <E>(f: (error: E) => MaybePromise<void>): <T = never>(r: AsyncInput<T, E>) => AsyncResult<T, E>
   <T, E>(r: AsyncInput<T, E>, f: (error: E) => MaybePromise<void>): AsyncResult<T, E>
 }
-export const tapErrAsync: TapErrAsync = dual(
+export const tapErrAsync: TapErrAsync = /*#__PURE__*/ dual(
   (r: AsyncInput<unknown, unknown>, f: (error: unknown) => unknown): Promise<Result<unknown, unknown>> =>
     (async () => {
       const res = await r
@@ -112,17 +123,25 @@ export const tapErrAsync: TapErrAsync = dual(
 // ---------------------------------------------------------------------------
 
 export interface AllAsync {
-  <T, E>(thunks: ReadonlyArray<() => AsyncResult<T, E>>): AsyncResult<Array<T>, E>
+  <T, E>(
+    thunks: ReadonlyArray<(signal?: AbortSignal) => AsyncResult<T, E>>,
+    opts?: SignalOptions
+  ): AsyncResult<Array<T>, E>
 }
 
-/** Run every thunk concurrently; select the first `Err` in INPUT order (defects reject immediately). */
+/**
+ * Run every thunk concurrently (each receives `opts.signal`); select the first `Err` in INPUT
+ * order. Defects reject immediately; an already-aborted signal is a defect (`Panic`).
+ */
 export const allAsync: AllAsync = /*#__PURE__*/ async <T, E>(
-  thunks: ReadonlyArray<() => AsyncResult<T, E>>
+  thunks: ReadonlyArray<(signal?: AbortSignal) => AsyncResult<T, E>>,
+  opts?: SignalOptions
 ): Promise<Result<Array<T>, E>> => {
+  if (opts?.signal?.aborted) throw new Panic(opts.signal.reason ?? "aborted")
   const settled = await Promise.all(
     thunks.map((thunk) =>
       Promise.resolve()
-        .then(thunk)
+        .then(() => thunk(opts?.signal))
         .catch((cause: unknown) => {
           throw new Panic(cause)
         })
@@ -137,7 +156,7 @@ export const allAsync: AllAsync = /*#__PURE__*/ async <T, E>(
 }
 
 export interface MapConcurrentOptions {
-  /** Maximum concurrently in-flight mapper invocations. Clamped to ≥ 1. */
+  /** Maximum concurrently in-flight mapper invocations; non-finite values fall back to 1. */
   readonly limit: number
   readonly signal?: AbortSignal
 }
@@ -145,7 +164,7 @@ export interface MapConcurrentOptions {
 export interface MapConcurrent {
   <T, U, E>(
     inputs: ReadonlyArray<T>,
-    mapper: (input: T, index: number) => AsyncResult<U, E>,
+    mapper: (input: T, index: number, signal?: AbortSignal) => AsyncResult<U, E>,
     opts: MapConcurrentOptions
   ): AsyncResult<Array<U>, E>
 }
@@ -153,23 +172,27 @@ export interface MapConcurrent {
 /**
  * Map `mapper` over `inputs` with at most `opts.limit` in flight; select the first `Err` in
  * INPUT order. Runs to completion (an early `Err` does not abort in-flight work) — documented
- * choice for v1; `opts.signal` aborting is a defect (`Panic(abort reason)`).
+ * choice for v1. `opts.signal` is forwarded to the mapper (3rd arg); aborting before a launch
+ * is a defect (`Panic(abort reason)`).
  */
-export const mapConcurrent: MapConcurrent = async <T, U, E>(
+export const mapConcurrent: MapConcurrent = /*#__PURE__*/ async <T, U, E>(
   inputs: ReadonlyArray<T>,
-  mapper: (input: T, index: number) => AsyncResult<U, E>,
+  mapper: (input: T, index: number, signal?: AbortSignal) => AsyncResult<U, E>,
   opts: MapConcurrentOptions
 ): Promise<Result<Array<U>, E>> => {
-  const limit = Math.max(1, Math.floor(opts.limit))
+  const floored = Math.floor(opts.limit)
+  const limit = Number.isFinite(floored) ? Math.max(1, floored) : 1
   const results: Array<Result<U, E>> = new Array(inputs.length)
   let next = 0
   const worker = async (): Promise<void> => {
     while (next < inputs.length) {
       if (opts.signal?.aborted) throw new Panic(opts.signal.reason ?? "aborted")
       const index = next++
-      results[index] = await Promise.resolve(mapper(inputs[index]!, index)).catch((cause: unknown) => {
-        throw new Panic(cause)
-      })
+      results[index] = await Promise.resolve(mapper(inputs[index]!, index, opts.signal)).catch(
+        (cause: unknown) => {
+          throw new Panic(cause)
+        }
+      )
     }
   }
   await Promise.all(Array.from({ length: Math.min(limit, inputs.length) }, worker))
@@ -197,24 +220,25 @@ export interface RetryOptions<E> {
 }
 
 export interface Retry {
-  <T, E>(fn: () => AsyncResult<T, E>, opts: RetryOptions<E>): AsyncResult<T, E>
+  <T, E>(fn: (signal?: AbortSignal) => AsyncResult<T, E>, opts: RetryOptions<E>): AsyncResult<T, E>
 }
 
 /**
  * Retry on `Err` VALUES only — a defect (`Panic`) propagates immediately, never retried.
- * `delay: "exponential"` = 250ms * 2^attempt. Abort semantics: see `RetryOptions.signal`.
+ * `opts.signal` is forwarded to `fn`; `delay: "exponential"` = 250ms * 2^attempt.
+ * Abort semantics: see `RetryOptions.signal`.
  */
-export const retry: Retry = async <T, E>(
-  fn: () => AsyncResult<T, E>,
+export const retry: Retry = /*#__PURE__*/ async <T, E>(
+  fn: (signal?: AbortSignal) => AsyncResult<T, E>,
   opts: RetryOptions<E>
 ): Promise<Result<T, E>> => {
-  // Defects (any rejection) are wrapped as Panic and NEVER retried: the wrapper below throws
-  // through the loop, out of `retry`.
+  // Defects (any rejection) are wrapped as Panic and NEVER retried; an existing Panic passes
+  // through untouched (no double-wrap). The wrapper throws through the loop, out of `retry`.
   const attempt = (): Promise<Result<T, E>> =>
     Promise.resolve()
-      .then(fn)
+      .then(() => fn(opts.signal))
       .catch((cause: unknown) => {
-        throw new Panic(cause)
+        throw cause instanceof Panic ? cause : new Panic(cause)
       })
   // Abort before anything settled: there is no last Err to return, so this is a defect.
   if (opts.signal?.aborted) throw new Panic(opts.signal.reason ?? "aborted")
@@ -238,31 +262,41 @@ export const retry: Retry = async <T, E>(
 
 const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
   new Promise((resolve, reject) => {
-    const timer = setTimeout(resolve, ms)
-    signal?.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timer)
-        reject(new Panic(signal.reason ?? "aborted"))
-      },
-      { once: true }
-    )
+    const onAbort = (): void => {
+      clearTimeout(timer)
+      reject(new Panic(signal?.reason ?? "aborted"))
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort)
+      resolve()
+    }, ms)
+    signal?.addEventListener("abort", onAbort, { once: true })
   })
 
+export interface TimeoutOptions {
+  readonly signal?: AbortSignal
+}
+
 export interface Timeout {
-  <T, E>(thunk: () => AsyncResult<T, E>, ms: number, signal?: AbortSignal): AsyncResult<T, E | TimeoutError>
+  <T, E>(
+    thunk: (signal?: AbortSignal) => AsyncResult<T, E>,
+    ms: number,
+    opts?: TimeoutOptions
+  ): AsyncResult<T, E | TimeoutError>
 }
 
 /**
  * Bound a thunk by `ms` via `AbortSignal.timeout`, composed with an optional user signal via
- * `AbortSignal.any`. Timing out yields `Err(Timeout({ ms }))`; a USER signal abort is a defect
- * (`Panic(abort reason)`); thunk defects propagate as `Panic`.
+ * `AbortSignal.any`. The COMBINED signal is forwarded into the thunk so underlying work can
+ * observe cancellation. Timing out yields `Err(Timeout({ ms }))`; a USER signal abort is a
+ * defect (`Panic(abort reason)`); thunk defects propagate as `Panic`.
  */
-export const timeout: Timeout = async <T, E>(
-  thunk: () => AsyncResult<T, E>,
+export const timeout: Timeout = /*#__PURE__*/ async <T, E>(
+  thunk: (signal?: AbortSignal) => AsyncResult<T, E>,
   ms: number,
-  signal?: AbortSignal
+  opts?: TimeoutOptions
 ): Promise<Result<T, E | TimeoutError>> => {
+  const signal = opts?.signal
   const timeoutSignal = AbortSignal.timeout(ms)
   const combined = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal
   let settled = false
@@ -277,7 +311,7 @@ export const timeout: Timeout = async <T, E>(
   })
   abortPromise.catch(() => {}) // never an unhandled rejection when the thunk wins the race
   try {
-    const result = await Promise.race([Promise.resolve(thunk()), abortPromise])
+    const result = await Promise.race([Promise.resolve(thunk(combined)), abortPromise])
     settled = true
     return result
   } catch (cause) {

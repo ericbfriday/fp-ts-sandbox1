@@ -121,15 +121,7 @@ export class Panic extends Error {
 /** Run a user callback; anything it throws is rethrown as `Panic` (an existing `Panic` passes through).
  * Shared with the `/async` subpath via `./internal.js` (not part of the public API). */
 
-/**
- * Dual dispatch on `arguments.length`: `body(self, arg)` when both are given,
- * otherwise return `(self) => body(self, arg)` for use in `pipe`.
- */
-
-// ---------------------------------------------------------------------------
-// §3 Boundary triage (sync half). Async triage (tryAsync + signal) lands with
-// the /async subpath; the options shape is shared by both.
-// ---------------------------------------------------------------------------
+/** Boundary triage (sync half; the async half lives in `./async.js`). */
 
 export interface TryOptions<E> {
   /** Map an unknown throw to a domain error, or return `undefined` to treat it as a defect (rethrow). */

@@ -94,6 +94,22 @@ describe("async-aware duals", () => {
     expect(seen).toEqual(["ok:1", "err:e"])
   })
 
+  it("outputs are plain data across helpers (JSON + structuredClone)", async () => {
+    fc.assert(
+      fc.asyncProperty(jsonValue, jsonValue, async (v, e) => {
+        roundTrips(await andThenAsync(Promise.resolve(ok(v)), async () => ok(e)))
+        roundTrips(
+          await allAsync([
+            async (): AsyncResult<unknown> => ok(v),
+            async (): AsyncResult<unknown> => ok(e)
+          ])
+        )
+        roundTrips(await mapConcurrent([v], async (x) => ok(x), { limit: 1 }))
+        roundTrips(await retry(async () => ok(v), { times: 2 }))
+      })
+    )
+  })
+
   it("accepts bare Results as inputs", async () => {
     expect(await mapAsync(ok(1), (n) => n * 2)).toEqual(ok(2))
   })
@@ -177,6 +193,32 @@ describe("mapConcurrent", () => {
       { limit: 3 }
     )
     expect(r).toEqual(err("one"))
+  })
+
+  it("forwards opts.signal to the mapper and abort-before-launch is a defect", async () => {
+    const controller = new AbortController()
+    const seen: Array<AbortSignal | undefined> = []
+    let panicked = false
+    const promise = mapConcurrent(
+      [1, 2, 3],
+      (n, _i, signal) => {
+        seen.push(signal)
+        if (n === 1) controller.abort() // abort while later launches are pending
+        return new Promise<Result<number, string>>((resolve) => setTimeout(() => resolve(ok(n)), 5))
+      },
+      { limit: 1, signal: controller.signal }
+    ).catch((e: unknown) => {
+      panicked = e instanceof Panic
+      return err("aborted") as Result<Array<number>, string>
+    })
+    await promise
+    expect(seen.every((s) => s === controller.signal)).toBe(true)
+    expect(panicked).toBe(true)
+  })
+
+  it("non-finite limit falls back to 1", async () => {
+    const r = await mapConcurrent([1, 2], async (n) => ok(n), { limit: Number.NaN })
+    expect(r).toEqual(ok([1, 2]))
   })
 
   it("mapper defects propagate as Panic", async () => {
@@ -265,6 +307,32 @@ describe("retry", () => {
     expect(calls).toBe(2)
   })
 
+  it("an existing Panic rejection passes through without double-wrapping", async () => {
+    const inner = new Panic("inner")
+    let caught: unknown
+    try {
+      await retry(async () => {
+        throw inner
+      }, { times: 3 })
+    } catch (e) {
+      caught = e
+    }
+    expect(caught).toBe(inner) // same instance: pass-through, not re-wrapped
+  })
+
+  it("forwards opts.signal to fn", async () => {
+    const controller = new AbortController()
+    let seen: AbortSignal | undefined
+    await retry(
+      async (signal?: AbortSignal) => {
+        seen = signal
+        return ok(1)
+      },
+      { times: 1, signal: controller.signal }
+    )
+    expect(seen).toBe(controller.signal)
+  })
+
   it("abort before any result throws Panic", async () => {
     const controller = new AbortController()
     controller.abort()
@@ -289,13 +357,29 @@ describe("timeout", () => {
 
   it("combines the user signal: user abort is a defect, not a Timeout", async () => {
     const controller = new AbortController()
-    const promise = timeout(
-      () => slowOk(200, 1),
-      5000,
-      controller.signal
-    )
+    const promise = timeout(() => slowOk(200, 1), 5000, { signal: controller.signal })
     controller.abort()
     await expect(promise).rejects.toThrow(Panic)
+  })
+
+  it("forwards the combined signal so underlying work can observe cancellation", async () => {
+    let sawAbort = false
+    const r = await timeout(
+      (signal?: AbortSignal) =>
+        new Promise<Result<number>>((resolve) => {
+          signal?.addEventListener(
+            "abort",
+            () => {
+              sawAbort = true
+              resolve(ok(0))
+            },
+            { once: true }
+          )
+        }),
+      20
+    )
+    expect(r).toEqual(err(Timeout({ ms: 20 })))
+    expect(sawAbort).toBe(true) // the work actually observed cancellation, not just the race
   })
 
   it("thunk defects propagate as Panic", async () => {
