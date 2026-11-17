@@ -23,17 +23,24 @@ export interface ToQueryFn {
    * `Ok(undefined)` -> resolves `null` (undefined counts as a failed query);
    * the context signal is forwarded to the fetcher.
    */
-  <T, E>(fn: (signal: AbortSignal) => Promise<Result<T, E>>): (ctx: QueryContext) => Promise<T extends undefined ? null : T>
+  <T, E>(
+    fn: (signal: AbortSignal) => Promise<Result<T, E>>
+  ): (ctx: QueryContext) => Promise<T extends undefined ? null : T>
 }
 
+// The concrete implementation cannot satisfy the conditional-return signature generically
+// (TS 7.1-beta rejects `Promise<T extends undefined ? null : T>` against `Promise<T>` where
+// 7.0/6.0 accepted it) — same idiom as `All`'s documented assertion.
+// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- deliberate concrete-impl idiom, see comment above
 export const toQueryFn: ToQueryFn =
-  <T, E>(fn: (signal: AbortSignal) => Promise<Result<T, E>>) =>
-  async (ctx: QueryContext): Promise<T extends undefined ? null : T> => {
+  /*#__PURE__*/ ((fn: (signal: AbortSignal) => Promise<Result<unknown, unknown>>) =>
+  async (ctx: QueryContext): Promise<unknown> => {
     const r = await fn(ctx.signal)
     if (!r.ok) throw r.error
     // Ok(undefined) is TanStack's "failed query" sentinel — normalize to null.
-    return (r.value === undefined ? null : r.value) as T extends undefined ? null : T
-  }
+    return r.value === undefined ? null : r.value
+  }) as ToQueryFn
+// (the assertion is the deliberate concrete-impl idiom; see comment above)
 
 export interface RetryUnless {
   /**
@@ -44,8 +51,9 @@ export interface RetryUnless {
   <E>(stop: (e: E) => boolean, max?: number): (failureCount: number, error: E) => boolean
 }
 
-export const retryUnless: RetryUnless = <E>(stop: (e: E) => boolean, max = 3) =>
-  (failureCount: number, error: E): boolean => !stop(error) && failureCount < max
+export const retryUnless: RetryUnless =
+  <E>(stop: (e: E) => boolean, max = 3) => (failureCount: number, error: E): boolean =>
+    !stop(error) && failureCount < max
 
 export interface ResultQueryOptionsInput<T, E> {
   /** TanStack query key. */

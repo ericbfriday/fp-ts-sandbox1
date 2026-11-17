@@ -2,9 +2,9 @@
  * `@friday-friday/query` runtime tests, including a REAL query run through query-core's
  * QueryClient (proving `query.error` becomes exactly the tagged error and retry works).
  */
+import { err, ok, type Result, taggedError } from "@friday-friday/core"
+import { resultQueryOptions, retryUnless, toQueryFn } from "@friday-friday/query"
 import { QueryClient, type QueryKey } from "@tanstack/query-core"
-import { err, ok, taggedError, type Result } from "@friday-friday/core"
-import { retryUnless, resultQueryOptions, toQueryFn } from "@friday-friday/query"
 import { describe, expect, it } from "vitest"
 
 const NotFound = taggedError("NotFound")<{ id: string }>()
@@ -38,28 +38,30 @@ describe("toQueryFn", () => {
   it("forwards the context signal to the fetcher", async () => {
     const controller = new AbortController()
     let seen: AbortSignal | undefined
-    const qf = toQueryFn<number, never>((sig) => { seen = sig; return Promise.resolve(ok(1)) })
+    const qf = toQueryFn<number, never>((sig) => {
+      seen = sig
+      return Promise.resolve(ok(1))
+    })
     await qf({ signal: controller.signal })
     expect(seen).toBe(controller.signal)
   })
 })
 
 describe("retryUnless", () => {
-  const isNotFound = (e: NotFoundT): boolean => e._tag === "NotFound"
+  const isNotFound = (e: string): boolean => e === "not-found"
 
   it("retries while the error is not excluded and budget remains", () => {
-    const retry = retryUnless<NotFoundT>(isNotFound, 3)
-    expect(retry(0, NotFound({ id: "1" }))).toBe(false) // excluded -> stop
-    const Other = taggedError("Other")<{}>
-    expect(retry(0, { _tag: "Other" } as never)).toBe(true)
-    expect(retry(2, { _tag: "Other" } as never)).toBe(true)
-    expect(retry(3, { _tag: "Other" } as never)).toBe(false) // budget exhausted
+    const retry = retryUnless<string>(isNotFound, 3)
+    expect(retry(0, "not-found")).toBe(false) // excluded -> stop
+    expect(retry(0, "boom")).toBe(true)
+    expect(retry(2, "boom")).toBe(true)
+    expect(retry(3, "boom")).toBe(false) // budget exhausted
   })
 
   it("default max is 3", () => {
-    const retry = retryUnless<never>(() => false)
-    expect(retry(2, "e" as never)).toBe(true)
-    expect(retry(3, "e" as never)).toBe(false)
+    const retry = retryUnless<string>(() => false)
+    expect(retry(2, "e")).toBe(true)
+    expect(retry(3, "e")).toBe(false)
   })
 })
 
