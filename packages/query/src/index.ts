@@ -34,8 +34,8 @@ export interface ToQueryFn {
 // The concrete implementation cannot satisfy the conditional-return signature generically
 // (TS 7.1-beta rejects `Promise<T extends undefined ? null : T>` against `Promise<T>` where
 // 7.0/6.0 accepted it) — same idiom as `All`'s documented assertion.
-// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- deliberate concrete-impl idiom, see comment above
 export const toQueryFn: ToQueryFn =
+  // oxlint-disable-next-line no-unsafe-type-assertion -- deliberate concrete-impl idiom
   /*#__PURE__*/ ((fn: (signal: AbortSignal) => Promise<Result<unknown, unknown>>) =>
   async (ctx: QueryContext): Promise<unknown> => {
     const r = await fn(ctx.signal)
@@ -43,7 +43,7 @@ export const toQueryFn: ToQueryFn =
     // Ok(undefined) is TanStack's "failed query" sentinel — normalize to null.
     return r.value === undefined ? null : r.value
   }) as ToQueryFn
-// (the assertion is the deliberate concrete-impl idiom; see comment above)
+// (the assertion above is the deliberate concrete-impl idiom; see comment above)
 
 export interface RetryUnless {
   /**
@@ -79,7 +79,7 @@ export interface ResultQueryOptions<T, E> {
  * object is spread-compatible with TanStack's `useQuery` / `queryOptions` helpers.
  */
 export function resultQueryOptions<T, E>(o: ResultQueryOptionsInput<T, E>): ResultQueryOptions<T, E> {
-  const queryFn = (ctx: QueryContext): Promise<T extends undefined ? null : T> => toQueryFn(o.queryFn)(ctx)
+  const queryFn = (ctx: QueryContext): Promise<QueryFnReturn<T>> => toQueryFn(o.queryFn)(ctx)
   if (o.retry === undefined) {
     return { queryKey: o.queryKey, queryFn }
   }
