@@ -3,7 +3,19 @@
  * without any vendor import in the runtime surface.
  */
 import type { Result } from "@friday-friday/core"
-import { type Brand, type brand, branded, parse, parseAsync, type ValidationFailure } from "@friday-friday/schema"
+import {
+  type Brand,
+  type brand,
+  branded,
+  parse,
+  parseAsync,
+  type StandardSchemaV1,
+  toFieldErrors,
+  toFormErrors,
+  toValidationFailure,
+  type ValidationFailure,
+  type ValidationIssue
+} from "@friday-friday/schema"
 import { type } from "arktype"
 import * as v from "valibot"
 import { describe, expectTypeOf, test } from "vitest"
@@ -44,5 +56,23 @@ describe("schema types", () => {
       readonly message: string
       readonly path: ReadonlyArray<string | number>
     }>()
+  })
+
+  test("toValidationFailure: Standard Schema issues in, ValidationFailure out", () => {
+    expectTypeOf(toValidationFailure).parameter(0).toEqualTypeOf<ReadonlyArray<StandardSchemaV1.Issue>>()
+    expectTypeOf(toValidationFailure).returns.toEqualTypeOf<ValidationFailure>()
+    expectTypeOf<ValidationFailure["issues"][number]>().toEqualTypeOf<ValidationIssue>()
+  })
+
+  test("readers accept a ValidationFailure and a wire-rebuilt failure without paths", () => {
+    expectTypeOf(toFieldErrors).toBeCallableWith(toValidationFailure([]))
+    expectTypeOf(toFormErrors).toBeCallableWith({ issues: [{ message: "root" }] })
+  })
+
+  test("brand is a type-only export", () => {
+    // @ts-expect-error -- `brand` has no runtime binding; it is usable in type positions only
+    const key = brand
+    expectTypeOf<Brand<string, "X">>().toExtend<{ readonly [brand]: "X" }>()
+    return key
   })
 })

@@ -26,11 +26,15 @@ import type { StandardJSONSchemaV1, StandardSchemaV1 } from "@standard-schema/sp
 // (types-only vendor deps are allowed; see IDEA.md section 9).
 export type { StandardJSONSchemaV1, StandardSchemaV1 }
 
+/** One projected issue: the ONLY fields that ever cross a boundary (RFC-0001 §5.3). */
+export interface ValidationIssue {
+  readonly message: string
+  /** Property-key path; root-level issues have `[]` (never `undefined`). */
+  readonly path: ReadonlyArray<string | number>
+}
+
 export interface ValidationFailure extends TaggedError<"ValidationFailure"> {
-  readonly issues: ReadonlyArray<{
-    readonly message: string
-    readonly path: ReadonlyArray<string | number>
-  }>
+  readonly issues: ReadonlyArray<ValidationIssue>
 }
 
 export const ValidationFailure: ErrorFactory<
@@ -57,50 +61,102 @@ const normalizePath = (path: NonNullable<StandardSchemaV1.Issue["path"]>): Reado
     return typeof key === "symbol" ? "[symbol]" : key
   })
 
-const toFailure = (issues: ReadonlyArray<StandardSchemaV1.Issue>): ValidationFailure =>
-  ValidationFailure({
+/**
+ * The issue projection: the single producer of `ValidationFailure` (`parse`/`parseAsync` use it,
+ * and adapters such as hono `sv` and the tRPC `errorFormatter` call it instead of re-declaring
+ * the shape — Design Report §5.3 "format from Standard Schema issues", §5.7).
+ *
+ * Contract:
+ * - input: Standard Schema V1 issues (`~standard.validate(...).issues`), from any vendor;
+ * - output: a `ValidationFailure` whose issues are NEW objects with exactly `{ message, path }`;
+ *   vendor extras (`input`, `expected`, `received`, `kind`, path-segment `input`/`value`, …)
+ *   are dropped, so the submitted input never rides along to a client;
+ * - `path` is normalised to property keys (`{ key }` segments unwrapped, symbols noted as
+ *   `"[symbol]"`); a missing path is the root, `[]`;
+ * - no `cause` (RFC-0001 §2); pure, never throws for spec-shaped issues.
+ *
+ * The vendor-authored `message` is kept verbatim (some vendors' default messages quote the
+ * received value — choose messages accordingly for secret fields).
+ */
+export function toValidationFailure(issues: ReadonlyArray<StandardSchemaV1.Issue>): ValidationFailure {
+  return ValidationFailure({
     issues: issues.map((issue) => ({
       message: issue.message,
-      path: issue.path === undefined ? [] : normalizePath(issue.path)
+      path: Array.isArray(issue.path) ? normalizePath(issue.path) : []
     }))
   })
+}
 
 const toResult = <S extends StandardSchemaV1>(
   result: StandardSchemaV1.Result<StandardSchemaV1.InferOutput<S>>
 ): Result<StandardSchemaV1.InferOutput<S>, ValidationFailure> =>
-  result.issues === undefined ? ok(result.value) : err(toFailure(result.issues))
+  result.issues === undefined ? ok(result.value) : err(toValidationFailure(result.issues))
+
+// A vendor `validate` that throws is a defect (IDEA §4.3, RFC-0001 §3): rethrown as `Panic` with
+// the original as `cause`; an existing Panic passes through. Local until core exposes its one
+// idempotent "to Panic" conversion (#30 solution item 3).
+const toPanic = (cause: unknown): Panic => (cause instanceof Panic ? cause : new Panic(cause))
+
+const orPanic = <T>(thunk: () => T): T => {
+  try {
+    return thunk()
+  } catch (cause) {
+    throw toPanic(cause)
+  }
+}
 
 /**
  * Synchronous parse. Throws `Panic` if the schema validates asynchronously — use `parseAsync`
- * (the spec's `~standard.validate` returns a Promise for async vendors).
+ * (the spec's `~standard.validate` returns a Promise for async vendors) — or if the vendor's
+ * `validate` itself throws (a defect, `cause` = the original throw).
  */
 export function parse<S extends StandardSchemaV1>(
   schema: S,
   input: unknown
 ): Result<StandardSchemaV1.InferOutput<S>, ValidationFailure> {
-  const result = schema["~standard"].validate(input)
+  const result = orPanic(() => schema["~standard"].validate(input))
   if (result instanceof Promise) {
     throw new Panic("parse() received an async-validating schema; use parseAsync()")
   }
   return toResult(result)
 }
 
-/** Async parse: awaits the validation result (works for sync and async vendors alike). */
-export function parseAsync<S extends StandardSchemaV1>(
+/**
+ * Async parse: awaits the validation result (works for sync and async vendors alike).
+ * Never throws synchronously: a vendor `validate` that throws or rejects is a defect, so the
+ * returned promise REJECTS with `Panic` (`cause` = the original); invalid input is `Err`.
+ */
+export async function parseAsync<S extends StandardSchemaV1>(
   schema: S,
   input: unknown
 ): AsyncResult<StandardSchemaV1.InferOutput<S>, ValidationFailure> {
-  return Promise.resolve(schema["~standard"].validate(input)).then(toResult)
+  try {
+    return toResult(await schema["~standard"].validate(input))
+  } catch (cause) {
+    throw toPanic(cause)
+  }
+}
+
+/**
+ * What the readers accept: a `ValidationFailure`, or one rebuilt from the wire whose issues may
+ * lack `path` (e.g. a JSON round-trip of a producer that omitted root paths). A missing or
+ * non-array path is read as the root.
+ */
+export interface ValidationFailureLike {
+  readonly issues: ReadonlyArray<{
+    readonly message: string
+    readonly path?: ReadonlyArray<string | number> | null | undefined
+  }>
 }
 
 /**
  * Group failure issues into per-field message lists, keyed by the "."-joined path
- * (root-level issues — empty path — are keyed `"_errors"`).
+ * (root-level issues — empty or missing path — are keyed `"_errors"`).
  */
-export function toFieldErrors(failure: ValidationFailure): Record<string, Array<string>> {
+export function toFieldErrors(failure: ValidationFailureLike): Record<string, Array<string>> {
   const out: Record<string, Array<string>> = {}
   for (const issue of failure.issues) {
-    const key = issue.path.length === 0 ? "_errors" : issue.path.join(".")
+    const key = Array.isArray(issue.path) && issue.path.length > 0 ? issue.path.join(".") : "_errors"
     const bucket = out[key]
     if (bucket === undefined) out[key] = [issue.message]
     else bucket.push(issue.message)
@@ -109,27 +165,24 @@ export function toFieldErrors(failure: ValidationFailure): Record<string, Array<
 }
 
 /**
- * Form-shaped view of a failure: root-level messages under `"_errors"`, field messages under
- * their "."-joined path keys. Matches the `zod.flatten()`-style shape forms expect from
- * `setErrorMap`-style consumers.
+ * Form-shaped view of a failure: `toFieldErrors` with the `"_errors"` (root) bucket always
+ * present. Matches the `zod.flatten()`-style shape forms expect from `setErrorMap`-style consumers.
  */
-export function toFormErrors(failure: ValidationFailure): Record<string, Array<string>> {
-  const out: Record<string, Array<string>> = { _errors: [] }
-  for (const issue of failure.issues) {
-    const key = issue.path.length === 0 ? "_errors" : issue.path.join(".")
-    const bucket = out[key]
-    if (bucket === undefined) out[key] = [issue.message]
-    else bucket.push(issue.message)
-  }
-  return out
+export function toFormErrors(failure: ValidationFailureLike): Record<string, Array<string>> {
+  return { _errors: [], ...toFieldErrors(failure) }
 }
 
 // ---------------------------------------------------------------------------
 // Brands (RFC-0001 §5.7 / Design Report §3.6 — phantom type, zero runtime cost)
 // ---------------------------------------------------------------------------
 
-/** Phantom brand key: type-level only, never present at runtime. */
-export declare const brand: unique symbol
+/**
+ * Phantom brand key: type-level only, never present at runtime. Exported TYPE-ONLY
+ * (`import { type brand }`): a value export of a `declare const` type-checks but fails at
+ * runtime with a SyntaxError, because no such binding exists in the emitted JS (#32).
+ */
+declare const brand: unique symbol
+export type { brand }
 
 export type Brand<T, B extends string> = T & { readonly [brand]: B }
 
