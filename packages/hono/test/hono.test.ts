@@ -11,7 +11,6 @@
  */
 import { err, ok, taggedError } from "@friday-friday/core"
 import { onErrorHandler, problem, respond, sv } from "@friday-friday/hono"
-import { reconstruct } from "@friday-friday/http"
 import { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { describe, expect, it } from "vitest"
@@ -20,6 +19,16 @@ import { z } from "zod"
 const NotFound = taggedError("NotFound")<{ id: string }>()
 const Forbidden = taggedError("Forbidden")<{ required: string }>()
 const Teapot = taggedError("Teapot")()
+
+// Fixture replica of @friday-friday/http reconstruct() (adapters never import each other,
+// IDEA 5 / DEVELOPER.md boundary rules; http PR #20 set the fixture precedent). The
+// round-trip contract with the REAL client-side reconstruct is covered in packages/http.
+const reconstructFixture = (body: Record<string, unknown>): Record<string, unknown> | null => {
+  if (typeof body["tag"] !== "string") return null
+  const safe: Record<string, unknown> = { ...body }
+  for (const k of ["type", "title", "status", "detail", "tag"]) delete safe[k]
+  return { _tag: body["tag"], ...safe }
+}
 
 // -- sv validator FIRST (before any respond() instantiations poison this file) --
 const itemsValidator = sv<"json", z.ZodObject<{ name: z.ZodString }>>("json", z.object({ name: z.string().min(2) }))
@@ -88,7 +97,7 @@ describe("respond + problem", () => {
     // oxlint-disable-next-line no-unsafe-type-assertion -- wire body probe; asserted field-by-field below
     const body = (await res.json()) as Record<string, unknown>
     // oxlint-disable-next-line no-unsafe-type-assertion -- wire body probe; Problem shape verified above
-    expect(reconstruct(body as never)).toEqual(NotFound({ id: "missing" }))
+    expect(reconstructFixture(body)).toEqual(NotFound({ id: "missing" }))
   })
 })
 

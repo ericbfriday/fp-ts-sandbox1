@@ -40,6 +40,20 @@ describe("respond status-literal inference", () => {
     expectTypeOf(res.status).toEqualTypeOf<200 | 403 | 404 | 418>()
     expectTypeOf(res.status).not.toEqualTypeOf<number>()
   })
+
+  it("await res.json() narrows per status (report 5.2 client contract)", async () => {
+    // oxlint-disable-next-line no-unsafe-type-assertion -- hc(client) requires a concrete fetch impl; type tests only need the AppType
+    const client = hc<typeof usersApp>("http://localhost")
+    const res = await client.users[":id"].$get({ param: { id: "1" } })
+    if (res.status === 200) {
+      const body = await res.json()
+      expectTypeOf(body).toEqualTypeOf<{ id: string; name: string }>()
+    } else {
+      const problem = await res.json()
+      expectTypeOf(problem.tag).toEqualTypeOf<string>()
+      expectTypeOf(problem.status).toEqualTypeOf<number>()
+    }
+  })
 })
 
 describe("sv inference", () => {

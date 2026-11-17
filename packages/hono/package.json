@@ -27,7 +27,6 @@
     "hono": "^4.13.18 || ^5"
   },
   "devDependencies": {
-    "@friday-friday/http": "workspace:*",
     "hono": "4.13.18",
     "zod": "^4.6.7"
   },

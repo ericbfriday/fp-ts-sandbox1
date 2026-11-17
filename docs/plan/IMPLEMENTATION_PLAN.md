@@ -40,7 +40,7 @@ Everything consciously postponed or accepted, with where it lives. Nothing else 
 | Item | Where documented | When it lands |
 |---|---|---|
 | `examples/next-app` (issue #9, open) | Phase 1 step 6 notes (above) | Next session / CC after quota reset |
-| Type-instantiation budget fixtures (`tsc --extendedDiagnostics`) | ADR-0004 | Phase 3 (hono/trpc TS2589 fixtures) |
+| Type-instantiation budget fixtures (`tsc --extendedDiagnostics`) | ADR-0004 | Phase 3 close — REQUIRED before the phase lands (raised in hono review); budget = fail CI on >20% instantiation regression, one fixture per server adapter |
 | `no-instanceof-tagged-error`: MemberExpression RHS (e.g. `Errors.NotFound`) unflagged | PR #16 review (spec note) | v1 accepted; revisit on demand |
 | `toResponse` problem `title` = raw `_tag`, not a human title | PR #15 review (judgement) | v1 accepted; RFC §6 errata candidate |
 | Problem-body props are denylist (all JSON-safe minus `_tag`/`message`/`cause`), not RFC allowlist wording | PR #15 review (judgement) | Operative rule (cause + non-JSON-safe dropped) met and tested |
@@ -92,7 +92,8 @@ Exit criteria (from report §9): size budgets green, TS 6/7/7.1 matrix green, `e
 `toQueryFn` (throw E, `Ok(undefined)`→null, signal), `resultQueryOptions`, `retryUnless`; `authCall/fromAuthTuple/requireSession/requireRole/beforeDbHook` via `isAPIError`; `fetchResult` with schema decode + problem+json reconstruction; `traced` span helpers.
 
 ### Phase 3 — Servers: `hono`, `trpc`
-`respond` (status-literal unions), `problem` (RFC 9457 per RFC-0001 §6), `sv`, `onErrorHandler` (test HTTPException header loss — report marks it U); tRPC dual channel + Standard-Schema-based `errorFormatter` + `fromTRPC`. TS2589 budget fixtures.
+- **`@friday-friday/hono`** 🔄 (PR #22, open, CI 6/6; respond + StatusMap literal statuses with hc inference proven in type tests incl. per-status res.json() narrowing, RFC 9457 problem() with reconstruct round-trip via in-repo fixture — adapters never import each other, sv on hono validator + ~standard: report's sValidator does not exist in any hono version (verified 4.13.18/19 + 5.0.0-rc.1), onErrorHandler with HTTPException header passthrough (report's U claim exercised); TS2589 guidance reproduced live in tests; peer `^4.13.18 || ^5` documented — 4.13.19 blocked by pnpm's CI-enforced supply-chain minimumReleaseAge, 5.0.0-rc onError changes NOT covered (needs an rc fixture before range extension); 929 B)
+- `trpc` dual channel + Standard-Schema-based `errorFormatter` + `fromTRPC`. TS2589 budget fixtures.
 
 ### Phase 4 — `tanstack-start` (last; churn risk)
 `resultServerFn` (validate inside handler; #6428 workaround), loader sentinels, Form mappers (structural checks only), Store `useSelector` only. Re-check #6428 before starting; drop workaround if fixed.
