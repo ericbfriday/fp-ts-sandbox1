@@ -25,11 +25,11 @@ const config: ViteUserConfig = defineConfig({
     }
   },
   test: {
-    include: ["{packages,tooling,examples}/*/test/**/*.test.ts"],
+    include: ["{packages,tooling,examples}/*/test/**/*.test.ts", "tooling/codemods/test/**/*.test.ts"],
     typecheck: {
       enabled: true,
       checker: "tsc",
-      include: ["{packages,tooling,examples}/*/test/**/*.test-d.ts"],
+      include: ["{packages,tooling,examples}/*/test/**/*.test-d.ts", "tooling/codemods/test/**/*.test-d.ts"],
       tsconfig: "./tsconfig.json"
     }
   }
