@@ -104,6 +104,8 @@ Exit criteria (from report §9): size budgets green, TS 6/7/7.1 matrix green, `e
 `resultServerFn` (validate inside handler; #6428 workaround), loader sentinels, Form mappers (structural checks only), Store `useSelector` only. Re-check #6428 before starting; drop workaround if fixed.
 
 ### Phase 5 — Extras: `effect`, `db`, `env`, codemods, oRPC recipe, `llms.txt` + per-package SKILL.md/AGENTS docs
+- **`@friday-friday/db`** ✅ (PR #27, merged; mapPgError/mapPrismaError/mapDbError — structural code reads, zero vendor imports; Prisma P-codes kept as U per report caveat; 631 B)
+- **`@friday-friday/env`** ✅ (PR #27, merged; parseEnv(schema, env?) over process.env/import.meta.env/fixtures — Err(ValidationFailure), no throw at import time; @t3-oss/env interop documented; 638 B)
 
 ## Guardrails (all phases)
 
