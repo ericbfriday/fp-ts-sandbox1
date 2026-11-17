@@ -89,9 +89,14 @@ Exit criteria (from report §9): size budgets green, TS 6/7/7.1 matrix green, `e
 - **`@friday-friday/query`** ✅ (PR #18, merged; toQueryFn throws plain tagged E (query.error === E), Ok(undefined) → null, retryUnless + resultQueryOptions; REAL QueryClient.fetchQuery integration tests prove error identity + retry counts; TS 7.1-beta conditional-type quirk worked around via shared QueryFnReturn alias)
 - **`@friday-friday/better-auth`** ✅ (PR #19, merged; authCall/fromAuthTuple/requireSession/requireRole/beforeDbHook; one AuthError vocabulary Unauthenticated|Forbidden|AuthApiError{status,code}; structural isAPIError (NOT instanceof — duplicate better-call copies); defects rethrow as Panic via core tryAsync triage; beforeDbHook emits the VENDORED contract false|{data}|void (runner checks === false and 'data' in result only — no abort field; verified in better-auth 1.7.25 sources); 970 B vs 2 kB)
 - **`@friday-friday/http`** ✅ (PR #20, merged; fetchResult{schema,signal,timeoutMs,retries} with Err channels HttpError{status,problem?}|NetworkError|Timeout|ValidationFailure; RFC 9457 problem+json parsed, `tag` extension + reconstruct() proved lossless in tests against next toResponse's exact shape; retries cover transport only, never status failures; 1.05 kB vs 2 kB)
+- **`@friday-friday/otel`** ✅ (PR #21, merged; traced/tracedSync: Err -> span ERROR + fl.error.tag attr WITHOUT recordException (expected-vs-bug separation), defects recorded as exceptions and rethrown; span always ends; no-op-safe without an SDK; 450 B vs 2 kB)
+
+**Phase 2 complete.**
 `toQueryFn` (throw E, `Ok(undefined)`→null, signal), `resultQueryOptions`, `retryUnless`; `authCall/fromAuthTuple/requireSession/requireRole/beforeDbHook` via `isAPIError`; `fetchResult` with schema decode + problem+json reconstruction; `traced` span helpers.
 
 ### Phase 3 — Servers: `hono`, `trpc`
+- **`@friday-friday/hono`** 🔄 (PR #22, open, CI 6/6; respond + StatusMap literal statuses with hc inference proven in type tests, RFC 9457 problem() with lossless tag reconstruction, sv on hono validator + ~standard — report's sValidator does not exist in any hono version (verified 4.13.18/19 + 5.0.0-rc.1), onErrorHandler with HTTPException header passthrough (report's U claim exercised); TS2589 guidance reproduced live in tests; 929 B)
+- **`@friday-friday/trpc`** 🔄 (PR #23, open, CI 6/6; dual channel: resultMiddleware Err -> TRPCError with mapped code + cause, errorFormatter data.fl = sanitize(e) or ~standard issues (structural, no instanceof ZodError), resultProcedure data-channel opt-in, fromTRPC lossless reconstruction; 7 tests on a REAL router via the fetch adapter + httpBatchLink; 850 B)
 `respond` (status-literal unions), `problem` (RFC 9457 per RFC-0001 §6), `sv`, `onErrorHandler` (test HTTPException header loss — report marks it U); tRPC dual channel + Standard-Schema-based `errorFormatter` + `fromTRPC`. TS2589 budget fixtures.
 
 ### Phase 4 — `tanstack-start` (last; churn risk)
