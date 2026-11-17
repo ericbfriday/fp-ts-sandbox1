@@ -1,6 +1,9 @@
 # IDEA.md — Functional-Light TypeScript Suite (fp-ts-sandbox1)
 
 > Project brief for the Hermes client. Read this first, then read `AGENTS.md` for repo conventions once it exists.
+
+> **LIVING STATUS (16 Nov 2026, evening):** Phase 1 (MVP) is 5/6 complete — `core` (+/async, /gen), `schema`, `next` and the lint rules are implemented, reviewed and merged to main (issues #2–#8 closed via PRs #10–#16). The one open item is `examples/next-app` (#9). The authoritative working plan — including the verified version/issue evidence table, the deferred-and-accepted-limitations register, and implementation notes for #9 — is **`docs/plan/IMPLEMENTATION_PLAN.md`**; it supersedes the open questions in §10 below (all now resolved in `docs/adr/` and the plan). `AGENTS.md` now exists with repo conventions.
+
 > Status date: **16 Nov 2026**. Version facts below are moving targets; re-verify before pinning peer ranges.
 
 ## 1. The idea in one paragraph

@@ -21,23 +21,48 @@ Sources of truth: `IDEA.md` (brief, §4 locked decisions) · `docs/spec/rfc-0001
 
 Claude Code 2.1.317, Claude Pro subscription; model aliases `fable` / `opus` / `sonnet` all verified working. No tmux on this host → print-mode (`-p`) orchestration only.
 
-## Delegation model
+## Delegation model (as actually practiced)
 
-| Workload | Model | How |
+| Workload | Executor | Notes |
 |---|---|---|
-| API-surface design, tricky dual typing, core combinators | `fable` (fallback `opus`) | CC `-p` on a feature branch |
-| Package implementation, TDD slices | `opus` | CC `-p`, `--permission-mode acceptEdits` + explicit `--allowedTools` |
-| Mechanical/well-specified (schema, http, env, CI yaml, docs, codemods) | `sonnet` | CC `-p` |
-| Review, wire-level verification, merge to main | Hermes | code-review skill + `pnpm` gates + gh |
+| Implementation slices (core, /async, /gen, schema, next, lint rules) | **Hermes directly** | Claude Code hit the Pro subscription 5-hour wall repeatedly (resets every 5h); Hermes executed against the same gates |
+| Two-axis review (standards + spec) | Hermes subagents | Every PR; caught real gaps each time (see PR review comments) |
+| CI + merge to main | Hermes | 6/6 checks per PR; merge only after review findings resolved |
 
-Rules: children read repo docs (IDEA.md, RFC, ADRs) — prompts stay lean; each slice = one feature branch → PR → CI → Hermes review → merge to main; no npm publishing, ever, without Eric.
+Claude Code remains available for future slices when quota allows (verified: 2.1.317 on the Pro subscription, `fable`/`opus`/`sonnet` aliases work, print-mode `-p` orchestration, no tmux on this host).
+
+Rules: children read repo docs (IDEA.md, RFC, ADRs) — prompts stay lean; each slice = one feature branch → PR → CI → two-axis review → merge to main; no npm publishing, ever, without Eric.
+
+## Deferred & accepted limitations (authoritative register)
+
+Everything consciously postponed or accepted, with where it lives. Nothing else is silently deferred.
+
+| Item | Where documented | When it lands |
+|---|---|---|
+| `examples/next-app` (issue #9, open) | Phase 1 step 6 notes (above) | Next session / CC after quota reset |
+| Type-instantiation budget fixtures (`tsc --extendedDiagnostics`) | ADR-0004 | Phase 3 (hono/trpc TS2589 fixtures) |
+| `no-instanceof-tagged-error`: MemberExpression RHS (e.g. `Errors.NotFound`) unflagged | PR #16 review (spec note) | v1 accepted; revisit on demand |
+| `toResponse` problem `title` = raw `_tag`, not a human title | PR #15 review (judgement) | v1 accepted; RFC §6 errata candidate |
+| Problem-body props are denylist (all JSON-safe minus `_tag`/`message`/`cause`), not RFC allowlist wording | PR #15 review (judgement) | Operative rule (cause + non-JSON-safe dropped) met and tested |
+| `mapConcurrent` runs to completion on early `Err` (no in-flight abort) | async.ts doc | v1 choice |
+| `retry` abort mid-retry returns the LAST Err (or Panic if nothing settled) | async.ts module doc | Deliberate choice |
+| Pure `/async` duals take no `{ signal }` (closure-bound instead) | RFC-0001 §4 errata + decisions note | Errata accepted |
+| Multi-step `gen` bodies need a generator return-type annotation (TS 7.0.2 Y-widening) | gen.ts header + gen.test-d.ts | Re-check at TS 7.1 stable (24 Nov 2026) |
+| TS 7.0.2 root-tsc matchTag order-dependence; const type-param union mangling in `all()` | core src comments + issue #3 | Re-check at TS 7.1 stable |
+| `@friday-friday/next`: no plain-Node dist smoke (next@16.4.6 empty exports map) | ADR-0004 + PR #15 | Runtime covered by vitest + examples/next-app (#9) |
+| next adapter `tryAsync` takes no `{ signal }` (matches report §5.1 snippet exactly) | PR #15 review (judgement) | Core tryAsync remains the signal-capable path |
+| `orForbidden` has no dedicated runtime test (forbidden() is mocked; loader AC is existence) | PR #15 review (judgement) | Fold into a future next-adapter PR |
+| Phase 5 extras: `effect`, `db`, `env`, codemods, oRPC recipe, `llms.txt` + per-package SKILL.md | Phase 5 (below) | After MVP exit criteria |
+| Examples runtime matrix (Bun/Deno/wrangler) | ADR-0004 | Later-phase CI job |
+| Releases/Changesets/npm publish | ADR-0001 | Deferred until 0.x packages run a quarter in Eric's apps |
+| `AGENTS.md` repo guide (content drafted; write BLOCKED — protected file, approval prompt timed out twice) | awaiting Eric’s approval in the Hermes UI | One approved write completes it; meanwhile conventions live in this plan + README |
 
 ## Phases
 
-### Phase 0 — Spec & decisions ✅ (this commit)
+### Phase 0 — Spec & decisions ✅ (PR #10)
 - [x] ADR-0001 pnpm workspaces (no Nx in sandbox)
-- [x] ADR-0002 tsdown ESM-only (verification gate in Phase-1 scaffold)
-- [x] ADR-0003 linter strategy (POC pending — Oxlint base + local ESLint plugin for 3 custom rules)
+- [x] ADR-0002 tsdown ESM-only (verification gate PASSED in Phase-1 scaffold)
+- [x] ADR-0003 linter strategy — Accepted with POC evidence (see below)
 - [x] ADR-0004 Vitest + fast-check + size-limit + TS matrix + Actions CI
 - [x] RFC-0001 core spec (Result shape, error taxonomy, wire envelope, RFC 9457 mapping)
 - [x] Version/issue verification table (above)
@@ -47,11 +72,12 @@ Rules: children read repo docs (IDEA.md, RFC, ADRs) — prompts stay lean; each 
 Exit criteria (from report §9): size budgets green, TS 6/7/7.1 matrix green, `examples/next-app` runs one feature on Result, redirects survive try/catch.
 
 1. **Scaffold** ✅ (PR #10, issue #2 closed; CI 6/6 green; tsdown gate PASSED; tsconfig.base strict+isolatedDeclarations+erasableSyntaxOnly; Vitest/--typecheck + fast-check + size-limit wired; `.size-limit.json` 600 B/3 kB; typecheck matrix TS 6.0/7.0/7.1-beta in CI).
-2. **`@friday-friday/core`** ✅ (PR #11, issue #3 closed; sync surface per RFC-0001 §1–§4 incl. trySync boundary triage; 97 tests incl. fast-check laws + wire contracts; 255 B fixture / 876 B full core vs 600 B / 3 kB budgets; TS 6/7/7.1 matrix green. Known TS 7.0.2 quirks documented inline: order-dependent data-first matchTag inference in root tsc; const type-param union mangling on all().)
-2a. **`@friday-friday/core` `/async`** ✅ (PR #12, issue #4 closed; async duals, allAsync input-order selection, mapConcurrent bounded concurrency, retry/timeout/tryAsync with signal forwarding; 141 tests; 258 B / 874 B / 1.19 kB vs 600 B / 3 kB / 3 kB budgets; TS matrix green. Signal-handling errata documented in RFC-0001 §4 + docs/decisions/2026-11-16-async-signal-handling.md.)
-3. **`@friday-friday/schema`** — `parse parseAsync toFieldErrors toFormErrors branded toJsonSchema` over `@standard-schema/spec` 1.1 (types only).
-4. **`@friday-friday/next`** — implemented on feat/next (PR #15, issue #7): server entry + server-only stub + /client boundary; unit-level sentinel-escape proofs (real-app e2e lands with examples/next-app #9). Base moduleResolution switched to bundler (next@16.4.6 subpaths unresolvable under NodeNext - empty exports map).
-5. **`tooling/eslint-plugin`** — `must-use-result`, `no-try-around-redirect`, `no-instanceof-tagged-error` (per ADR-0003 outcome).
+2. **`@friday-friday/core`** ✅ (PR #11, issue #3 closed; sync surface per RFC-0001 §1–§4 incl. trySync boundary triage; 97 tests incl. fast-check laws + wire contracts; TS matrix green. Known TS 7.0.2 quirks documented inline: order-dependent data-first matchTag inference in root tsc; const type-param union mangling on all().)
+2a. **`@friday-friday/core` `/async`** ✅ (PR #12, issue #4 closed; async duals, allAsync input-order selection, mapConcurrent bounded concurrency, retry/timeout/tryAsync with signal forwarding; signal-handling errata documented in RFC-0001 §4 + docs/decisions/2026-11-16-async-signal-handling.md.)
+2b. **`@friday-friday/core` `/gen`** ✅ (PR #13, issue #5 closed; opt-in do-notation, one-shot `$()` wrapper, envelope identity preserved; documented constraint: multi-step bodies need a generator return-type annotation under TS 7.0.2.)
+3. **`@friday-friday/schema`** ✅ (PR #14, issue #6 closed; parse/parseAsync, path normalization with `[symbol]` notes, toFieldErrors/toFormErrors, phantom branded(), toJsonSchema wrapped as Err(Unsupported); zod + valibot + arktype dev-only fixtures prove no vendor hard dep; 834 B of 2 kB.)
+4. **`@friday-friday/next`** ✅ (PR #15, issue #7 closed; server entry + throwing stub + /client resultBoundary; triage delegated to core with nextRethrow pre-bound; sentinel-escape integration proofs at unit level — real-app e2e lands with #9. Base moduleResolution switched to bundler: next@16.4.6 ships an EMPTY exports map, NodeNext cannot resolve next/* subpaths — recorded in ADR-0004; plain-Node dist smoke impossible for this package.)
+5. **`tooling/eslint-plugin`** ✅ (PR #16, issue #8 closed; must-use-result / no-try-around-redirect / no-instanceof-tagged-error implemented type-aware, WIRED into the shared eslint.config.js — the lint gate now enforces them repo-wide; no-try-around-redirect honors the unstable_rethrow catch-handler exemption; 21 RuleTester cases wired into vitest.)
 6. **`examples/next-app`** — REMAINING (issue #9, unblocked). Implementation notes for the next session/agent:
    - Scaffold with create-next-app@16.4 (App Router, TS), add @friday-friday/{core,schema,next} workspace deps.
    - One feature (profile update): server action via next.action + useActionState ({ ok: null } idle), redirect-after-save thrown OUTSIDE the action catch (sentinel proof), ValidationFailure -> toFieldErrors field errors, toResponse route handler with problem+json, orNotFound loader.
