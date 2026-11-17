@@ -68,6 +68,14 @@ describe("driver detail and row values stay server-side", () => {
     expect(mapped).not.toHaveProperty("detail")
     expect(mapped).not.toHaveProperty("message")
   })
+
+  it.each(inputs)("%s: the cause-stripped error round-trips JSON and structuredClone (RFC-0001 §5.2)", (_, make) => {
+    // `cause` is runtime-only (RFC-0001 §2), so strip it the way a sanitizer does.
+    const wire = Object.fromEntries(Object.entries(mapDbError(make()) ?? {}).filter(([k]) => k !== "cause"))
+    expect(Object.keys(wire)).toContain("_tag")
+    expect(JSON.parse(JSON.stringify(wire))).toStrictEqual(wire)
+    expect(structuredClone(wire)).toStrictEqual(wire)
+  })
 })
 
 describe("mapPgError (SQLSTATE)", () => {
