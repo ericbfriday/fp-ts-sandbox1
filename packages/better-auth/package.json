@@ -1,0 +1,35 @@
+{
+  "name": "@friday-friday/better-auth",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Better Auth adapter: authCall/fromAuthTuple/requireSession/requireRole/beforeDbHook via isAPIError (Design Report section 5.6)",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": {
+      "@friday-friday/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@friday-friday/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "better-auth": "^1.6 || ^1.7"
+  },
+  "devDependencies": {
+    "better-auth": "^1.7.25"
+  },
+  "scripts": {
+    "build": "tsdown"
+  }
+}
