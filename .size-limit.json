@@ -35,6 +35,16 @@
     "gzip": true
   },
   {
+    "name": "@friday-friday/better-auth",
+    "path": "packages/better-auth/dist/index.js",
+    "import": "*",
+    "limit": "2 kB",
+    "gzip": true,
+    "ignore": [
+      "better-auth"
+    ]
+  },
+  {
     "name": "@friday-friday/http",
     "path": "packages/http/dist/index.js",
     "import": "*",
