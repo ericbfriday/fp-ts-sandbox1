@@ -1,0 +1,35 @@
+{
+  "name": "@friday-friday/otel",
+  "version": "0.0.0",
+  "private": true,
+  "description": "OpenTelemetry span helpers for Results: traced(name, fn) marks Err as span ERROR with fl.error.tag, records defects as exceptions (Design Report section 3.6 observability)",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": {
+      "@friday-friday/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@friday-friday/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "@opentelemetry/api": "^1"
+  },
+  "devDependencies": {
+    "@opentelemetry/api": "^1.9.0"
+  },
+  "scripts": {
+    "build": "tsdown"
+  }
+}

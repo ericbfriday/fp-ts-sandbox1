@@ -52,6 +52,26 @@
     "gzip": true
   },
   {
+    "name": "@friday-friday/otel",
+    "path": "packages/otel/dist/index.js",
+    "import": "*",
+    "limit": "2 kB",
+    "gzip": true,
+    "ignore": [
+      "@opentelemetry/api"
+    ]
+  },
+  {
+    "name": "@friday-friday/hono",
+    "path": "packages/hono/dist/index.js",
+    "import": "*",
+    "limit": "2 kB",
+    "gzip": true,
+    "ignore": [
+      "hono"
+    ]
+  },
+  {
     "name": "@friday-friday/trpc",
     "path": "packages/trpc/dist/index.js",
     "import": "*",
