@@ -221,6 +221,19 @@ importers:
 
   packages/core: {}
 
+  packages/http:
+    dependencies:
+      '@friday-friday/core':
+        specifier: workspace:*
+        version: link:../core
+      '@friday-friday/schema':
+        specifier: workspace:*
+        version: link:../schema
+    devDependencies:
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+
   packages/next:
     dependencies:
       '@friday-friday/core':
