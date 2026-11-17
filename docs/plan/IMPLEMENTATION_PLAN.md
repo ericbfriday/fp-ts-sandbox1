@@ -86,6 +86,7 @@ Exit criteria (from report §9): size budgets green, TS 6/7/7.1 matrix green, `e
    - create-next-app may try to init a git repo — use --disable-git or strip the nested .git; examples/* is covered by the workspace glob.
 
 ### Phase 2 — Data layer: `query`, `better-auth`, `http`, `otel`
+- **`@friday-friday/query`** ✅ (PR #18, merged; toQueryFn throws plain tagged E (query.error === E), Ok(undefined) → null, retryUnless + resultQueryOptions; REAL QueryClient.fetchQuery integration tests prove error identity + retry counts; TS 7.1-beta conditional-type quirk worked around via shared QueryFnReturn alias)
 `toQueryFn` (throw E, `Ok(undefined)`→null, signal), `resultQueryOptions`, `retryUnless`; `authCall/fromAuthTuple/requireSession/requireRole/beforeDbHook` via `isAPIError`; `fetchResult` with schema decode + problem+json reconstruction; `traced` span helpers.
 
 ### Phase 3 — Servers: `hono`, `trpc`
