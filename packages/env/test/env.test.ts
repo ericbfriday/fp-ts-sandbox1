@@ -4,7 +4,7 @@
 import { envRecord, parseEnv } from "@friday-friday/env"
 import { type } from "arktype"
 import * as v from "valibot"
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { z } from "zod"
 
 const EnvSchema = z.object({
@@ -93,6 +93,26 @@ describe("parseEnv redaction", () => {
     const r = parseEnv(v.object({ MODE: v.picklist(["a", "b"]) }), { MODE: "c", UNRELATED: "Expected" })
     if (r.ok) throw new Error("expected Err")
     expect(r.error.issues[0]?.message).toBe("Invalid type: Expected (\"a\" | \"b\") but received \"[redacted]\"")
+  })
+})
+
+// Spec #30 story 27: edge runtimes have no `process` global.
+describe("parseEnv default source", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.unstubAllEnvs()
+  })
+
+  it("without a process global, validates an empty record instead of throwing", () => {
+    vi.stubGlobal("process", undefined)
+    const r = parseEnv(z.object({ PORT: z.coerce.number().default(3000) }))
+    expect(r).toEqual({ ok: true, value: { PORT: 3000 } })
+  })
+
+  it("reads the live process.env when it exists", () => {
+    vi.stubEnv("FL_ENV_TEST_VAR", "from-process")
+    const r = parseEnv(z.object({ FL_ENV_TEST_VAR: z.string() }))
+    expect(r).toEqual({ ok: true, value: { FL_ENV_TEST_VAR: "from-process" } })
   })
 })
 
