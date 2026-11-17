@@ -24,7 +24,8 @@
     "@friday-friday/core": "workspace:*"
   },
   "peerDependencies": {
-    "@trpc/server": "^11"
+    "@trpc/server": "^11",
+    "@trpc/client": "^11"
   },
   "devDependencies": {
     "@trpc/client": "^11.28.3",

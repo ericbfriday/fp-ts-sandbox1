@@ -24,7 +24,7 @@
     "@friday-friday/core": "workspace:*"
   },
   "peerDependencies": {
-    "hono": "^4.13.18 || ^5"
+    "hono": "^4.10 || ^5.0.0-0"
   },
   "devDependencies": {
     "hono": "4.13.18",

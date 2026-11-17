@@ -1,0 +1,52 @@
+/**
+ * `@friday-friday/trpc` type tests — pins the DECLARED-error contract of `fromTRPC`
+ * (tRPC types the formatter shape globally, not per procedure — report §5.3 design limit)
+ * and the dual-channel procedure shapes.
+ */
+import { type Result, taggedError } from "@friday-friday/core"
+import { type FlMeta, fromTRPC, type TRPCTransportError } from "@friday-friday/trpc"
+import { describe, expectTypeOf, it } from "vitest"
+
+const NotFound = taggedError("NotFound")<{ id: string }>()
+const Conflict = taggedError("Conflict")<{ field: string }>()
+
+type NotFoundE = ReturnType<typeof NotFound>
+type ConflictE = ReturnType<typeof Conflict>
+
+describe("fromTRPC declared-error contract", () => {
+  it("declared union survives the bridge (AsyncResult<T, E | TRPCTransportError>)", async () => {
+    const r = fromTRPC<{ id: string; name: string }, NotFoundE | ConflictE>(
+      Promise.resolve({ id: "1", name: "ada" })
+    )
+    const awaited = await r
+    // The annotated const IS the contract pin: the bridge resolves to exactly this Result.
+    const _pin: Result<{ id: string; name: string }, NotFoundE | ConflictE | TRPCTransportError> = awaited
+    if (!awaited.ok) {
+      expectTypeOf(awaited.error._tag).toEqualTypeOf<"NotFound" | "Conflict" | "TRPCTransportError">()
+    } else {
+      expectTypeOf(awaited.value).toEqualTypeOf<{ id: string; name: string }>()
+    }
+  })
+
+  it("default E is TRPCTransportError", async () => {
+    const r = fromTRPC<string>(Promise.resolve("v"))
+    const awaited = await r
+    if (!awaited.ok) expectTypeOf(awaited.error._tag).toEqualTypeOf<"TRPCTransportError">()
+  })
+
+  it("accepts PromiseLike (tRPC's TRPCTaggedPromise)", async () => {
+    // A real Promise IS a PromiseLike; the point is fromTRPC's parameter type.
+    const tagged: PromiseLike<number> = Promise.resolve(1)
+    const r = fromTRPC<number, NotFoundE>(tagged)
+    const awaited = await r
+    if (awaited.ok) expectTypeOf(awaited.value).toEqualTypeOf<number>()
+    else expectTypeOf(awaited.error._tag).toEqualTypeOf<"NotFound" | "TRPCTransportError">()
+  })
+})
+
+describe("fl metadata shapes", () => {
+  it("FlMeta carries the tag + free props", () => {
+    const fl: FlMeta = { _tag: "NotFound", id: "x", tag: "NotFound" }
+    expectTypeOf(fl.tag).toEqualTypeOf<string | undefined>()
+  })
+})

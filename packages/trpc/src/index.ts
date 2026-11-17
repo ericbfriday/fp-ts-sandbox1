@@ -87,7 +87,7 @@ export interface FlMeta {
 
 /** Standard Schema issue shape projected into `data.fl` (validator failures). */
 export interface FlValidation {
-  readonly tag: "ValidationError"
+  readonly tag: "ValidationFailure"
   readonly issues: ReadonlyArray<{ message?: string; path?: ReadonlyArray<unknown> }>
 }
 
@@ -107,7 +107,7 @@ export function errorFormatter<TShape extends { data: Record<string, unknown> }>
     fl = sanitize(tagged)
   } else {
     const issues = asStandardIssues(cause)
-    if (issues !== null) fl = { tag: "ValidationError", issues }
+    if (issues !== null) fl = { tag: "ValidationFailure", issues }
   }
   return {
     ...opts.shape,
@@ -186,7 +186,7 @@ export function resultProcedure(opts: { readonly channel: "data" }): <B>(builder
 /**
  * Client-side bridge: a tRPC call promise resolved as a Result. A `TRPCClientError` whose
  * `data.fl` carries a sanitized tagged error is reconstructed (lossless round-trip);
- * `data.fl` with ValidationError issues becomes a `ValidationError` tagged error; anything
+ * `data.fl` with Standard Schema issues becomes a `ValidationFailure` tagged error; anything
  * else is `Err(TRPCTransportError)`.
  *
  * The error type is DECLARED here, not inferred — tRPC types the formatter shape globally,
@@ -211,9 +211,9 @@ export function fromTRPC<T, E extends TaggedError<string> = TRPCTransportError>(
       // oxlint-disable-next-line no-unsafe-type-assertion -- TRPCClientError.data is structurally accessed; verified below
       const issues = asStandardIssues((cause as { data?: { fl?: unknown } } | null)?.data?.fl)
       if (issues !== null) {
-        const ValidationError = taggedError("ValidationError")<{ issues: typeof issues }>()
-        // oxlint-disable-next-line no-unsafe-type-assertion -- ValidationError reconstructed from ~standard issues; E is caller-declared
-        return err(ValidationError({ issues }) as unknown as E)
+        const ValidationFailure = taggedError("ValidationFailure")<{ issues: typeof issues }>()
+        // oxlint-disable-next-line no-unsafe-type-assertion -- ValidationFailure reconstructed from ~standard issues; E is caller-declared
+        return err(ValidationFailure({ issues }) as unknown as E)
       }
       // oxlint-disable-next-line no-unsafe-type-assertion -- TRPCClientError fields are structurally accessed
       const code = (cause as { code?: unknown } | null)?.code
