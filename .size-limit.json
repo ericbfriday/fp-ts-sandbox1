@@ -28,6 +28,13 @@
     "gzip": true
   },
   {
+    "name": "@friday-friday/core \u2014 full /wire subpath",
+    "path": "packages/core/dist/wire.js",
+    "import": "*",
+    "limit": "1.5 kB",
+    "gzip": true
+  },
+  {
     "name": "@friday-friday/schema",
     "path": "packages/schema/dist/index.js",
     "import": "*",

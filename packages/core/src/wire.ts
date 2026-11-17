@@ -1,0 +1,257 @@
+/**
+ * `@friday-friday/core/wire` — the wire envelope (RFC-0001 §5–§6, IDEA §4.2–§4.3).
+ * Decision note: docs/decisions/2026-11-17-core-wire-subpath.md.
+ *
+ * One deep module at the seam every adapter (next, hono, trpc, http) crosses. Its interface is
+ * four functions and a constant; the rules sit behind it, so a fix lands here once:
+ *
+ * - `sanitize(e)`        JSON-safe projection `{ _tag, message?, ...safeProps }` (tRPC `data.fl`)
+ * - `toProblem(e, s?)`   RFC 9457 body; `s` = status | status map | RFC §6 defaults
+ * - `fromWire(body)`     problem body or sanitized error → tagged error (or `undefined`)
+ * - `toDefect(c, rep?)`  the one `InternalDefect` envelope; the cause goes to `rep`, never the wire
+ * - `PROBLEM_CONTENT_TYPE`
+ *
+ * Invariants: nothing here throws; every output deep-equals its own `JSON.parse(JSON.stringify(x))`
+ * and `structuredClone(x)` (RFC-0001 §5.2); `cause` never appears in any output (IDEA §4.2);
+ * `toProblem(fromWire(p)!, p.status)` deep-equals `p` for every `p` this module built.
+ */
+import type { TaggedError } from "./index.js"
+
+/** A value that survives `JSON.parse(JSON.stringify(x))` and `structuredClone(x)` unchanged. */
+export type Json = null | boolean | number | string | ReadonlyArray<Json> | { readonly [key: string]: Json }
+
+/** A tagged error after projection: `_tag`, optional `message`, JSON-safe props only. */
+export interface WireError<Tag extends string = string> {
+  readonly _tag: Tag
+  readonly message?: string
+  readonly [prop: string]: Json | undefined
+}
+
+// ---------------------------------------------------------------------------
+// JSON-safe projection (internal; every output of this module goes through it)
+// ---------------------------------------------------------------------------
+
+const MAX_DEPTH = 32
+
+/** Own enumerable data property: never triggers the `__proto__` setter. */
+const define = (o: object, k: string, v: unknown): void => {
+  Object.defineProperty(o, k, { value: v, enumerable: true, writable: true, configurable: true })
+}
+
+/** Plain-object projection: drops `cause` and every prop whose value projects to nothing. */
+const record = (o: object, depth: number, path: Array<object>): { [key: string]: Json } => {
+  const out: { [key: string]: Json } = {}
+  for (const k of Object.keys(o)) {
+    if (k === "cause") continue
+    let v: Json | undefined
+    try {
+      v = project(Reflect.get(o, k), depth + 1, path)
+    } catch {
+      v = undefined // throwing getter / proxy trap: dropped, never rethrown
+    }
+    if (v !== undefined) define(out, k, v)
+  }
+  return out
+}
+
+/** `undefined` means "drop". `path` holds the ancestors, so a cycle is cut where it closes. */
+const project = (v: unknown, depth: number, path: Array<object>): Json | undefined => {
+  switch (typeof v) {
+    case "string":
+    case "boolean":
+      return v
+    case "number":
+      return Number.isFinite(v) ? (v === 0 ? 0 : v) : undefined // -0 → 0, NaN/±Infinity dropped
+    case "object":
+      break
+    default:
+      return undefined // bigint, function, symbol, undefined
+  }
+  if (v === null) return null
+  if (depth >= MAX_DEPTH || path.includes(v)) return undefined
+  try {
+    if (v instanceof Date) return Number.isNaN(v.getTime()) ? undefined : v.toISOString()
+    path.push(v)
+    try {
+      if (Array.isArray(v)) return Array.from(v, (x: unknown) => project(x, depth + 1, path) ?? null)
+      const proto: unknown = Object.getPrototypeOf(v)
+      return proto === Object.prototype || proto === null ? record(v, depth, path) : undefined
+    } finally {
+      path.pop()
+    }
+  } catch {
+    return undefined
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Interface
+// ---------------------------------------------------------------------------
+
+/**
+ * JSON-safe projection of a tagged error (RFC-0001 §5.3): `_tag`, `message` and plain props survive;
+ * `cause` (at every depth), functions, symbols, bigint, `undefined`, non-finite numbers, class
+ * instances, cycles and anything deeper than 32 levels are dropped. `Date` → ISO string, `-0` → `0`,
+ * a dropped array element → `null`. Never throws; the output round-trips JSON and `structuredClone`.
+ */
+export const sanitize = <E extends TaggedError<string>>(e: E): WireError<E["_tag"]> =>
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- record() keeps the own `_tag` string; props are Json by construction
+  record(e, 0, [e]) as unknown as WireError<E["_tag"]>
+
+// ---------------------------------------------------------------------------
+// Problem Details (RFC 9457) — RFC-0001 §6
+// ---------------------------------------------------------------------------
+
+/** `content-type` for every problem body this module builds. */
+export const PROBLEM_CONTENT_TYPE = "application/problem+json" as const
+
+/** RFC 9457 body. `tag` is the reconstruction key; `shadowed` carries props that collided with reserved members. */
+export interface Problem {
+  readonly type: string
+  readonly title: string
+  readonly status: number
+  readonly detail?: string
+  readonly tag: string
+  readonly shadowed?: { readonly [key: string]: Json }
+  readonly [member: string]: Json | undefined
+}
+
+/** Explicit tag → status overrides (adapters' status maps are assignable to this). */
+export interface StatusMap {
+  readonly [tag: string]: number | undefined
+}
+
+/** Members an error prop can never overwrite; colliding props go into `shadowed`. */
+const RESERVED: ReadonlyArray<string> = ["type", "title", "status", "detail", "instance", "tag", "shadowed"]
+
+/** RFC-0001 §6 fallbacks: adapters pass explicit maps, these only fill the gaps. Everything else → 500. */
+const DEFAULT_STATUS: { readonly [tag: string]: number } = {
+  NotFound: 404,
+  Forbidden: 403,
+  Unauthenticated: 401,
+  Conflict: 409,
+  ValidationFailure: 422
+}
+
+const defaultStatus = (tag: string): number => (Object.hasOwn(DEFAULT_STATUS, tag) ? DEFAULT_STATUS[tag]! : 500)
+
+/** A problem body may only claim an error: integers 400–599. */
+const isErrorStatus = (s: unknown): s is number => typeof s === "number" && Number.isInteger(s) && s >= 400 && s <= 599
+
+/** `NotFound` → `Not Found`, `HTTPError` → `HTTP Error`. */
+const words = (tag: string): string =>
+  tag.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+
+const typeUri = (tag: string): string =>
+  `https://friday-friday.dev/errors/${encodeURIComponent(words(tag).toLowerCase().replace(/\s+/g, "-"))}`
+
+/**
+ * RFC 9457 problem body for a tagged error (RFC-0001 §6):
+ * `{ type, title, status, detail: message, tag: _tag, ...safeProps, shadowed? }`.
+ *
+ * Status: an explicit number, else `status[tag]` from a map, else the RFC §6 default
+ * (`NotFound 404`, `Forbidden 403`, `Unauthenticated 401`, `Conflict 409`, `ValidationFailure 422`,
+ * anything else `500`). A status outside 400–599 falls back to the default, so `body.status` is
+ * always an error status — adapters should send it as the HTTP status with `PROBLEM_CONTENT_TYPE`.
+ * Props are projected by `sanitize`; a prop named like a reserved member is carried in `shadowed`.
+ */
+export const toProblem = (e: TaggedError<string>, status?: number | StatusMap): Problem => {
+  const { _tag: tag, message, ...props } = sanitize(e)
+  const wanted = typeof status === "number" ? status : status?.[tag]
+  const body: { [member: string]: Json } = {
+    type: typeUri(tag),
+    title: words(tag),
+    status: isErrorStatus(wanted) ? wanted : defaultStatus(tag)
+  }
+  const shadowed: { [key: string]: Json } = {}
+  if (typeof message === "string") body["detail"] = message
+  else if (message !== undefined) shadowed["message"] = message
+  body["tag"] = tag
+  for (const [k, v] of Object.entries(props)) {
+    if (v !== undefined) define(RESERVED.includes(k) ? shadowed : body, k, v)
+  }
+  if (Object.keys(shadowed).length > 0) body["shadowed"] = shadowed
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- type/title/status/tag set above; members are Json by construction
+  return body as unknown as Problem
+}
+
+// ---------------------------------------------------------------------------
+// Parse-back
+// ---------------------------------------------------------------------------
+
+/** Inverse of the default table, for problems that carry no `tag` (foreign producers). */
+const TAG_FOR_STATUS: { readonly [status: string]: string } = {
+  401: "Unauthenticated",
+  403: "Forbidden",
+  404: "NotFound",
+  409: "Conflict",
+  422: "ValidationFailure",
+  500: "InternalDefect"
+}
+
+const isPlainObject = (u: unknown): u is Record<string, unknown> =>
+  typeof u === "object" && u !== null && !Array.isArray(u)
+
+const tagOf = (b: Record<string, unknown>): string | undefined => {
+  const tag = b["tag"]
+  if (typeof tag === "string") return tag
+  const status = b["status"]
+  return typeof status === "number" && Object.hasOwn(TAG_FOR_STATUS, status) ? TAG_FOR_STATUS[status] : undefined
+}
+
+/**
+ * Rebuild a tagged error from the wire. Accepts either shape this module emits:
+ * - a sanitized error (`{ _tag, ...props }`, e.g. tRPC `data.fl`) — re-projected as is;
+ * - a problem body — `{ _tag: tag, message: detail, ...extension members, ...shadowed }`, with the
+ *   transport members removed. With no `tag`, the inverse of the default status table applies
+ *   (`404 → NotFound`, `403 → Forbidden`, `401 → Unauthenticated`, `409 → Conflict`,
+ *   `422 → ValidationFailure`, `500 → InternalDefect`).
+ *
+ * `undefined` when the input can't be attributed to a tag — keep your own transport error then.
+ * Input is untrusted: the output is re-projected (JSON-safe, own props only) and never throws.
+ * `toProblem(fromWire(p)!, p.status)` deep-equals `p` for every `p` built by `toProblem`.
+ */
+export const fromWire = (body: unknown): WireError | undefined => {
+  if (!isPlainObject(body)) return undefined
+  try {
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `_tag` checked right here; sanitize re-projects the rest
+    if (typeof body["_tag"] === "string") return sanitize(body as unknown as TaggedError<string>)
+    const tag = tagOf(body)
+    if (tag === undefined) return undefined
+    const raw: Record<string, unknown> = {}
+    for (const k of Object.keys(body)) if (!RESERVED.includes(k)) define(raw, k, body[k])
+    if (typeof body["detail"] === "string") raw["message"] = body["detail"]
+    const shadowed = body["shadowed"]
+    if (isPlainObject(shadowed)) { for (const k of Object.keys(shadowed)) define(raw, k, shadowed[k]) }
+    raw["_tag"] = tag // last: nothing on the wire can replace the reconstruction key
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `_tag` set on the line above
+    return sanitize(raw as unknown as TaggedError<string>)
+  } catch {
+    return undefined
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Defect envelope — IDEA §4.3, RFC-0001 §2 ("InternalDefect exists only at the wire")
+// ---------------------------------------------------------------------------
+
+/** The only defect shape that crosses a boundary: a fixed message, nothing from the cause. */
+export interface InternalDefect extends WireError<"InternalDefect"> {
+  readonly message: "Internal server error"
+}
+
+/**
+ * Sanitize an unknown throw for the client: always
+ * `{ _tag: "InternalDefect", message: "Internal server error" }`. The original `cause` goes to
+ * `report` (logging / OpenTelemetry) and is never placed in the envelope. Never throws: a throwing
+ * reporter is swallowed, because this is the outermost layer. Problem form:
+ * `toProblem(toDefect(cause, report))` (default status 500).
+ */
+export const toDefect = (cause: unknown, report?: (cause: unknown) => void): InternalDefect => {
+  try {
+    report?.(cause)
+  } catch {
+    // the reporter failing must not turn a sanitized 500 into an unsanitized crash
+  }
+  return { _tag: "InternalDefect", message: "Internal server error" }
+}
