@@ -50,12 +50,26 @@ All via pnpm at the root (see also `README.md`):
 - `const` type parameters can mangle element unions (`all()` inferred Err-only). Use a variadic-tuple constraint plus a generic-array overload instead.
 - Multi-step `gen` bodies need the generator return-type annotation (`Generator<Err<E>, T, unknown>`); single-source bodies infer.
 - expect-type's `toEqualTypeOf` brand probe trips on Promise-wrapped unions — use the annotated-const pattern.
+- 7.1-beta treats textually identical conditional types from DIFFERENT declarations as unrelated — declare the conditional once as a shared alias and reference it from every site (see `packages/query`'s `QueryFnReturn`).
+- TS2589 is not theoretical: `respond`'s status-literal return types degraded generic inference for LATER declarations in the same file (observed in `packages/hono`'s first test draft). The report's guidance is load-bearing — per-concern sub-apps, and declare heavy-inference helpers before instantiation-heavy ones.
 
 ## Lint directives (both tools run)
 
 - oxlint rules: `// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- reason`
 - ESLint rules: `// eslint-disable-next-line typescript/no-unsafe-type-assertion -- reason`
 - Each tool errors on the other's unknown rule ids; when a line needs both, stack both comments.
+- `no-unsafe-type-assertion` reports at the EXPRESSION START of multi-line statements — put the disable directly above the statement's first line, not above the cast token.
+
+## Supply-chain policy
+
+- CI enforces pnpm's `minimumReleaseAge`; a dependency published within the window fails `pnpm install --frozen-lockfile` even when it installs locally. Pin vendor devDeps to an exact version older than the window and drop any `minimumReleaseAgeExclude` workaround (it is not honored by CI's check). See `hono@4.13.18` in `packages/hono`.
+- Peers that a package imports at runtime (better-auth, @opentelemetry/api, hono) must appear in that package's `.size-limit.json` entry as `ignore` — the report's adapter budget is "≤ 2 kB excluding peers".
+
+## Report-vs-reality errata (verified against vendored sources)
+
+- No hono version ships `sValidator` (checked 4.13.18/4.13.19 + 5.0.0-rc.1 exports maps) — `sv` in `@friday-friday/hono` builds on hono `validator` + Standard Schema directly.
+- better-auth `databaseHooks.*.before` is `Promise<boolean | void | { data }>` — the runner checks `=== false` and `"data" in result` only; there is no `abort` field (verified in better-call/better-auth 1.7.25 sources).
+- tRPC brands its middleware marker (`"middlewareMarker" & { __brand }`), so a structural middleware result type cannot be expressed outside tRPC's own types — `resultMiddleware` asserts at one boundary and the runtime contract is proven by wire tests through the real fetch adapter.
 
 ## Adding a package
 
