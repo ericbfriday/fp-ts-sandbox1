@@ -100,6 +100,7 @@ Exit criteria (from report §9): size budgets green, TS 6/7/7.1 matrix green, `e
 `respond` (status-literal unions), `problem` (RFC 9457 per RFC-0001 §6), `sv`, `onErrorHandler` (test HTTPException header loss — report marks it U); tRPC dual channel + Standard-Schema-based `errorFormatter` + `fromTRPC`. TS2589 budget fixtures.
 
 ### Phase 4 — `tanstack-start` (last; churn risk)
+- **`@friday-friday/tanstack-start`** ✅ (PR #26, merged; resultHandler = the #6428 workaround — validation INSIDE the handler, Err(ValidationFailure) as structured data, domain errors as data, only defects throw as Panic; #6428 re-checked 2026-11-17, still OPEN — workaround stands; loaderResult maps NotFound->notFound() / Unauthenticated->redirect({to:"/login"}) sentinels THROWN unwrapped, other Err as Panic with lossless cause; toFormErrors passthrough; vendor-light (router-core peer ^1.169, devDep exact 1.171.39); 12 tests; size entry with peer ignore)
 `resultServerFn` (validate inside handler; #6428 workaround), loader sentinels, Form mappers (structural checks only), Store `useSelector` only. Re-check #6428 before starting; drop workaround if fixed.
 
 ### Phase 5 — Extras: `effect`, `db`, `env`, codemods, oRPC recipe, `llms.txt` + per-package SKILL.md/AGENTS docs
