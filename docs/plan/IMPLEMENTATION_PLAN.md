@@ -55,7 +55,7 @@ Everything consciously postponed or accepted, with where it lives. Nothing else 
 | Phase 5 extras: `effect`, `db`, `env`, codemods, oRPC recipe, `llms.txt` + per-package SKILL.md | Phase 5 (below) | After MVP exit criteria |
 | Examples runtime matrix (Bun/Deno/wrangler) | ADR-0004 | Later-phase CI job |
 | Releases/Changesets/npm publish | ADR-0001 | Deferred until 0.x packages run a quarter in Eric's apps |
-| `AGENTS.md` repo guide (content drafted; write BLOCKED — protected file, approval prompt timed out twice) | awaiting Eric’s approval in the Hermes UI | One approved write completes it; meanwhile conventions live in this plan + README |
+| ~~`AGENTS.md` repo guide~~ RESOLVED — created 2026-11-16 evening with Eric’s explicit authorization (repo root; living doc, update with conventions as they land) | repo root | done |
 
 ## Phases
 
