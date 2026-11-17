@@ -70,6 +70,24 @@ describe("sanitize — JSON-safe projection (RFC-0001 §5.3)", () => {
     roundTrips(out)
   })
 
+  it("never throws on a hostile top-level error (throwing proxy / unreadable _tag)", () => {
+    const trap = new Proxy({ _tag: "NotFound" }, {
+      ownKeys: () => {
+        throw new Error("trap")
+      }
+    })
+    const unreadable = Object.defineProperty({ id: "1", _tag: "NotFound" }, "_tag", {
+      enumerable: true,
+      get: () => {
+        throw new Error("no tag for you")
+      }
+    })
+    for (const e of [trap, unreadable]) {
+      expect(sanitize(e)).toStrictEqual({ _tag: "InternalDefect" })
+      expect(toProblem(e).status).toBe(500)
+    }
+  })
+
   it("drops values nested deeper than the depth cap instead of overflowing", () => {
     let deep: Record<string, unknown> = { leaf: true }
     for (let i = 0; i < 10_000; i++) deep = { d: deep }

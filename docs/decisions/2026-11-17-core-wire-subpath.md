@@ -38,7 +38,9 @@ Types: `Json`, `WireError<Tag>`, `Problem`, `StatusMap`, `InternalDefect`.
    (`Map`, `Error`, …), cyclic references and anything nested deeper than 32 levels. Inside arrays a
    dropped element becomes `null`, so indices survive, as `JSON.stringify` would do. Throwing
    getters and proxies are dropped, never rethrown. `__proto__` keys are written as own data
-   properties, so a hostile body can't change prototypes. Every output therefore satisfies RFC-0001
+   properties, so a hostile body can't change prototypes. An error whose own `_tag` can't be read as
+   a string (throwing proxy, throwing getter) becomes a bare `{ _tag: "InternalDefect" }`, so no
+   unattributed props travel with it. Every output therefore satisfies RFC-0001
    §5.2: `JSON.parse(JSON.stringify(x))` and `structuredClone(x)` deep-equal `x`.
 2. **Problem body** (RFC-0001 §6): `type = https://friday-friday.dev/errors/<kebab(_tag)>`,
    `title` = the tag split into words (`NotFound` → `Not Found`), `status`, `detail` = `message` (only

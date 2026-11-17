@@ -19,7 +19,7 @@ Locked decisions: `IDEA.md` §4. To change one, write a note in `docs/decisions/
 ## Layout
 
 ```
-packages/core    @friday-friday/core — sync surface + /async + /gen subpaths
+packages/core    @friday-friday/core — sync surface + /async + /gen + /wire subpaths
 packages/schema  @friday-friday/schema — Standard Schema → Result
 packages/next    @friday-friday/next — Next.js adapter (react-server/default/client conditions)
 packages/...     Phase 2+: query, better-auth, http, otel, hono, trpc, tanstack-start, effect, db, env

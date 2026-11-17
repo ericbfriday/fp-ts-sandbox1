@@ -25,7 +25,7 @@ Project brief: see **`IDEA.md`** (read it first). The authoritative design sourc
 
 ## Package map (implemented)
 
-- `packages/core` — `@friday-friday/core` (+ `/async`, `/gen` subpaths)
+- `packages/core` — `@friday-friday/core` (+ `/async`, `/gen`, `/wire` subpaths)
 - `packages/schema` — `@friday-friday/schema`
 - `packages/next` — `@friday-friday/next` (react-server/default/client conditions)
 - `tooling/eslint-plugin` — `@friday-friday/eslint-plugin`

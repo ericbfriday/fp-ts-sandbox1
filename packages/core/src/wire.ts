@@ -92,11 +92,22 @@ const project = (v: unknown, depth: number, path: Array<object>): Json | undefin
  * JSON-safe projection of a tagged error (RFC-0001 §5.3): `_tag`, `message` and plain props survive;
  * `cause` (at every depth), functions, symbols, bigint, `undefined`, non-finite numbers, class
  * instances, cycles and anything deeper than 32 levels are dropped. `Date` → ISO string, `-0` → `0`,
- * a dropped array element → `null`. Never throws; the output round-trips JSON and `structuredClone`.
+ * a dropped array element → `null`. Never throws: an error whose `_tag` can't be read as a string
+ * comes out as `{ _tag: "InternalDefect" }`. The output round-trips JSON and `structuredClone`.
  */
-export const sanitize = <E extends TaggedError<string>>(e: E): WireError<E["_tag"]> =>
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- record() keeps the own `_tag` string; props are Json by construction
-  record(e, 0, [e]) as unknown as WireError<E["_tag"]>
+export const sanitize = <E extends TaggedError<string>>(e: E): WireError<E["_tag"]> => {
+  let out: { [key: string]: Json }
+  try {
+    out = record(e, 0, [e])
+  } catch {
+    out = {} // the error object itself is hostile (throwing proxy trap)
+  }
+  // An unreadable or non-string tag can't be attributed: degrade to a bare defect tag (no props
+  // ride along under `InternalDefect`) rather than throw.
+  if (typeof out["_tag"] !== "string") out = { _tag: "InternalDefect" }
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `_tag` is a string (ensured above); props are Json by construction
+  return out as unknown as WireError<E["_tag"]>
+}
 
 // ---------------------------------------------------------------------------
 // Problem Details (RFC 9457) — RFC-0001 §6
