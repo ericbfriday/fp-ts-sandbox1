@@ -2,7 +2,7 @@
  * Fake profile store. In a real app this is a DB layer; here it proves the Result flow
  * end-to-end without infrastructure.
  */
-import { err, ok, taggedError, type AsyncResult, type ErrorFactory } from "@friday-friday/core"
+import { type AsyncResult, err, type ErrorFactory, ok, taggedError } from "@friday-friday/core"
 
 export const NotFound: ErrorFactory<"NotFound", { readonly id: string }> = taggedError("NotFound")<{
   readonly id: string

@@ -4,9 +4,9 @@
  */
 import { err } from "@friday-friday/core"
 import { orNotFound } from "@friday-friday/next"
-import { ProfileForm } from "./profile-form"
 import { getProfile } from "../../lib/profiles"
 import { requireSession } from "../../lib/session"
+import { ProfileForm } from "./profile-form"
 
 export default async function ProfilePage(): Promise<React.ReactElement> {
   // Guard first, then load — plain Result flow, no throws in user code. orNotFound turns

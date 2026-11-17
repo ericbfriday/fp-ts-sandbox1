@@ -7,12 +7,12 @@
  * action()'s triage must rethrow it (control flow wins over form state) - that is the
  * exit criterion under test.
  */
-import { redirect } from "next/navigation"
-import { z } from "zod"
-import { err, taggedError, type AsyncResult, type ErrorFactory } from "@friday-friday/core"
+import { type AsyncResult, err, type ErrorFactory, taggedError } from "@friday-friday/core"
 import { andThenAsync, mapAsync, orElseAsync } from "@friday-friday/core/async"
 import { action, type ActionFn } from "@friday-friday/next"
-import { saveProfile, type Profile, type ProfileError } from "../../lib/profiles"
+import { redirect } from "next/navigation"
+import { z } from "zod"
+import { type Profile, type ProfileError, saveProfile } from "../../lib/profiles"
 import { requireSession } from "../../lib/session"
 
 export const Forbidden: ErrorFactory<"Forbidden", { readonly action: string }> = taggedError("Forbidden")<{
@@ -37,8 +37,9 @@ export const updateProfile: ActionFn<Profile, Forbidden | ProfileError> = action
   ProfileInput,
   (input: ProfileInputValues): AsyncResult<Profile, Forbidden | ProfileError> => {
     // Guard failure maps into the action's own vocabulary (Forbidden); then save.
-    const authorized = orElseAsync(requireSession("u_1", "updateProfile"), () =>
-      err(Forbidden({ action: "updateProfile" }))
+    const authorized = orElseAsync(
+      requireSession("u_1", "updateProfile"),
+      () => err(Forbidden({ action: "updateProfile" }))
     )
     const guarded = andThenAsync(authorized, () => saveProfile("u_1", input))
     return mapAsync(guarded, (profile) => {
@@ -48,8 +49,10 @@ export const updateProfile: ActionFn<Profile, Forbidden | ProfileError> = action
       return profile
     })
   },
-  { onDefect: (cause) => {
+  {
+    onDefect: (cause) => {
       // Demo sink for defects (a real app would log to otel/sentry).
       void cause
-    } }
+    }
+  }
 )

@@ -25,9 +25,9 @@ vi.mock("next/navigation", () => ({
   }
 }))
 
-import { NotFound, getProfile } from "../src/lib/profiles"
-import { updateProfile } from "../src/app/profile/actions"
 import { GET } from "../src/app/api/profile/route"
+import { updateProfile } from "../src/app/profile/actions"
+import { getProfile, NotFound } from "../src/lib/profiles"
 
 const formData = (overrides: Record<string, string> = {}): FormData => {
   const fd = new FormData()

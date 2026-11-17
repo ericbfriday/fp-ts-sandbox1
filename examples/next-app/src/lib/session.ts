@@ -2,7 +2,7 @@
  * Fake session guard (a real app would read cookies via better-auth). Same AuthError
  * vocabulary as `@friday-friday/better-auth` so the pattern transfers 1:1.
  */
-import { err, taggedError, type ErrorFactory, type Result } from "@friday-friday/core"
+import { err, type ErrorFactory, type Result, taggedError } from "@friday-friday/core"
 
 export const Unauthenticated: ErrorFactory<"Unauthenticated", { readonly where: string }> = taggedError(
   "Unauthenticated"

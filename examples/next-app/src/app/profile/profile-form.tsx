@@ -4,7 +4,7 @@
  * The form face of the feature: useActionState drives the server action; ValidationFailure
  * field errors arrive as DATA (form state survives — report §5.1 trap 3).
  */
-import { useActionState, type ReactElement } from "react"
+import { type ReactElement, useActionState } from "react"
 import { updateProfile } from "../../app/profile/actions"
 
 /* oxlint-disable no-unsafe-type-assertion -- wire boundary: the action's error is unknown here; fields verified before use */
