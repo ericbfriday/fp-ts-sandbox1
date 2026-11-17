@@ -59,18 +59,15 @@ export const retryUnless: RetryUnless =
   <E>(stop: (e: E) => boolean, max = 3) => (failureCount: number, error: E): boolean =>
     !stop(error) && failureCount < max
 
-/** The query data a Result fetcher of `T` produces: `Ok(undefined)` is cached as `null`. */
-export type ResultQueryData<T> = QueryFnReturn<T>
-
 /**
  * Input to {@link resultQueryOptions}: TanStack's own `QueryObserverOptions` (so readonly keys,
  * `staleTime`, `enabled`, `select`, `meta`, `throwOnError`, a numeric or boolean `retry` and the
  * rest pass through unchanged), with `queryFn` replaced by a Result fetcher. `E` is inferred from
  * the fetcher only, so a mistyped `retry` / `throwOnError` is reported where it is written.
  */
-export interface ResultQueryOptionsInput<T, E, TData = ResultQueryData<T>, K extends QueryKey = QueryKey> extends
+export interface ResultQueryOptionsInput<T, E, TData = QueryFnReturn<T>, K extends QueryKey = QueryKey> extends
   Omit<
-    QueryObserverOptions<ResultQueryData<T>, NoInfer<E>, TData, ResultQueryData<T>, K>,
+    QueryObserverOptions<QueryFnReturn<T>, NoInfer<E>, TData, QueryFnReturn<T>, K>,
     "queryFn"
   >
 {
@@ -83,11 +80,11 @@ export interface ResultQueryOptionsInput<T, E, TData = ResultQueryData<T>, K ext
  * throwing `queryFn`, and the key tagged with `DataTag` (as `queryOptions` from the framework
  * packages does) so `queryClient.getQueryData(opts.queryKey)` infers data and error.
  */
-export interface ResultQueryOptions<T, E, TData = ResultQueryData<T>, K extends QueryKey = QueryKey>
-  extends Omit<QueryObserverOptions<ResultQueryData<T>, E, TData, ResultQueryData<T>, K>, "queryFn" | "queryKey">
+export interface ResultQueryOptions<T, E, TData = QueryFnReturn<T>, K extends QueryKey = QueryKey>
+  extends Omit<QueryObserverOptions<QueryFnReturn<T>, E, TData, QueryFnReturn<T>, K>, "queryFn" | "queryKey">
 {
-  readonly queryKey: DataTag<K, ResultQueryData<T>, E>
-  readonly queryFn: QueryFunction<ResultQueryData<T>, K>
+  readonly queryKey: DataTag<K, QueryFnReturn<T>, E>
+  readonly queryFn: QueryFunction<QueryFnReturn<T>, K>
 }
 
 /**
@@ -96,7 +93,7 @@ export interface ResultQueryOptions<T, E, TData = ResultQueryData<T>, K extends 
  * to `null`; every other option is passed through untouched. The result spreads into `useQuery`,
  * `queryOptions`, `fetchQuery`, `prefetchQuery` and `ensureQueryData`.
  */
-export function resultQueryOptions<T, E, TData = ResultQueryData<T>, K extends QueryKey = QueryKey>(
+export function resultQueryOptions<T, E, TData = QueryFnReturn<T>, K extends QueryKey = QueryKey>(
   o: ResultQueryOptionsInput<T, E, TData, K>
 ): ResultQueryOptions<T, E, TData, K> {
   const { queryFn, ...rest } = o
