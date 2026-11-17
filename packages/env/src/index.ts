@@ -92,6 +92,10 @@ const redactMessage = (message: string, path: ReadonlyArray<string | number>, en
   return values.reduce(redactToken, message)
 }
 
+/** A copy of `env` with `""` values dropped, so `FOO=` reads as an unset `FOO`. */
+const withoutEmptyStrings = (env: EnvLike): EnvLike =>
+  Object.fromEntries(Object.entries(env).filter(([, value]) => value !== ""))
+
 /**
  * Validate the environment with a Standard Schema. Values arrive as `string` (empty strings
  * are dropped as unset); coerce numbers in the schema and parse booleans strictly (see the
@@ -102,7 +106,7 @@ export function parseEnv<S extends StandardSchemaV1>(
   schema: S,
   env?: EnvLike
 ): Result<StandardSchemaV1.InferOutput<S>, ValidationFailure> {
-  const source = envRecord(env)
+  const source = withoutEmptyStrings(envRecord(env))
   const result = parse(schema, source)
   if (result.ok) return result
   return err(ValidationFailure({

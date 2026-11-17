@@ -96,6 +96,31 @@ describe("parseEnv redaction", () => {
   })
 })
 
+// Spec #30 story 28: `FOO=` in a .env file arrives as "", which vendors treat as a value.
+describe("parseEnv empty strings", () => {
+  it("treats \"\" as unset: optional gives undefined, default applies, coerce no longer yields 0", () => {
+    const Schema = z.object({
+      LOG_LEVEL: z.string().optional(),
+      PORT: z.coerce.number().default(3000),
+      PREFIX: z.string().default("")
+    })
+    const r = parseEnv(Schema, { LOG_LEVEL: "", PORT: "", PREFIX: "" })
+    expect(r).toEqual({ ok: true, value: { LOG_LEVEL: undefined, PORT: 3000, PREFIX: "" } })
+  })
+
+  it("a required var set to \"\" fails as missing", () => {
+    const r = parseEnv(z.object({ DATABASE_URL: z.string() }), { DATABASE_URL: "" })
+    if (r.ok) throw new Error("expected Err")
+    expect(r.error.issues.map((i) => [...i.path])).toEqual([["DATABASE_URL"]])
+  })
+
+  it("does not mutate the record it was given", () => {
+    const env = { A: "" }
+    parseEnv(z.object({ A: z.string().optional() }), env)
+    expect(env).toEqual({ A: "" })
+  })
+})
+
 // Spec #30 story 27: edge runtimes have no `process` global.
 describe("parseEnv default source", () => {
   afterEach(() => {
