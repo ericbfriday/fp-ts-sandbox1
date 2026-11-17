@@ -210,6 +210,13 @@ describe("mapConcurrent", () => {
     expect(panicked).toBe(true)
   })
 
+  it("an already-aborted signal is a Panic up front, like allAsync, even for empty inputs", async () => {
+    await expect(mapConcurrent([], async () => ok(1), { limit: 1, signal: AbortSignal.abort() })).rejects.toThrow(
+      Panic
+    )
+    await expect(allAsync([], { signal: AbortSignal.abort() })).rejects.toThrow(Panic)
+  })
+
   it("non-finite limit falls back to 1", async () => {
     const r = await mapConcurrent([1, 2], async (n) => ok(n), { limit: Number.NaN })
     expect(r).toEqual(ok([1, 2]))

@@ -169,14 +169,15 @@ export interface MapConcurrent {
 /**
  * Map `mapper` over `inputs` with at most `opts.limit` in flight; select the first `Err` in
  * INPUT order. Runs to completion (an early `Err` does not abort in-flight work) — documented
- * choice for v1. `opts.signal` is forwarded to the mapper (3rd arg); aborting before a launch
- * is a defect (`Panic(abort reason)`).
+ * choice for v1. `opts.signal` is forwarded to the mapper (3rd arg); an already-aborted signal,
+ * or aborting before a launch, is a defect (`Panic(abort reason)`).
  */
 export const mapConcurrent: MapConcurrent = /*#__PURE__*/ async <T, U, E>(
   inputs: ReadonlyArray<T>,
   mapper: (input: T, index: number, signal?: AbortSignal) => AsyncResult<U, E>,
   opts: MapConcurrentOptions
 ): Promise<Result<Array<U>, E>> => {
+  if (opts.signal?.aborted) throw toPanic(opts.signal.reason ?? "aborted")
   const floored = Math.floor(opts.limit)
   const limit = Number.isFinite(floored) ? Math.max(1, floored) : 1
   const results: Array<Result<U, E>> = new Array(inputs.length)
@@ -295,8 +296,8 @@ export const timeout: Timeout = /*#__PURE__*/ async <T, E>(
   const signal = opts?.signal
   // Already aborted: short-circuit like allAsync/retry, never running the thunk.
   if (signal?.aborted) throw toPanic(signal.reason ?? "aborted")
-  // An invalid `ms` (negative, NaN, non-integer overflow) is a caller bug: the platform's own
-  // RangeError/TypeError becomes the Panic's cause.
+  // An invalid `ms` (e.g. negative or NaN) is a caller bug: the platform's own validation error
+  // from `AbortSignal.timeout` becomes the Panic's cause.
   const timeoutSignal = call((delay: number) => AbortSignal.timeout(delay), ms)
   const combined = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal
   let settled = false

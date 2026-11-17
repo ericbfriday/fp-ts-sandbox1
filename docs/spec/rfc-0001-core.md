@@ -57,6 +57,8 @@ function tryAsync<T, E>(fn: (signal?: AbortSignal) => Promise<T>, opts: TryOptio
 function trySync<T, E>(fn: () => T, opts: Omit<TryOptions<E>, "signal">): Result<T, E>;
 ```
 
+Every lane (sync combinators, `/async`, `/gen`) converts through one exported, idempotent `toPanic(cause): Panic`: a foreign throw or rejection becomes `Panic` with the original as `cause`, and an existing `Panic` passes through as the same instance. Adapters and bridges reuse it after rethrowing their framework sentinels. A `Panic` built from a non-`Error` has a readable message (string as-is, tagged error as `Tag: message`, other data as JSON).
+
 No global rethrow registry. Adapters export pre-bound variants (`@friday-friday/next`'s `tryAsync` calls `unstable_rethrow` first, walking `cause` to depth 5).
 
 ## 4. Combinators

@@ -51,10 +51,23 @@ interface Row {
   readonly run: (cause: unknown) => unknown
 }
 
-/** Sync throw or async rejection, normalised: what escaped, or a loud failure if nothing did. */
-const escaped = async (run: () => unknown): Promise<unknown> => {
+/** An async export must never throw synchronously: its defects arrive as a rejection. */
+const isAsyncExport = (row: Row): boolean => row.lane === "/async" || row.name === "genAsync"
+
+/**
+ * What escaped the row: the sync throw (sync lanes) or the rejection (async exports, which must
+ * return a promise rather than throw), or a loud failure if nothing did.
+ */
+const escaped = async (row: Row, cause: unknown): Promise<unknown> => {
+  let returned: unknown
   try {
-    await run()
+    returned = row.run(cause)
+  } catch (x) {
+    if (isAsyncExport(row)) throw new Error(`${row.name} threw synchronously instead of rejecting`, { cause: x })
+    return x
+  }
+  try {
+    await returned
   } catch (x) {
     return x
   }
@@ -175,7 +188,7 @@ describe("defect-triage contract: every lane, one table", () => {
   it.each(table)(`${label}: a foreign throw becomes Panic with the original as cause`, async (...args) => {
     const row = args[3]
     const boom = new Error("boom")
-    const x = await escaped(() => row.run(boom))
+    const x = await escaped(row, boom)
     expect(x).toBeInstanceOf(Panic)
     expect(x).toMatchObject({ name: "Panic", message: "boom", cause: boom })
   })
@@ -183,7 +196,7 @@ describe("defect-triage contract: every lane, one table", () => {
   it.each(table)(`${label}: an existing Panic passes through with identity preserved`, async (...args) => {
     const row = args[3]
     const existing = new Panic("already a defect")
-    expect(await escaped(() => row.run(existing))).toBe(existing)
+    expect(await escaped(row, existing)).toBe(existing)
   })
 })
 
