@@ -10,6 +10,7 @@
  */
 
 import type { Result } from "@friday-friday/core"
+import type { DataTag, QueryFunction, QueryKey, QueryObserverOptions } from "@tanstack/query-core"
 
 /** Minimal structural view of TanStack's QueryFunctionContext (keeps this package core-only). */
 export interface QueryContext {
@@ -58,30 +59,50 @@ export const retryUnless: RetryUnless =
   <E>(stop: (e: E) => boolean, max = 3) => (failureCount: number, error: E): boolean =>
     !stop(error) && failureCount < max
 
-export interface ResultQueryOptionsInput<T, E> {
-  /** TanStack query key. */
-  readonly queryKey: Array<unknown>
+/** The query data a Result fetcher of `T` produces: `Ok(undefined)` is cached as `null`. */
+export type ResultQueryData<T> = QueryFnReturn<T>
+
+/**
+ * Input to {@link resultQueryOptions}: TanStack's own `QueryObserverOptions` (so readonly keys,
+ * `staleTime`, `enabled`, `select`, `meta`, `throwOnError`, a numeric or boolean `retry` and the
+ * rest pass through unchanged), with `queryFn` replaced by a Result fetcher. `E` is inferred from
+ * the fetcher only, so a mistyped `retry` / `throwOnError` is reported where it is written.
+ */
+export interface ResultQueryOptionsInput<T, E, TData = ResultQueryData<T>, K extends QueryKey = QueryKey> extends
+  Omit<
+    QueryObserverOptions<ResultQueryData<T>, NoInfer<E>, TData, ResultQueryData<T>, K>,
+    "queryFn"
+  >
+{
   /** The Result fetcher; receives the query context signal. */
   readonly queryFn: (signal: AbortSignal) => Promise<Result<T, E>>
-  /** Optional TanStack retry predicate composed from the error channel. */
-  readonly retry?: (failureCount: number, error: E) => boolean
-}
-
-export interface ResultQueryOptions<T, E> {
-  readonly queryKey: Array<unknown>
-  readonly queryFn: (ctx: QueryContext) => Promise<QueryFnReturn<T>>
-  readonly retry?: (failureCount: number, error: E) => boolean
 }
 
 /**
- * Assemble query options from a Result fetcher: the queryFn throws the plain tagged error on
- * `Err` (so `query.error` is exactly `E`) and normalizes `Ok(undefined)` to `null`. The returned
- * object is spread-compatible with TanStack's `useQuery` / `queryOptions` helpers.
+ * Options returned by {@link resultQueryOptions}: TanStack's `QueryObserverOptions` with a
+ * throwing `queryFn`, and the key tagged with `DataTag` (as `queryOptions` from the framework
+ * packages does) so `queryClient.getQueryData(opts.queryKey)` infers data and error.
  */
-export function resultQueryOptions<T, E>(o: ResultQueryOptionsInput<T, E>): ResultQueryOptions<T, E> {
-  const queryFn = (ctx: QueryContext): Promise<QueryFnReturn<T>> => toQueryFn(o.queryFn)(ctx)
-  if (o.retry === undefined) {
-    return { queryKey: o.queryKey, queryFn }
-  }
-  return { queryKey: o.queryKey, queryFn, retry: o.retry }
+export interface ResultQueryOptions<T, E, TData = ResultQueryData<T>, K extends QueryKey = QueryKey>
+  extends Omit<QueryObserverOptions<ResultQueryData<T>, E, TData, ResultQueryData<T>, K>, "queryFn" | "queryKey">
+{
+  readonly queryKey: DataTag<K, ResultQueryData<T>, E>
+  readonly queryFn: QueryFunction<ResultQueryData<T>, K>
+}
+
+/**
+ * Build TanStack query options from a Result fetcher (Design Report §5.4). The `queryFn` throws
+ * the plain tagged error on `Err` (so `query.error` is exactly `E`) and normalizes `Ok(undefined)`
+ * to `null`; every other option is passed through untouched. The result spreads into `useQuery`,
+ * `queryOptions`, `fetchQuery`, `prefetchQuery` and `ensureQueryData`.
+ */
+export function resultQueryOptions<T, E, TData = ResultQueryData<T>, K extends QueryKey = QueryKey>(
+  o: ResultQueryOptionsInput<T, E, TData, K>
+): ResultQueryOptions<T, E, TData, K> {
+  const { queryFn, ...rest } = o
+  const options: unknown = { ...rest, queryFn: toQueryFn(queryFn) }
+  // DataTag is a phantom brand on the key (no runtime field), so an assertion is the only way to
+  // attach it; TanStack's own `queryOptions` likewise returns its input with a re-typed key.
+  // oxlint-disable-next-line no-unsafe-type-assertion -- phantom DataTag brand on queryKey
+  return options as ResultQueryOptions<T, E, TData, K>
 }
