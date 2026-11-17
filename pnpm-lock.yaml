@@ -239,6 +239,16 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
 
+  packages/query:
+    dependencies:
+      '@friday-friday/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@tanstack/query-core':
+        specifier: ^5.107.1
+        version: 5.107.1
+
   packages/schema:
     dependencies:
       '@friday-friday/core':
@@ -1070,6 +1080,9 @@ packages:
 
   '@swc/helpers@0.5.23':
     resolution: {integrity: sha512-5lSsMOTXURePglDfvuAQUqkGek9Hg2kksOYay2m0+XR++b2NWYL/4sWyuvVBIs8oKnJaxkdi9whaL/sqN13afw==}
+
+  '@tanstack/query-core@5.107.1':
+    resolution: {integrity: sha512-PSyAik11oQBEVOiVy5hjZWHmoUqOXqK1WYy4v55mcxozEfKaQgpUMsgnXhWjuESzSht8JfzqMS1m6M/9CpNgvg==}
 
   '@tybys/wasm-util@0.10.4':
     resolution: {integrity: sha512-W3c4gRigFS0T/Ma4qIYF3GDAc5AQdHb1yL5znJT1Zv1YaD9Kitx656wBjvr19qbiosmZT8lWDM5BEMynUqX65A==}
@@ -2577,6 +2590,8 @@ snapshots:
   '@swc/helpers@0.5.23':
     dependencies:
       tslib: 2.9.1
+
+  '@tanstack/query-core@5.107.1': {}
 
   '@tybys/wasm-util@0.10.4':
     dependencies:
