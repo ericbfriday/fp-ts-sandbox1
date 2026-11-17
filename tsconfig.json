@@ -9,5 +9,8 @@
     "tooling/*/*.config.ts",
     "examples/*/src",
     "*.config.ts"
-  ]
+  ],
+  "compilerOptions": {
+    "jsx": "react-jsx"
+  }
 }
