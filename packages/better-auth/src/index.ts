@@ -20,6 +20,7 @@ import {
   type TaggedError,
   taggedError
 } from "@friday-friday/core"
+import { tryAsync } from "@friday-friday/core/async"
 import { isAPIError } from "better-auth/api"
 
 export const Unauthenticated: ErrorFactory<"Unauthenticated", {}> = taggedError("Unauthenticated")()
@@ -57,18 +58,20 @@ const fromAPIError = (error: Parameters<typeof isAPIError>[0]): AuthApiErrorInst
 }
 
 /**
- * Wrap a server-side `auth.api.*` call: `APIError` → `Err(AuthApiError)` (via `isAPIError`,
- * NOT instanceof — duplicate `better-call` copies break that), anything else → defect, rethrown.
+ * Boundary triage shared by `authCall` and `requireSession`: a thrown `APIError` maps to
+ * `Err(AuthApiError)` (via `isAPIError` — structural, NOT instanceof: duplicate `better-call`
+ * copies break that); our own tagged `Unauthenticated` passes through as `Err`; anything else
+ * returns `undefined`, which core's tryAsync rethrows as `Panic` (the defect convention).
  */
+const triageAuthError = (cause: unknown): AuthError | undefined => {
+  if (isAPIError(cause)) return fromAPIError(cause)
+  if (Unauthenticated.is(cause)) return cause
+  return undefined
+}
+
+/** Wrap a server-side `auth.api.*` call; defects rethrow as `Panic`. */
 export function authCall<T>(f: () => Promise<T>): AsyncResult<T, AuthError> {
-  return (async () => {
-    try {
-      return ok(await f())
-    } catch (cause) {
-      if (isAPIError(cause)) return err(fromAPIError(cause))
-      throw cause
-    }
-  })()
+  return tryAsync(f, { catch: triageAuthError })
 }
 
 export interface ClientAuthError {
@@ -102,27 +105,26 @@ export interface AuthLike {
 /** Session shape sufficient for `requireSession`/`requireRole` (better-auth session + user). */
 export interface SessionLike {
   readonly session: unknown
-  readonly user: { readonly id: string; readonly role?: string }
+  /** Comma-separated string (better-auth convention) or an explicit role array. */
+  readonly user: { readonly id: string; readonly role?: string | ReadonlyArray<string> }
 }
 
-/** Require a live session: `null` session → `Unauthenticated`; APIError → `AuthApiError`. */
+/** Require a live session: missing session → `Err(Unauthenticated)`; APIError → `Err(AuthApiError)`; defects rethrow as `Panic`. */
 export function requireSession(
   auth: AuthLike,
   headers: Headers
 ): AsyncResult<SessionLike, AuthError> {
-  return (async () => {
-    try {
+  return tryAsync(
+    async () => {
       const result = await auth.api.getSession({ headers })
-      if (result === null || result === undefined) return err(Unauthenticated({}))
+      if (result === null || result === undefined) throw Unauthenticated({})
       const candidate = result as Partial<SessionLike>
-      if (candidate.session === undefined || candidate.user === undefined) return err(Unauthenticated({}))
+      if (candidate.session === undefined || candidate.user === undefined) throw Unauthenticated({})
       // oxlint-disable-next-line no-unsafe-type-assertion -- Partial<SessionLike> verified field-by-field just above
-      return ok(candidate as SessionLike)
-    } catch (cause) {
-      if (isAPIError(cause)) return err(fromAPIError(cause))
-      throw cause
-    }
-  })()
+      return candidate as SessionLike
+    },
+    { catch: triageAuthError }
+  )
 }
 
 /**
@@ -132,37 +134,28 @@ export function requireSession(
 export function requireRole(required: string): (session: SessionLike) => Result<SessionLike, Forbidden> {
   return (session) => {
     const role = session.user.role
-    const roles = typeof role === "string" ? role.split(",").map((r) => r.trim()) : Array.isArray(role) ? role : []
+    const roles = typeof role === "string" ? role.split(",").map((r) => r.trim()) : Array.isArray(role) ? [...role] : []
     if (!roles.includes(required)) return err(Forbidden({ required }))
     return ok(session)
   }
 }
 
-export interface DatabaseHookResult<T> {
-  /** `false` aborts the database operation (better-auth databaseHooks contract). */
-  readonly abort: false
-  readonly data: T
-}
-
 /**
- * Adapt an AsyncResult validator into a better-auth `databaseHooks.*.before` hook:
- * `Err` → `false` (abort; or throws `APIError`-shaped when `throwOnReject`),
- * `Ok` → `{ data }` (replace). Defects propagate as `Panic`.
+ * Adapt an AsyncResult validator into a better-auth `databaseHooks.*.before` hook.
+ * The vendored contract (better-auth 1.7.25, `init-options.d.mts` + `with-hooks.mjs`) is
+ * `Promise<boolean | void | { data }>`: the runner only checks `=== false` (abort) and
+ * `"data" in result` (replace) — there is no `abort` field, so the adapter emits exactly
+ * `false` on `Err` (or throws the tagged error when `throwOnReject`) and `{ data }` on `Ok`.
+ * Defects thrown by `validate` propagate as-is (the hook runner surfaces them).
  */
 export function beforeDbHook<T, E extends TaggedError<string>>(
   validate: (data: T) => AsyncResult<T, E>,
   opts?: { throwOnReject?: boolean }
-): (data: T) => Promise<DatabaseHookResult<T>["data"] | DatabaseHookResult<T> | false | undefined> {
+): (data: T) => Promise<false | { readonly data: T } | void> {
   return async (data: T) => {
     const r = await validate(data)
-    if (r.ok) return { abort: false as const, data: r.value }
-    if (opts?.throwOnReject === true) {
-      throw taggedErrorHook(r.error)
-    }
+    if (r.ok) return { data: r.value }
+    if (opts?.throwOnReject === true) throw r.error
     return false
   }
-}
-
-const taggedErrorHook = (e: unknown): never => {
-  throw e
 }

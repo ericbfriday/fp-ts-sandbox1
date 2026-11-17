@@ -2,7 +2,15 @@
  * `@friday-friday/better-auth` runtime tests. The real `better-auth/api` `isAPIError` +
  * `APIError` are exercised through actual throws (devDep better-auth 1.7.25).
  */
-import { authCall, beforeDbHook, fromAuthTuple, requireRole, requireSession } from "@friday-friday/better-auth"
+import {
+  AuthApiError,
+  authCall,
+  beforeDbHook,
+  fromAuthTuple,
+  requireRole,
+  requireSession,
+  Unauthenticated
+} from "@friday-friday/better-auth"
 import { err, ok } from "@friday-friday/core"
 import { APIError } from "better-auth/api"
 import { describe, expect, it } from "vitest"
@@ -72,6 +80,19 @@ describe("fromAuthTuple (client lane)", () => {
   })
 })
 
+describe("wire contract (plain data)", () => {
+  it("AuthApiError survives JSON round-trip and structuredClone deep-equal", () => {
+    const e = AuthApiError({ status: 404, code: "NOT_FOUND" })
+    expect(JSON.parse(JSON.stringify(e))).toEqual(e)
+    expect(structuredClone(e)).toEqual(e)
+  })
+
+  it("Unauthenticated survives JSON round-trip", () => {
+    const e = Unauthenticated({})
+    expect(JSON.parse(JSON.stringify(e))).toEqual(e)
+  })
+})
+
 describe("requireSession / requireRole", () => {
   const headers = new Headers()
   const auth = (result: unknown) => ({ api: { getSession: () => Promise.resolve(result) } })
@@ -105,7 +126,7 @@ describe("requireSession / requireRole", () => {
 describe("beforeDbHook (databaseHooks contract)", () => {
   it("Ok -> { abort: false, data }", async () => {
     const hook = beforeDbHook<string, never>(async (data) => ok(data.toUpperCase()))
-    expect(await hook("abc")).toEqual({ abort: false, data: "ABC" })
+    expect(await hook("abc")).toEqual({ data: "ABC" })
   })
 
   it("Err -> false (abort) by default", async () => {
