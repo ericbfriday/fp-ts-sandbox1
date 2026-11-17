@@ -4,7 +4,7 @@ How the codebase is organized, why it looks the way it does, and how to work on 
 
 ## The driving philosophy
 
-1. **The adapters are the product.** Result libraries already exist (byethrow, better-result, unthrown, Effect 4). What none of them does is absorb the *framework-boundary traps* — Next.js sentinel throws, TanStack Query's throw-to-error contract, Better Auth's mixed throw-and-tuple API, tRPC's error channel, Hono's status inference. Every design decision serves that.
+1. **The adapters are the product.** Result libraries already exist (byethrow, better-result, unthrown, Effect 4). What none of them does is absorb the _framework-boundary traps_ — Next.js sentinel throws, TanStack Query's throw-to-error contract, Better Auth's mixed throw-and-tuple API, tRPC's error channel, Hono's status inference. Every design decision serves that.
 2. **Plain data survives every boundary.** Results are `{ ok: true, value } | { ok: false, error }` — no classes, no prototypes, no symbols on instances. They come back identical after `JSON.stringify`, `structuredClone`, RSC payloads, `"use cache"` and tRPC transformers. Tagged errors are plain objects with a `_tag` and a structural `.is()` guard, because `instanceof` breaks across duplicate module copies (Better Auth and TanStack Form both document this).
 3. **Defects are thrown, not values.** A third union member forces every consumer, adapter and wire format to handle three states. Unexpected throws become `Panic` (original as `cause`) and adapters sanitize them into `InternalDefect` at the edge.
 4. **No HKTs, ever.** Everything is monomorphic over `Result`. That is what keeps hover text readable and TS2589 away. `pipe`/`flow` are explicit overloads (16/12), never recursive types.
