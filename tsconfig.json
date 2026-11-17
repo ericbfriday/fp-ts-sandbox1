@@ -6,6 +6,7 @@
     "packages/*/*.config.ts",
     "tooling/*/src",
     "tooling/*/test",
+    "tooling/codemods/test",
     "tooling/*/*.config.ts",
     "examples/*/src",
     "*.config.ts"
