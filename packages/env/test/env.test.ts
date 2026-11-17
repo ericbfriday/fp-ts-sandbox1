@@ -1,8 +1,10 @@
 /**
  * `@friday-friday/env` runtime tests.
  */
-import { envRecord, parseEnv } from "@friday-friday/env"
-import { describe, expect, it } from "vitest"
+import { type EnvLike, envRecord, parseEnv } from "@friday-friday/env"
+import { type } from "arktype"
+import * as v from "valibot"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { z } from "zod"
 
 const EnvSchema = z.object({
@@ -40,6 +42,152 @@ describe("parseEnv", () => {
   })
 })
 
+// Report section 5.9 + spec #30 story 26: vendors that echo input must not leak env values.
+describe("parseEnv redaction", () => {
+  const SECRET = "sk_live_SUPERSECRET"
+
+  it.each([
+    ["valibot picklist", v.object({ MODE: v.picklist(["a", "b"]) })],
+    ["arktype literal union", type({ MODE: "'a' | 'b'" })]
+  ])("%s: issue messages never contain the raw value", (_name, schema) => {
+    const r = parseEnv(schema, { MODE: SECRET })
+    if (r.ok) throw new Error("expected Err")
+    expect(r.error.issues).toHaveLength(1)
+    expect([...(r.error.issues[0]?.path ?? [])]).toEqual(["MODE"])
+    expect(JSON.stringify(r.error)).not.toContain(SECRET)
+    expect(r.error.issues[0]?.message).toContain("[redacted]")
+  })
+
+  it("redacts a short value only where it stands alone, keeping the rest of the message", () => {
+    const Port = v.object({ PORT: v.pipe(v.string(), v.transform(Number), v.minValue(1024)) })
+    const r = parseEnv(Port, { PORT: "1" })
+    if (r.ok) throw new Error("expected Err")
+    expect(r.error.issues[0]?.message).toBe("Invalid value: Expected >=1024 but received [redacted]")
+  })
+
+  // Valibot echoes the raw string inside quotes; ArkType echoes it JSON-escaped.
+  it.each([
+    ["valibot", v.object({ MODE: v.picklist(["a", "b"]) })],
+    ["arktype", type({ MODE: "'a' | 'b'" })]
+  ])("%s: redacts the echo of a value with quotes or backslashes", (_name, schema) => {
+    const value = String.raw`sk"live\SECRET`
+    const r = parseEnv(schema, { MODE: value })
+    if (r.ok) throw new Error("expected Err")
+    const message = r.error.issues[0]?.message ?? ""
+    expect(message).not.toContain("SECRET")
+    expect(message).toContain("[redacted]")
+  })
+
+  it("root-level issues have every variable's value redacted", () => {
+    const Pair = v.pipe(
+      v.object({ A: v.string(), B: v.string() }),
+      v.check((o) => o.A !== o.B, (issue) => `A and B must differ, got ${JSON.stringify(issue.input)}`)
+    )
+    const r = parseEnv(Pair, { A: "hunter2", B: "hunter2", OTHER: "s3cret-token" })
+    if (r.ok) throw new Error("expected Err")
+    expect([...(r.error.issues[0]?.path ?? [])]).toEqual([])
+    expect(JSON.stringify(r.error)).not.toMatch(/hunter2|s3cret-token/)
+  })
+
+  // Vite's import.meta.env carries booleans (DEV/PROD/SSR) the EnvLike type cannot express (U).
+  it("leaves non-string values alone instead of looping on them", () => {
+    const Root = v.pipe(v.object({ A: v.string() }), v.check(() => false, "expected DEV to be true"))
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a runtime record wider than EnvLike
+    const env = { A: "x", DEV: true } as unknown as EnvLike
+    const r = parseEnv(Root, env)
+    if (r.ok) throw new Error("expected Err")
+    expect(r.error.issues[0]?.message).toBe("expected DEV to be true")
+  })
+
+  it("does not redact the values of other variables in a field issue", () => {
+    const r = parseEnv(v.object({ MODE: v.picklist(["a", "b"]) }), { MODE: "c", UNRELATED: "Expected" })
+    if (r.ok) throw new Error("expected Err")
+    expect(r.error.issues[0]?.message).toBe("Invalid type: Expected (\"a\" | \"b\") but received \"[redacted]\"")
+  })
+})
+
+// Spec #30 story 28: `FOO=` in a .env file arrives as "", which vendors treat as a value.
+describe("parseEnv empty strings", () => {
+  it("treats \"\" as unset: optional gives undefined, default applies, coerce no longer yields 0", () => {
+    const Schema = z.object({
+      LOG_LEVEL: z.string().optional(),
+      PORT: z.coerce.number().default(3000),
+      PREFIX: z.string().default("")
+    })
+    const r = parseEnv(Schema, { LOG_LEVEL: "", PORT: "", PREFIX: "" })
+    expect(r).toEqual({ ok: true, value: { LOG_LEVEL: undefined, PORT: 3000, PREFIX: "" } })
+  })
+
+  it("a required var set to \"\" fails as missing", () => {
+    const r = parseEnv(z.object({ DATABASE_URL: z.string() }), { DATABASE_URL: "" })
+    if (r.ok) throw new Error("expected Err")
+    expect(r.error.issues.map((i) => [...i.path])).toEqual([["DATABASE_URL"]])
+  })
+
+  it("does not mutate the record it was given", () => {
+    const env = { A: "" }
+    parseEnv(z.object({ A: z.string().optional() }), env)
+    expect(env).toEqual({ A: "" })
+  })
+})
+
+// Spec #30 story 28: the documented boolean recipes (module doc) instead of z.coerce.boolean(),
+// which is JS truthiness ("false" -> true).
+describe("parseEnv strict booleans (documented recipes)", () => {
+  const recipes = [
+    ["zod stringbool", z.object({ DEBUG: z.stringbool().default(false) })],
+    [
+      "valibot picklist + transform",
+      v.object({
+        DEBUG: v.optional(
+          v.pipe(v.picklist(["true", "false", "1", "0"]), v.transform((s) => s === "true" || s === "1")),
+          "false"
+        )
+      })
+    ]
+  ] as const
+
+  it.each(recipes)("%s: \"false\"/\"0\" -> false, \"true\"/\"1\" -> true, unset or \"\" -> false", (_name, schema) => {
+    const debug = (DEBUG?: string): unknown => {
+      const r = parseEnv(schema, DEBUG === undefined ? {} : { DEBUG })
+      return r.ok ? r.value.DEBUG : r.error
+    }
+    expect([debug("false"), debug("0"), debug("true"), debug("1"), debug(), debug("")]).toEqual([
+      false,
+      false,
+      true,
+      true,
+      false,
+      false
+    ])
+  })
+
+  it.each(recipes)("%s: anything else is an issue, not true", (_name, schema) => {
+    const r = parseEnv(schema, { DEBUG: "maybe" })
+    expect(r.ok).toBe(false)
+  })
+})
+
+// Spec #30 story 27: edge runtimes have no `process` global.
+describe("parseEnv default source", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.unstubAllEnvs()
+  })
+
+  it("without a process global, validates an empty record instead of throwing", () => {
+    vi.stubGlobal("process", undefined)
+    const r = parseEnv(z.object({ PORT: z.coerce.number().default(3000) }))
+    expect(r).toEqual({ ok: true, value: { PORT: 3000 } })
+  })
+
+  it("reads the live process.env when it exists", () => {
+    vi.stubEnv("FL_ENV_TEST_VAR", "from-process")
+    const r = parseEnv(z.object({ FL_ENV_TEST_VAR: z.string() }))
+    expect(r).toEqual({ ok: true, value: { FL_ENV_TEST_VAR: "from-process" } })
+  })
+})
+
 describe("envRecord", () => {
   it("returns overrides when given", () => {
     expect(envRecord({ A: "b" })).toEqual({ A: "b" })
@@ -48,5 +196,13 @@ describe("envRecord", () => {
   it("falls back to process.env (live)", () => {
     const rec = envRecord()
     expect(typeof rec).toBe("object")
+  })
+})
+
+// Ticket #34: Result constructors come from core, not re-exported here.
+describe("public surface", () => {
+  it("exports only parseEnv and envRecord at runtime", async () => {
+    const mod = await import("@friday-friday/env")
+    expect(Object.keys(mod).toSorted()).toEqual(["envRecord", "parseEnv"])
   })
 })
