@@ -106,6 +106,19 @@ describe("toValidationFailure (the one ValidationFailure producer)", () => {
     })
   })
 
+  it("wire contract: JSON and structuredClone round-trips are lossless (RFC-0001 §5.2)", () => {
+    const f = toValidationFailure([{ message: "bad", path: [{ key: "a" }, 1] }, { message: "root" }])
+    expect(JSON.parse(JSON.stringify(f))).toStrictEqual(f)
+    expect(structuredClone(f)).toStrictEqual(f)
+    expect(JSON.parse(JSON.stringify(err(f)))).toStrictEqual(err(f))
+  })
+
+  it("is idempotent: re-projecting wire-rebuilt issues changes nothing", () => {
+    const f = toValidationFailure([{ message: "bad", path: [{ key: "a" }, 1] }, { message: "root" }])
+    const rebuilt: typeof f = JSON.parse(JSON.stringify(f))
+    expect(toValidationFailure(rebuilt.issues)).toStrictEqual(f)
+  })
+
   it("parse emits exactly the projection (valibot root issue: path [], no input echoed)", () => {
     const Pair = v.pipe(
       v.object({ a: v.string(), b: v.string() }),
