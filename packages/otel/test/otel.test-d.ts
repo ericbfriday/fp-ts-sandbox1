@@ -44,4 +44,14 @@ describe("tracedSync", () => {
     if (!r.ok) expectTypeOf(r.error._tag).toEqualTypeOf<"NotFound">()
     else expectTypeOf(r.value).toEqualTypeOf<number>()
   })
+
+  it("preserves UNION sync error channels", () => {
+    const r = tracedSync<number, NotFoundE | BoomE>("op", () =>
+      Math.random() >= 0
+        ? { ok: true as const, value: 1 }
+        : Math.random() >= 0.5
+        ? { ok: false as const, error: NotFound({ id: "y" }) }
+        : { ok: false as const, error: Boom({ reason: "r" }) })
+    if (!r.ok) expectTypeOf(r.error._tag).toEqualTypeOf<"NotFound" | "Boom">()
+  })
 })

@@ -1,11 +1,12 @@
 /**
- * `@friday-friday/otel` runtime tests. A minimal in-memory TracerProvider is registered
- * globally; assertions run against the captured spans. With no SDK the helper degrades
- * to no-op spans, which the API guarantees — the tests exercise the SDK-attached path.
+ * `@friday-friday/otel` runtime tests. Spans are captured through an in-memory Tracer
+ * double injected via `opts.tracer` (the helper's injection point). With no SDK the
+ * global tracer degrades to no-op spans, which the API guarantees — the provider-less
+ * fallback test exercises that path.
  */
 import { Panic, taggedError } from "@friday-friday/core"
-import { ROOT_CONTEXT, type Span, type SpanOptions, SpanStatusCode, trace, type Tracer } from "@opentelemetry/api"
-import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import { type Span, type SpanOptions, SpanStatusCode, type Tracer } from "@opentelemetry/api"
+import { describe, expect, it } from "vitest"
 
 /* oxlint-disable no-unsafe-type-assertion -- test double: every cast below shapes the OTel Tracer/Span interfaces deliberately */
 import { traced, tracedSync } from "@friday-friday/otel"
@@ -54,8 +55,6 @@ const makeSpan = (name: string, o?: SpanOptions): RecordedSpan => {
 }
 
 // Overload-style declarations aren't allowed in object literals; one signature + cast.
-// oxlint-disable-next-line no-unsafe-type-assertion
-// oxlint-disable-next-line no-unsafe-type-assertion -- test double for the OTel Tracer interface
 const fakeTracer = {
   startActiveSpan(
     name: string,
@@ -68,18 +67,6 @@ const fakeTracer = {
     return fn(s)
   }
 } as Tracer
-
-let unsetTracer: Tracer | null = null
-beforeAll(() => {
-  // Preserve the real global tracer so the test leaves no global state behind.
-  unsetTracer = trace.getTracer("preserve-me")
-  // Inject ours for the duration via a scoped provider shim on the helper level:
-  // traced accepts opts.tracer, so most tests pass fakeTracer explicitly.
-})
-afterAll(() => {
-  void unsetTracer
-  void ROOT_CONTEXT
-})
 
 describe("traced (async)", () => {
   it("Ok -> span ends UNSET, value returned", async () => {

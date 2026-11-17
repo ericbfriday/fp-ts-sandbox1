@@ -10,16 +10,8 @@
  * With no SDK registered the global tracer is a no-op, so the helper is safe on
  * every runtime (edge included) — observability is additive.
  */
-import type { AsyncResult, TaggedError } from "@friday-friday/core"
-import {
-  type Attributes,
-  type AttributeValue,
-  type Span,
-  type SpanOptions,
-  SpanStatusCode,
-  trace,
-  type Tracer
-} from "@opentelemetry/api"
+import type { AsyncResult, Result, TaggedError } from "@friday-friday/core"
+import { type Attributes, type Span, type SpanOptions, SpanStatusCode, trace, type Tracer } from "@opentelemetry/api"
 
 /** Attribute key carrying the tagged-error `_tag` of an `Err` result. */
 export const ERROR_TAG_ATTR = "fl.error.tag"
@@ -37,28 +29,36 @@ export interface TracedOptions {
  * - `Err(e)` → span status `ERROR`, attribute `fl.error.tag = e._tag` (no exception record).
  * - thrown defect → recorded as an exception event, status `ERROR`, rethrown as-is.
  */
+/** Shared span semantics: Err marks (NO exception record), defects record + rethrow, span always ends. */
+const settle = <T, E extends TaggedError<string>>(span: Span, r: Result<T, E>): Result<T, E> => {
+  if (!r.ok) {
+    // Expected failure: tag the span, do NOT record an exception — expected
+    // errors and bugs must stay separable in dashboards.
+    span.setStatus({ code: SpanStatusCode.ERROR })
+    span.setAttribute(ERROR_TAG_ATTR, r.error._tag)
+  }
+  return r
+}
+
+/** Defect: record the exception (event) + mark ERROR; caller rethrows unchanged. */
+const recordDefect = (span: Span, cause: unknown): void => {
+  // oxlint-disable-next-line no-unsafe-type-assertion -- OTel's Exception is structurally {name?, message?, stack?}; defects may be plain data
+  span.recordException(cause as Error)
+  span.setStatus({ code: SpanStatusCode.ERROR })
+}
+
 export function traced<T, E extends TaggedError<string>>(
   name: string,
-  fn: (span: Span) => Promise<ResultLike<T, E>>,
+  fn: (span: Span) => Promise<Result<T, E>>,
   opts?: TracedOptions
 ): AsyncResult<T, E> {
   const tracer = opts?.tracer ?? trace.getTracer("@friday-friday")
   const spanOpts: SpanOptions = opts?.attributes === undefined ? {} : { attributes: opts.attributes }
   return tracer.startActiveSpan(name, spanOpts, async (span) => {
     try {
-      const r = await fn(span)
-      if (!r.ok) {
-        // Expected failure: tag the span, do NOT record an exception — expected
-        // errors and bugs must stay separable in dashboards.
-        span.setStatus({ code: SpanStatusCode.ERROR })
-        span.setAttribute(ERROR_TAG_ATTR, r.error._tag)
-      }
-      return r
+      return settle(span, await fn(span))
     } catch (cause) {
-      // Defect: record the exception (event), then propagate unchanged.
-      // oxlint-disable-next-line no-unsafe-type-assertion -- OTel's Exception is structurally {name?, message?, stack?}; defects may be plain data
-      span.recordException(cause as Error)
-      span.setStatus({ code: SpanStatusCode.ERROR })
+      recordDefect(span, cause)
       throw cause
     } finally {
       span.end()
@@ -69,23 +69,16 @@ export function traced<T, E extends TaggedError<string>>(
 /** Sync-Result variant for synchronous spans. */
 export function tracedSync<T, E extends TaggedError<string>>(
   name: string,
-  fn: (span: Span) => ResultLike<T, E>,
+  fn: (span: Span) => Result<T, E>,
   opts?: TracedOptions
-): ResultLike<T, E> {
+): Result<T, E> {
   const tracer = opts?.tracer ?? trace.getTracer("@friday-friday")
   const spanOpts: SpanOptions = opts?.attributes === undefined ? {} : { attributes: opts.attributes }
   return tracer.startActiveSpan(name, spanOpts, (span) => {
     try {
-      const r = fn(span)
-      if (!r.ok) {
-        span.setStatus({ code: SpanStatusCode.ERROR })
-        span.setAttribute(ERROR_TAG_ATTR, r.error._tag)
-      }
-      return r
+      return settle(span, fn(span))
     } catch (cause) {
-      // oxlint-disable-next-line no-unsafe-type-assertion -- OTel's Exception is structurally {name?, message?, stack?}; defects may be plain data
-      span.recordException(cause as Error)
-      span.setStatus({ code: SpanStatusCode.ERROR })
+      recordDefect(span, cause)
       throw cause
     } finally {
       span.end()
@@ -93,8 +86,4 @@ export function tracedSync<T, E extends TaggedError<string>>(
   })
 }
 
-type ResultLike<T, E extends TaggedError<string>> =
-  | { readonly ok: true; readonly value: T }
-  | { readonly ok: false; readonly error: E }
-
-export type { Attributes, AttributeValue, Span, Tracer }
+export type { Attributes, Span, Tracer }
