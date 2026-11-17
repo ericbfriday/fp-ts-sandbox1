@@ -22,6 +22,10 @@ import {
 } from "@friday-friday/core"
 import type { StandardJSONSchemaV1, StandardSchemaV1 } from "@standard-schema/spec"
 
+// Types-only re-export: adapters compose Standard Schema without re-declaring the shape
+// (types-only vendor deps are allowed; see IDEA.md section 9).
+export type { StandardJSONSchemaV1, StandardSchemaV1 }
+
 export interface ValidationFailure extends TaggedError<"ValidationFailure"> {
   readonly issues: ReadonlyArray<{
     readonly message: string
