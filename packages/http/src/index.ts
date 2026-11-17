@@ -52,9 +52,14 @@ export function reconstruct(
   problem: ProblemBody | undefined
 ): { readonly _tag: string } & Record<string, unknown> | null {
   if (problem === undefined || typeof problem.tag !== "string") return null
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- `tag`/`type` are transport metadata, not error props
-  const { tag, type, title, status, detail, ...safeProps } = problem
-  return { _tag: tag, ...safeProps }
+  // Transport metadata (`type`/`title`/`status`/`detail`/`tag`) is stripped; the rest are error props.
+  const safeProps: Record<string, unknown> = { ...problem }
+  delete safeProps["type"]
+  delete safeProps["title"]
+  delete safeProps["status"]
+  delete safeProps["detail"]
+  delete safeProps["tag"]
+  return { _tag: problem.tag, ...safeProps }
 }
 
 // Structural probe of an untrusted JSON body; the casts below are the boundary where the
