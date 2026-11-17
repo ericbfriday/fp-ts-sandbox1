@@ -1,0 +1,37 @@
+{
+  "name": "@friday-friday/hono",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Hono adapter: respond with status-literal unions, RFC 9457 problem(), sv() validation hook, onErrorHandler (Design Report section 5.2)",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": {
+      "@friday-friday/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@friday-friday/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "hono": "^4 || ^5"
+  },
+  "devDependencies": {
+    "@friday-friday/http": "workspace:*",
+    "hono": "^4.13.19",
+    "zod": "^4.6.7"
+  },
+  "scripts": {
+    "build": "tsdown"
+  }
+}

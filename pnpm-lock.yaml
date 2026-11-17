@@ -221,6 +221,22 @@ importers:
 
   packages/core: {}
 
+  packages/hono:
+    dependencies:
+      '@friday-friday/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@friday-friday/http':
+        specifier: workspace:*
+        version: link:../http
+      hono:
+        specifier: ^4.13.19
+        version: 4.13.19
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+
   packages/http:
     dependencies:
       '@friday-friday/core':
@@ -1708,6 +1724,10 @@ packages:
   hashery@1.5.1:
     resolution: {integrity: sha512-iZyKG96/JwPz1N55vj2Ie2vXbhu440zfUfJvSwEqEbeLluk7NnapfGqa7LH0mOsnDxTF85Mx8/dyR6HfqcbmbQ==}
     engines: {node: '>=20'}
+
+  hono@4.13.19:
+    resolution: {integrity: sha512-KmXvQAXwcAHV+muzbIwoJ23niEB5nMoDVr9WcRkU8mvjUECm/1+7v4Jgp7P7a+H6MLFrh+vXrGonGrGS+RQfkA==}
+    engines: {node: '>=16.9.0'}
 
   hookable@6.1.2:
     resolution: {integrity: sha512-+abwxtiEA52GCVIsQqut3S/uKTbUwYIp4Pe/vv+6py5XiXBCqMZHg6pA6Y5qhgLSEys0/cYuPbO0z1QFj5ZCmg==}
@@ -3288,6 +3308,8 @@ snapshots:
   hashery@1.5.1:
     dependencies:
       hookified: 1.15.1
+
+  hono@4.13.19: {}
 
   hookable@6.1.2: {}
 
