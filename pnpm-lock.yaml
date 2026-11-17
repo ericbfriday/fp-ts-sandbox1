@@ -258,6 +258,16 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/effect:
+    dependencies:
+      '@friday-friday/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      effect:
+        specifier: 4.0.6
+        version: 4.0.6
+
   packages/env:
     dependencies:
       '@friday-friday/core':
@@ -1754,6 +1764,9 @@ packages:
     peerDependenciesMeta:
       oxc-resolver:
         optional: true
+
+  effect@4.0.6:
+    resolution: {integrity: sha512-Tc3mkzuLR6t6P9dhLt0D2GrxYtmU5td4XEJEiXCmILz53IRIfJyHsKZWjTA3xEjiwpNTtXBgI4iqYPxMztBDrw==}
 
   empathic@2.1.0:
     resolution: {integrity: sha512-AnfC1ATldl49/cvZdLPDjBfrRNwbDO05aibiOtzQu3qtlbJtomNLhF30HEtn/7iBz50dlMECqATo3fG0LrdEgw==}
@@ -3368,6 +3381,8 @@ snapshots:
       '@dprint/win32-x64': 0.57.4
 
   dts-resolver@3.0.0: {}
+
+  effect@4.0.6: {}
 
   empathic@2.1.0: {}
 
