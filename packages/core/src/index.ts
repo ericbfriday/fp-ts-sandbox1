@@ -6,7 +6,7 @@
  * - Tagged errors are plain data with a literal `_tag` and a structural `is()` guard
  *   (never `instanceof`: duplicate module copies break it).
  * - Defects are thrown, not values: a callback that throws inside a combinator is rethrown
- *   as `Panic` with the original as `cause`.
+ *   as `Panic` with the original as `cause`, through the one idempotent `toPanic` conversion.
  * - Every combinator is dual (data-first and data-last, dispatched on `arguments.length`)
  *   and a separate `#__PURE__`-annotated export so unused ones tree-shake.
  * - `pipe` / `flow` are explicit overloads (16 / 12 arity): no recursive types, no HKTs.
@@ -114,12 +114,36 @@ export const toThrowable = <E extends TaggedError<string>>(e: E): Throwable<E> =
 export class Panic extends Error {
   override readonly name = "Panic" as const
   constructor(cause: unknown) {
-    super(cause instanceof Error ? cause.message : String(cause), { cause })
+    super(describeCause(cause), { cause })
   }
 }
 
-/** Run a user callback; anything it throws is rethrown as `Panic` (an existing `Panic` passes through).
- * Shared with the `/async` subpath via `./internal.js` (not part of the public API). */
+/**
+ * A readable log message for any thrown value: an `Error`'s message, a string as-is, a tagged
+ * error as `Tag: message`, anything else as JSON, falling back to `String()` when JSON can't
+ * represent it (bigint, cycles, functions, symbols). Never `[object Object]` for plain data.
+ */
+const describeCause = (cause: unknown): string => {
+  if (cause instanceof Error) return cause.message
+  if (typeof cause === "string") return cause
+  if (typeof cause === "object" && cause !== null && "_tag" in cause && typeof cause._tag === "string") {
+    return "message" in cause && typeof cause.message === "string" ? `${cause._tag}: ${cause.message}` : cause._tag
+  }
+  try {
+    return JSON.stringify(cause) ?? String(cause)
+  } catch {
+    return String(cause)
+  }
+}
+
+/**
+ * The one defect conversion every lane uses (IDEA §4.3, RFC-0001 §3): a foreign throw becomes
+ * `Panic` with the original as `cause`; an existing `Panic` is returned as the SAME instance, so
+ * nested combinators and adapters never double-wrap. Exported for adapters and bridges that
+ * triage throws at their own seam (rethrow framework sentinels first, then `throw toPanic(cause)`).
+ * Recognises `Panic` by `instanceof`: a Panic from a duplicate copy of core is wrapped once more.
+ */
+export const toPanic = (cause: unknown): Panic => cause instanceof Panic ? cause : new Panic(cause)
 
 /** Boundary triage (sync half; the async half lives in `./async.js`). */
 
@@ -147,7 +171,7 @@ export const trySync: TrySync = /*#__PURE__*/ <T, E>(fn: () => T, opts: TryOptio
   } catch (cause) {
     opts.rethrow?.(cause)
     const mapped = call(opts.catch, cause)
-    if (mapped === undefined) throw new Panic(cause)
+    if (mapped === undefined) throw toPanic(cause)
     return err(mapped)
   }
 }
