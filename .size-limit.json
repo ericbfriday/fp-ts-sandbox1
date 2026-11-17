@@ -50,5 +50,15 @@
     "import": "*",
     "limit": "2 kB",
     "gzip": true
+  },
+  {
+    "name": "@friday-friday/otel",
+    "path": "packages/otel/dist/index.js",
+    "import": "*",
+    "limit": "2 kB",
+    "gzip": true,
+    "ignore": [
+      "@opentelemetry/api"
+    ]
   }
 ]
