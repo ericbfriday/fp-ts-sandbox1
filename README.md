@@ -9,16 +9,17 @@ Functional-light TypeScript suite: a plain-object `Result` core with thin, frame
 
 ## Packages
 
-| Package                                                                              | Status         | What it does                                                                                                                                              |
-| ------------------------------------------------------------------------------------ | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`@friday-friday/core`](packages/core)                                               | ✅ implemented | Plain-object Result, tagged errors, dual combinators, pipe/flow, boundary triage; `/async` (retry/timeout/concurrency) and `/gen` (do-notation) subpaths  |
-| [`@friday-friday/schema`](packages/schema)                                           | ✅ implemented | Standard Schema → Result: parse/parseAsync, field/form flatteners, phantom brands, JSON Schema                                                            |
-| [`@friday-friday/next`](packages/next)                                               | ✅ implemented | Next.js adapter: sentinel-safe triage (unstable_rethrow), useActionState actions, loaders, problem+json toResponse, client boundary                       |
-| [`@friday-friday/query`](packages/query)                                             | ✅ implemented | TanStack Query adapter: `toQueryFn` (Err throws the tagged error so `query.error === E`), `retryUnless`, `resultQueryOptions`                             |
-| [`@friday-friday/better-auth`](packages/better-auth)                                 | ✅ implemented | Better Auth adapter: `authCall`/`fromAuthTuple`/`requireSession`/`requireRole`/`beforeDbHook`; one `AuthError` vocabulary, structural `isAPIError` triage |
-| [`@friday-friday/http`](packages/http)                                               | ✅ implemented | HTTP client: `fetchResult` with Standard Schema decode, RFC 9457 problem+json parsing, lossless tagged-error reconstruction                               |
-| `@friday-friday/hono` · `trpc` · `tanstack-start` · `otel` · `db` · `env` · `effect` | planned        | Phase 3+ — see `docs/plan/IMPLEMENTATION_PLAN.md`                                                                                                         |
-| [`tooling/eslint-plugin`](tooling/eslint-plugin)                                     | ✅ implemented | must-use-result, no-try-around-redirect, no-instanceof-tagged-error (enforced repo-wide)                                                                  |
+| Package                                                                     | Status         | What it does                                                                                                                                              |
+| --------------------------------------------------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`@friday-friday/core`](packages/core)                                      | ✅ implemented | Plain-object Result, tagged errors, dual combinators, pipe/flow, boundary triage; `/async` (retry/timeout/concurrency) and `/gen` (do-notation) subpaths  |
+| [`@friday-friday/schema`](packages/schema)                                  | ✅ implemented | Standard Schema → Result: parse/parseAsync, field/form flatteners, phantom brands, JSON Schema                                                            |
+| [`@friday-friday/next`](packages/next)                                      | ✅ implemented | Next.js adapter: sentinel-safe triage (unstable_rethrow), useActionState actions, loaders, problem+json toResponse, client boundary                       |
+| [`@friday-friday/query`](packages/query)                                    | ✅ implemented | TanStack Query adapter: `toQueryFn` (Err throws the tagged error so `query.error === E`), `retryUnless`, `resultQueryOptions`                             |
+| [`@friday-friday/better-auth`](packages/better-auth)                        | ✅ implemented | Better Auth adapter: `authCall`/`fromAuthTuple`/`requireSession`/`requireRole`/`beforeDbHook`; one `AuthError` vocabulary, structural `isAPIError` triage |
+| [`@friday-friday/http`](packages/http)                                      | ✅ implemented | HTTP client: `fetchResult` with Standard Schema decode, RFC 9457 problem+json parsing, lossless tagged-error reconstruction                               |
+| [`@friday-friday/otel`](packages/otel)                                      | ✅ implemented | OpenTelemetry spans: `traced`/`tracedSync` mark Err as ERROR with `fl.error.tag` (no exception records); defects recorded as exceptions                   |
+| `@friday-friday/hono` · `trpc` · `tanstack-start` · `db` · `env` · `effect` | planned        | Phase 3+ — see `docs/plan/IMPLEMENTATION_PLAN.md`                                                                                                         |
+| [`tooling/eslint-plugin`](tooling/eslint-plugin)                            | ✅ implemented | must-use-result, no-try-around-redirect, no-instanceof-tagged-error (enforced repo-wide)                                                                  |
 
 ## Documentation map
 
