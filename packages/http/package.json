@@ -1,0 +1,33 @@
+{
+  "name": "@friday-friday/http",
+  "version": "0.0.0",
+  "private": true,
+  "description": "HTTP client adapter: fetchResult with schema decode + RFC 9457 problem+json reconstruction (Design Report section 5.9)",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": {
+      "@friday-friday/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@friday-friday/core": "workspace:*",
+    "@friday-friday/schema": "workspace:*"
+  },
+  "devDependencies": {
+    "zod": "^4.6.7"
+  },
+  "scripts": {
+    "build": "tsdown"
+  }
+}

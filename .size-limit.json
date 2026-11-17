@@ -1,27 +1,27 @@
 [
   {
-    "name": "@friday-friday/core — { ok, err, map, andThen, pipe }",
+    "name": "@friday-friday/core \u2014 { ok, err, map, andThen, pipe }",
     "path": "packages/core/dist/index.js",
     "import": "{ ok, err, map, andThen, pipe }",
     "limit": "600 B",
     "gzip": true
   },
   {
-    "name": "@friday-friday/core — full",
+    "name": "@friday-friday/core \u2014 full",
     "path": "packages/core/dist/index.js",
     "import": "*",
     "limit": "3 kB",
     "gzip": true
   },
   {
-    "name": "@friday-friday/core — full /async subpath",
+    "name": "@friday-friday/core \u2014 full /async subpath",
     "path": "packages/core/dist/async.js",
     "import": "*",
     "limit": "3 kB",
     "gzip": true
   },
   {
-    "name": "@friday-friday/core — full /gen subpath",
+    "name": "@friday-friday/core \u2014 full /gen subpath",
     "path": "packages/core/dist/gen.js",
     "import": "*",
     "limit": "3 kB",
@@ -30,6 +30,13 @@
   {
     "name": "@friday-friday/schema",
     "path": "packages/schema/dist/index.js",
+    "import": "*",
+    "limit": "2 kB",
+    "gzip": true
+  },
+  {
+    "name": "@friday-friday/http",
+    "path": "packages/http/dist/index.js",
     "import": "*",
     "limit": "2 kB",
     "gzip": true
