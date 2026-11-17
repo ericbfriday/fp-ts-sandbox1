@@ -106,6 +106,8 @@ Exit criteria (from report §9): size budgets green, TS 6/7/7.1 matrix green, `e
 ### Phase 5 — Extras: `effect`, `db`, `env`, codemods, oRPC recipe, `llms.txt` + per-package SKILL.md/AGENTS docs
 - **`@friday-friday/db`** ✅ (PR #27, merged; mapPgError/mapPrismaError/mapDbError — structural code reads, zero vendor imports; Prisma P-codes kept as U per report caveat; 631 B)
 - **`@friday-friday/env`** ✅ (PR #27, merged; parseEnv(schema, env?) over process.env/import.meta.env/fixtures — Err(ValidationFailure), no throw at import time; @t3-oss/env interop documented; 638 B)
+- **`@friday-friday/effect`** ✅ (PR #28, merged; fromExit — Fail -> Err, Die/Interrupt -> Panic with Effect's severity ordering; runResult — failures as data, signal forwarded, interrupt -> Panic; toEffect sync+async via typed ErrCarrier across tryPromise; only @stability-stable modules; peer ^4.0.0, devDep exact 4.0.6 for the supply-chain window; 15 tests; 687 B)
+- **`llms.txt`** ✅ (root; LLM-consumable suite summary)
 
 ## Guardrails (all phases)
 
