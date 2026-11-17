@@ -1,0 +1,38 @@
+{
+  "name": "@friday-friday/tanstack-start",
+  "version": "0.0.0",
+  "private": true,
+  "description": "TanStack Start/Router adapter: resultHandler (in-handler validation, #6428 workaround) + loaderResult (sentinel mapping) (Design Report section 5.5)",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": {
+      "@friday-friday/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@friday-friday/core": "workspace:*",
+    "@friday-friday/schema": "workspace:*"
+  },
+  "peerDependencies": {
+    "@tanstack/router-core": "^1.169"
+  },
+  "devDependencies": {
+    "@tanstack/router-core": "1.171.39",
+    "zod": "^4.6.7",
+    "@standard-schema/spec": "^1.1.0"
+  },
+  "scripts": {
+    "build": "tsdown"
+  }
+}
