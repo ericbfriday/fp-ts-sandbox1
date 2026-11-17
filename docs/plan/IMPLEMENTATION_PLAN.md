@@ -39,7 +39,7 @@ Everything consciously postponed or accepted, with where it lives. Nothing else 
 
 | Item | Where documented | When it lands |
 |---|---|---|
-| `examples/next-app` (issue #9, open) | Phase 1 step 6 notes (above) | Next session / CC after quota reset |
+| `examples/next-app` (issue #9) | DONE — PR #25 merged | closed 2026-11-17 |
 | Type-instantiation budget fixtures (`tsc --extendedDiagnostics`) | ADR-0004 | Phase 4 kickoff — needs per-TS-version baselines (6.0/7.0/7.1 counts differ; a single absolute budget would be flaky across the matrix). Decision to make: per-version baselines in-repo vs one diagnostic job on 7.x only |
 | `no-instanceof-tagged-error`: MemberExpression RHS (e.g. `Errors.NotFound`) unflagged | PR #16 review (spec note) | v1 accepted; revisit on demand |
 | `toResponse` problem `title` = raw `_tag`, not a human title | PR #15 review (judgement) | v1 accepted; RFC §6 errata candidate |
@@ -78,7 +78,7 @@ Exit criteria (from report §9): size budgets green, TS 6/7/7.1 matrix green, `e
 3. **`@friday-friday/schema`** ✅ (PR #14, issue #6 closed; parse/parseAsync, path normalization with `[symbol]` notes, toFieldErrors/toFormErrors, phantom branded(), toJsonSchema wrapped as Err(Unsupported); zod + valibot + arktype dev-only fixtures prove no vendor hard dep; 834 B of 2 kB.)
 4. **`@friday-friday/next`** ✅ (PR #15, issue #7 closed; server entry + throwing stub + /client resultBoundary; triage delegated to core with nextRethrow pre-bound; sentinel-escape integration proofs at unit level — real-app e2e lands with #9. Base moduleResolution switched to bundler: next@16.4.6 ships an EMPTY exports map, NodeNext cannot resolve next/* subpaths — recorded in ADR-0004; plain-Node dist smoke impossible for this package.)
 5. **`tooling/eslint-plugin`** ✅ (PR #16, issue #8 closed; must-use-result / no-try-around-redirect / no-instanceof-tagged-error implemented type-aware, WIRED into the shared eslint.config.js — the lint gate now enforces them repo-wide; no-try-around-redirect honors the unstable_rethrow catch-handler exemption; 21 RuleTester cases wired into vitest.)
-6. **`examples/next-app`** — REMAINING (issue #9, unblocked). Implementation notes for the next session/agent:
+6. **`examples/next-app`** — DONE (PR #25 merged, issue #9 closed 2026-11-17). Profile update form on next@16.4: action() + ValidationFailure field errors as data, session guard -> Forbidden, redirect sentinel survives the triage (proven on the wire), orNotFound loader, toResponse problem+json route.
    - Scaffold with create-next-app@16.4 (App Router, TS), add @friday-friday/{core,schema,next} workspace deps.
    - One feature (profile update): server action via next.action + useActionState ({ ok: null } idle), redirect-after-save thrown OUTSIDE the action catch (sentinel proof), ValidationFailure -> toFieldErrors field errors, toResponse route handler with problem+json, orNotFound loader.
    - The AC proof "redirect survives try/catch" has unit-level coverage in packages/next/test/next.test.ts (sentinel escapes adapter triage unmapped); the example proves it live in a running app.

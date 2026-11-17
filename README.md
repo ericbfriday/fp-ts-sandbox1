@@ -46,4 +46,4 @@ Functional-light TypeScript suite: a plain-object `Result` core with thin, frame
 
 ## Status
 
-Phase 1 (MVP) in progress: core + schema + next + lint rules ✅ merged; `examples/next-app` (#9) is the remaining exit criterion. Living status: `docs/plan/IMPLEMENTATION_PLAN.md`. 0.x — nothing is published to npm.
+Phases 1–3 complete: core + schema + next + lint rules + examples/next-app (#9, closed) + query + better-auth + http + otel + hono + trpc all merged. Phase 4 (tanstack-start) and Phase 5 (effect/db/env/codemods) remain. Living status: `docs/plan/IMPLEMENTATION_PLAN.md`. 0.x — nothing is published to npm.
