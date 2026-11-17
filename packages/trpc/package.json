@@ -1,0 +1,37 @@
+{
+  "name": "@friday-friday/trpc",
+  "version": "0.0.0",
+  "private": true,
+  "description": "tRPC v11 adapter: dual-channel Results via resultMiddleware + errorFormatter (fl member) + fromTRPC reconstruction (Design Report section 5.3)",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": {
+      "@friday-friday/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@friday-friday/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "@trpc/server": "^11"
+  },
+  "devDependencies": {
+    "@trpc/client": "^11.28.3",
+    "@trpc/server": "^11.28.3",
+    "zod": "^4.6.7"
+  },
+  "scripts": {
+    "build": "tsdown"
+  }
+}
