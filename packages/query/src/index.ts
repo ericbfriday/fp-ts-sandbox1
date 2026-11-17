@@ -16,6 +16,9 @@ export interface QueryContext {
   readonly signal: AbortSignal
 }
 
+/** TanStack queryFn return: Ok(undefined) is normalized to null (undefined counts as failed). */
+type QueryFnReturn<T> = T extends undefined ? null : T
+
 export interface ToQueryFn {
   /**
    * Adapt an AsyncResult-producing fetcher into a TanStack queryFn:
@@ -25,7 +28,7 @@ export interface ToQueryFn {
    */
   <T, E>(
     fn: (signal: AbortSignal) => Promise<Result<T, E>>
-  ): (ctx: QueryContext) => Promise<T extends undefined ? null : T>
+  ): (ctx: QueryContext) => Promise<QueryFnReturn<T>>
 }
 
 // The concrete implementation cannot satisfy the conditional-return signature generically
@@ -66,7 +69,7 @@ export interface ResultQueryOptionsInput<T, E> {
 
 export interface ResultQueryOptions<T, E> {
   readonly queryKey: Array<unknown>
-  readonly queryFn: (ctx: QueryContext) => Promise<T extends undefined ? null : T>
+  readonly queryFn: (ctx: QueryContext) => Promise<QueryFnReturn<T>>
   readonly retry?: (failureCount: number, error: E) => boolean
 }
 
