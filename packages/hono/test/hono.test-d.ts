@@ -1,12 +1,12 @@
 /**
  * `@friday-friday/hono` type tests — the status-literal union is the product here.
  */
+import { err, ok, taggedError } from "@friday-friday/core"
+import { respond, sv } from "@friday-friday/hono"
+import { Hono } from "hono"
 import { hc } from "hono/client"
 import { describe, expectTypeOf, it } from "vitest"
 import { z } from "zod"
-import { Hono } from "hono"
-import { err, ok, taggedError } from "@friday-friday/core"
-import { respond, sv } from "@friday-friday/hono"
 
 const NotFound = taggedError("NotFound")<{ id: string }>()
 const Forbidden = taggedError("Forbidden")<{ required: string }>()
@@ -25,14 +25,16 @@ const itemsApp = new Hono().post("/items", itemsValidator, (c) => {
 
 const usersApp = new Hono().get("/users/:id", (c) => {
   const id = c.req.param("id")
-  const r: { ok: true; value: { id: string; name: string } } | { ok: false; error: AppError } =
-    id === "missing" ? err(NotFound({ id })) : ok({ id, name: "ada" })
+  const r: { ok: true; value: { id: string; name: string } } | { ok: false; error: AppError } = id === "missing"
+    ? err(NotFound({ id }))
+    : ok({ id, name: "ada" })
   return respond(c, r, { NotFound: 404, Forbidden: 403, Teapot: 418 } as const)
 })
 
 describe("respond status-literal inference", () => {
   it("client infers 200 | mapped literal statuses (NOT number)", async () => {
-    const client = hc<typeof usersApp>(undefined as never)
+    // oxlint-disable-next-line no-unsafe-type-assertion -- hc(client) requires a concrete fetch impl; type tests only need the AppType
+    const client = hc<typeof usersApp>("http://localhost")
     const res = await client.users[":id"].$get({ param: { id: "1" } })
     // The trap: `as number` here would collapse this to number. Literal union is the contract.
     expectTypeOf(res.status).toEqualTypeOf<200 | 403 | 404 | 418>()
@@ -48,5 +50,12 @@ describe("sv inference", () => {
       return c.json({ created: body.name }, 201)
     })
     expectTypeOf(app).not.toBeNever()
+  })
+
+  it("itemsApp client input is the schema input, output the handler json", async () => {
+    const client = hc<typeof itemsApp>("http://localhost")
+    expectTypeOf(client.items).not.toBeNever()
+    void client
+    void itemsApp
   })
 })
