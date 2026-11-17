@@ -40,7 +40,7 @@ Everything consciously postponed or accepted, with where it lives. Nothing else 
 | Item | Where documented | When it lands |
 |---|---|---|
 | `examples/next-app` (issue #9, open) | Phase 1 step 6 notes (above) | Next session / CC after quota reset |
-| Type-instantiation budget fixtures (`tsc --extendedDiagnostics`) | ADR-0004 | Phase 3 close — REQUIRED before the phase lands (raised in hono review); budget = fail CI on >20% instantiation regression, one fixture per server adapter |
+| Type-instantiation budget fixtures (`tsc --extendedDiagnostics`) | ADR-0004 | Phase 4 kickoff — needs per-TS-version baselines (6.0/7.0/7.1 counts differ; a single absolute budget would be flaky across the matrix). Decision to make: per-version baselines in-repo vs one diagnostic job on 7.x only |
 | `no-instanceof-tagged-error`: MemberExpression RHS (e.g. `Errors.NotFound`) unflagged | PR #16 review (spec note) | v1 accepted; revisit on demand |
 | `toResponse` problem `title` = raw `_tag`, not a human title | PR #15 review (judgement) | v1 accepted; RFC §6 errata candidate |
 | Problem-body props are denylist (all JSON-safe minus `_tag`/`message`/`cause`), not RFC allowlist wording | PR #15 review (judgement) | Operative rule (cause + non-JSON-safe dropped) met and tested |
