@@ -1,0 +1,65 @@
+# DEVELOPER.md — working in this repo
+
+How the codebase is organized, why it looks the way it does, and how to work on it without fighting the tools.
+
+## The driving philosophy
+
+1. **The adapters are the product.** Result libraries already exist (byethrow, better-result, unthrown, Effect 4). What none of them does is absorb the _framework-boundary traps_ — Next.js sentinel throws, TanStack Query's throw-to-error contract, Better Auth's mixed throw-and-tuple API, tRPC's error channel, Hono's status inference. Every design decision serves that.
+2. **Plain data survives every boundary.** Results are `{ ok: true, value } | { ok: false, error }` — no classes, no prototypes, no symbols on instances. They come back identical after `JSON.stringify`, `structuredClone`, RSC payloads, `"use cache"` and tRPC transformers. Tagged errors are plain objects with a `_tag` and a structural `.is()` guard, because `instanceof` breaks across duplicate module copies (Better Auth and TanStack Form both document this).
+3. **Defects are thrown, not values.** A third union member forces every consumer, adapter and wire format to handle three states. Unexpected throws become `Panic` (original as `cause`) and adapters sanitize them into `InternalDefect` at the edge.
+4. **No HKTs, ever.** Everything is monomorphic over `Result`. That is what keeps hover text readable and TS2589 away. `pipe`/`flow` are explicit overloads (16/12), never recursive types.
+5. **Triage at boundaries.** `tryAsync(fn, { catch, rethrow })`: the `catch` maps an unknown throw to a domain error, or returns `undefined` = defect = rethrow. Framework sentinels (Next.js `redirect()`/`notFound()`) are rethrown FIRST via pre-bound `rethrow` functions — they are control flow, not errors.
+6. **Signals flow down.** Cancellation-capable helpers take `{ signal }` and FORWARD it into user callbacks so underlying work can observe cancellation. Pure combinators don't (nothing to cancel); callers bind their signal in the closure.
+7. **Zero vendor dependencies.** Validation is Standard Schema types-only. Zod/Valibot/ArkType appear in devDependencies of tests as fixtures, never in runtime imports.
+8. **Enforce by lint, not by hope.** TypeScript doesn't force Result consumption; the local ESLint plugin does. See `tooling/eslint-plugin`.
+9. **Explicit over clever.** Dual dispatch is `arguments.length`, not type sniffing. Casts exist only at guarded AST/wire boundaries, each with a scoped disable comment and a reason.
+
+Locked decisions: `IDEA.md` §4. To change one, write a note in `docs/decisions/` first (see `2026-11-16-async-signal-handling.md` for the format).
+
+## Layout
+
+```
+packages/core    @friday-friday/core — sync surface + /async + /gen subpaths
+packages/schema  @friday-friday/schema — Standard Schema → Result
+packages/next    @friday-friday/next — Next.js adapter (react-server/default/client conditions)
+packages/...     Phase 2+: query, better-auth, http, otel, hono, trpc, tanstack-start, effect, db, env
+tooling/eslint-plugin  @friday-friday/eslint-plugin — the three type-aware rules (ADR-0003)
+examples/next-app      live proof of the Next.js adapter (issue #9)
+docs/            plan (living), spec (RFC-0001), adr/, decisions/, agents/, research
+```
+
+Boundary rules: `core` imports nothing; `schema` imports only `core`; adapters import `core` (+ `schema`) and their framework peers, never each other.
+
+## Commands
+
+All via pnpm at the root (see also `README.md`):
+
+- `pnpm ci` — the full local gate: lint, typecheck, test, size. **Run this before pushing.**
+- `pnpm test` — Vitest runtime + `--typecheck` type tests; `pnpm test <file>` filters
+- `pnpm --filter "@friday-friday/<pkg>" exec tsc --noEmit -p tsconfig.json` — per-package check
+
+## Testing conventions
+
+- Runtime tests: `<pkg>/test/<area>.test.ts`. Type tests: `<pkg>/test/<area>.test-d.ts` with `expectTypeOf` + the **annotated-const pattern** (`const r: Expected = actual`) — expectTypeOf on Promise-wrapped unions trips its brand probe, and the assignment is the real inference check.
+- Property laws (fast-check) for combinator math; wire contracts (`JSON.parse(JSON.stringify(x))` + `structuredClone`) for every public output; `fc.asyncProperty` for async predicates.
+- Framework APIs are mocked with sentinel-accurate fakes (see `packages/next/test/next.test.ts`'s `vi.mock("next/navigation")`).
+
+## Known TS 7.0.2 quirks (re-check at 7.1 stable, planned 24 Nov 2026)
+
+- Root `tsc` mis-resolves `T` for repeated/position-dependent data-first `matchTag` calls in one function body; vitest's own typecheck disagrees. Route tagged-dispatch tests through `pipe`/data-last forms; type coverage lives in `*.test-d.ts`.
+- `const` type parameters can mangle element unions (`all()` inferred Err-only). Use a variadic-tuple constraint plus a generic-array overload instead.
+- Multi-step `gen` bodies need the generator return-type annotation (`Generator<Err<E>, T, unknown>`); single-source bodies infer.
+- expect-type's `toEqualTypeOf` brand probe trips on Promise-wrapped unions — use the annotated-const pattern.
+
+## Lint directives (both tools run)
+
+- oxlint rules: `// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- reason`
+- ESLint rules: `// eslint-disable-next-line typescript/no-unsafe-type-assertion -- reason`
+- Each tool errors on the other's unknown rule ids; when a line needs both, stack both comments.
+
+## Adding a package
+
+1. `packages/<name>/package.json` — `@friday-friday/<name>`, `workspace:*` deps on core (+schema), framework vendors as **peers** with conservative ranges (lower bound = oldest CI-matrix version), vendors as devDeps for fixtures.
+2. `tsconfig.json` extending `../../tsconfig.base.json`, `tsdown.config.ts` (see `packages/core`), `test/` suite, size-limit entry (≤ 2 kB adapters) in `.size-limit.json`.
+3. Wire docs: README table row + plan checkbox. Root `tsconfig.json`/vitest globs pick everything else up automatically.
+4. Peer caveat: some frameworks (next@16.4) ship empty `exports` maps — plain-Node dist smokes are impossible for those; cover runtime behavior in vitest + an example app.
