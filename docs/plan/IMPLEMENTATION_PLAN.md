@@ -87,6 +87,8 @@ Exit criteria (from report §9): size budgets green, TS 6/7/7.1 matrix green, `e
 
 ### Phase 2 — Data layer: `query`, `better-auth`, `http`, `otel`
 - **`@friday-friday/query`** ✅ (PR #18, merged; toQueryFn throws plain tagged E (query.error === E), Ok(undefined) → null, retryUnless + resultQueryOptions; REAL QueryClient.fetchQuery integration tests prove error identity + retry counts; TS 7.1-beta conditional-type quirk worked around via shared QueryFnReturn alias)
+- **`@friday-friday/better-auth`** ✅ (PR #19, merged; authCall/fromAuthTuple/requireSession/requireRole/beforeDbHook; one AuthError vocabulary Unauthenticated|Forbidden|AuthApiError{status,code}; structural isAPIError (NOT instanceof — duplicate better-call copies); defects rethrow as Panic via core tryAsync triage; beforeDbHook emits the VENDORED contract false|{data}|void (runner checks === false and 'data' in result only — no abort field; verified in better-auth 1.7.25 sources); 970 B vs 2 kB)
+- **`@friday-friday/http`** ✅ (PR #20, merged; fetchResult{schema,signal,timeoutMs,retries} with Err channels HttpError{status,problem?}|NetworkError|Timeout|ValidationFailure; RFC 9457 problem+json parsed, `tag` extension + reconstruct() proved lossless in tests against next toResponse's exact shape; retries cover transport only, never status failures; 1.05 kB vs 2 kB)
 `toQueryFn` (throw E, `Ok(undefined)`→null, signal), `resultQueryOptions`, `retryUnless`; `authCall/fromAuthTuple/requireSession/requireRole/beforeDbHook` via `isAPIError`; `fetchResult` with schema decode + problem+json reconstruction; `traced` span helpers.
 
 ### Phase 3 — Servers: `hono`, `trpc`
