@@ -1,7 +1,7 @@
 /**
  * `@friday-friday/env` runtime tests.
  */
-import { envRecord, parseEnv } from "@friday-friday/env"
+import { type EnvLike, envRecord, parseEnv } from "@friday-friday/env"
 import { type } from "arktype"
 import * as v from "valibot"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -87,6 +87,16 @@ describe("parseEnv redaction", () => {
     if (r.ok) throw new Error("expected Err")
     expect([...(r.error.issues[0]?.path ?? [])]).toEqual([])
     expect(JSON.stringify(r.error)).not.toMatch(/hunter2|s3cret-token/)
+  })
+
+  // Vite's import.meta.env carries booleans (DEV/PROD/SSR) the EnvLike type cannot express (U).
+  it("leaves non-string values alone instead of looping on them", () => {
+    const Root = v.pipe(v.object({ A: v.string() }), v.check(() => false, "expected DEV to be true"))
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a runtime record wider than EnvLike
+    const env = { A: "x", DEV: true } as unknown as EnvLike
+    const r = parseEnv(Root, env)
+    if (r.ok) throw new Error("expected Err")
+    expect(r.error.issues[0]?.message).toBe("expected DEV to be true")
   })
 
   it("does not redact the values of other variables in a field issue", () => {

@@ -85,7 +85,9 @@ const redactMessage = (message: string, path: ReadonlyArray<string | number>, en
   const keys = root === undefined ? Object.keys(env) : [String(root)]
   const values = keys
     .map((key) => env[key])
-    .filter((value): value is string => value !== undefined && value !== "")
+    // Only strings can be echoed verbatim; a non-string (Vite's boolean `DEV`, U) has no
+    // `length`, which would stall the scan in `redactToken`.
+    .filter((value): value is string => typeof value === "string" && value !== "")
     .flatMap(echoForms)
     // Longest first, so a value that contains another is redacted whole.
     .toSorted((a, b) => b.length - a.length)
