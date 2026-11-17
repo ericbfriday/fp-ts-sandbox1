@@ -9,20 +9,22 @@ Functional-light TypeScript suite: a plain-object `Result` core with thin, frame
 
 ## Packages
 
-| Package                                                    | Status         | What it does                                                                                                                                              |
-| ---------------------------------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`@friday-friday/core`](packages/core)                     | ✅ implemented | Plain-object Result, tagged errors, dual combinators, pipe/flow, boundary triage; `/async` (retry/timeout/concurrency) and `/gen` (do-notation) subpaths  |
-| [`@friday-friday/schema`](packages/schema)                 | ✅ implemented | Standard Schema → Result: parse/parseAsync, field/form flatteners, phantom brands, JSON Schema                                                            |
-| [`@friday-friday/next`](packages/next)                     | ✅ implemented | Next.js adapter: sentinel-safe triage (unstable_rethrow), useActionState actions, loaders, problem+json toResponse, client boundary                       |
-| [`@friday-friday/query`](packages/query)                   | ✅ implemented | TanStack Query adapter: `toQueryFn` (Err throws the tagged error so `query.error === E`), `retryUnless`, `resultQueryOptions`                             |
-| [`@friday-friday/better-auth`](packages/better-auth)       | ✅ implemented | Better Auth adapter: `authCall`/`fromAuthTuple`/`requireSession`/`requireRole`/`beforeDbHook`; one `AuthError` vocabulary, structural `isAPIError` triage |
-| [`@friday-friday/http`](packages/http)                     | ✅ implemented | HTTP client: `fetchResult` with Standard Schema decode, RFC 9457 problem+json parsing, lossless tagged-error reconstruction                               |
-| [`@friday-friday/otel`](packages/otel)                     | ✅ implemented | OpenTelemetry spans: `traced`/`tracedSync` mark Err as ERROR with `fl.error.tag` (no exception records); defects recorded as exceptions                   |
-| [`@friday-friday/hono`](packages/hono)                     | ✅ implemented | Hono adapter: `respond` with status-literal unions (`hc` inference proven), RFC 9457 `problem()`, `sv` Standard-Schema validation, `onErrorHandler`       |
-| [`@friday-friday/trpc`](packages/trpc)                     | ✅ implemented | tRPC v11 dual channel: `resultMiddleware` error-channel throws with mapped codes, `errorFormatter` `data.fl`, `resultProcedure` data channel, `fromTRPC`  |
-| [`@friday-friday/tanstack-start`](packages/tanstack-start) | ✅ implemented | TanStack Start/Router: `resultHandler` (in-handler validation, #6428 workaround), `loaderResult` (notFound/redirect sentinel mapping), `formErrorMap`     |
-| `@friday-friday/db` · `env` · `effect`                     | planned        | Phase 5 — see `docs/plan/IMPLEMENTATION_PLAN.md`                                                                                                          |
-| [`tooling/eslint-plugin`](tooling/eslint-plugin)           | ✅ implemented | must-use-result, no-try-around-redirect, no-instanceof-tagged-error (enforced repo-wide)                                                                  |
+| Package                                                       | Status         | What it does                                                                                                                                              |
+| ------------------------------------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`@friday-friday/core`](packages/core)                        | ✅ implemented | Plain-object Result, tagged errors, dual combinators, pipe/flow, boundary triage; `/async` (retry/timeout/concurrency) and `/gen` (do-notation) subpaths  |
+| [`@friday-friday/schema`](packages/schema)                    | ✅ implemented | Standard Schema → Result: parse/parseAsync, field/form flatteners, phantom brands, JSON Schema                                                            |
+| [`@friday-friday/next`](packages/next)                        | ✅ implemented | Next.js adapter: sentinel-safe triage (unstable_rethrow), useActionState actions, loaders, problem+json toResponse, client boundary                       |
+| [`@friday-friday/query`](packages/query)                      | ✅ implemented | TanStack Query adapter: `toQueryFn` (Err throws the tagged error so `query.error === E`), `retryUnless`, `resultQueryOptions`                             |
+| [`@friday-friday/better-auth`](packages/better-auth)          | ✅ implemented | Better Auth adapter: `authCall`/`fromAuthTuple`/`requireSession`/`requireRole`/`beforeDbHook`; one `AuthError` vocabulary, structural `isAPIError` triage |
+| [`@friday-friday/http`](packages/http)                        | ✅ implemented | HTTP client: `fetchResult` with Standard Schema decode, RFC 9457 problem+json parsing, lossless tagged-error reconstruction                               |
+| [`@friday-friday/otel`](packages/otel)                        | ✅ implemented | OpenTelemetry spans: `traced`/`tracedSync` mark Err as ERROR with `fl.error.tag` (no exception records); defects recorded as exceptions                   |
+| [`@friday-friday/hono`](packages/hono)                        | ✅ implemented | Hono adapter: `respond` with status-literal unions (`hc` inference proven), RFC 9457 `problem()`, `sv` Standard-Schema validation, `onErrorHandler`       |
+| [`@friday-friday/trpc`](packages/trpc)                        | ✅ implemented | tRPC v11 dual channel: `resultMiddleware` error-channel throws with mapped codes, `errorFormatter` `data.fl`, `resultProcedure` data channel, `fromTRPC`  |
+| [`@friday-friday/tanstack-start`](packages/tanstack-start)    | ✅ implemented | TanStack Start/Router: `resultHandler` (in-handler validation, #6428 workaround), `loaderResult` (notFound/redirect sentinel mapping), `formErrorMap`     |
+| [`@friday-friday/db`](packages/db)                            | ✅ implemented | DB error mappers: `mapPgError` (SQLSTATE) + `mapPrismaError` (P-codes) → tagged errors, structural reads, zero vendor imports                             |
+| [`@friday-friday/env`](packages/env)                          | ✅ implemented | `parseEnv`: Standard Schema over `process.env`/`import.meta.env`; ValidationFailure field errors, no throw at import time                                 |
+| `@friday-friday/effect` · codemods · oRPC recipe · `llms.txt` | planned        | Phase 5 remainder — see `docs/plan/IMPLEMENTATION_PLAN.md`                                                                                                |
+| [`tooling/eslint-plugin`](tooling/eslint-plugin)              | ✅ implemented | must-use-result, no-try-around-redirect, no-instanceof-tagged-error (enforced repo-wide)                                                                  |
 
 ## Documentation map
 
