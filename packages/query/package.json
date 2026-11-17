@@ -1,0 +1,35 @@
+{
+  "name": "@friday-friday/query",
+  "version": "0.0.0",
+  "private": true,
+  "description": "TanStack Query adapter: Err becomes query.error (thrown plain E), Ok(undefined) -> null, signal forwarding, retryUnless (Design Report section 5.4)",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": {
+      "@friday-friday/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@friday-friday/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "@tanstack/query-core": "^5"
+  },
+  "devDependencies": {
+    "@tanstack/query-core": "^5.107.1"
+  },
+  "scripts": {
+    "build": "tsdown"
+  }
+}
