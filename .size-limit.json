@@ -91,5 +91,19 @@
     "ignore": [
       "@tanstack/router-core"
     ]
+  },
+  {
+    "name": "@friday-friday/db",
+    "path": "packages/db/dist/index.js",
+    "import": "*",
+    "limit": "1 kB",
+    "gzip": true
+  },
+  {
+    "name": "@friday-friday/env",
+    "path": "packages/env/dist/index.js",
+    "import": "*",
+    "limit": "1 kB",
+    "gzip": true
   }
 ]

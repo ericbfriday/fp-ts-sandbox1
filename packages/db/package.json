@@ -1,0 +1,29 @@
+{
+  "name": "@friday-friday/db",
+  "version": "0.0.0",
+  "private": true,
+  "description": "DB error mappers: mapPgError (SQLSTATE codes) + mapPrismaError (P-codes) into tagged errors, read structurally (Design Report section 5.9)",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": {
+      "@friday-friday/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@friday-friday/core": "workspace:*"
+  },
+  "scripts": {
+    "build": "tsdown"
+  }
+}
