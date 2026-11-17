@@ -70,5 +70,16 @@
     "ignore": [
       "hono"
     ]
+  },
+  {
+    "name": "@friday-friday/trpc",
+    "path": "packages/trpc/dist/index.js",
+    "import": "*",
+    "limit": "2 kB",
+    "gzip": true,
+    "ignore": [
+      "@trpc/server",
+      "@trpc/client"
+    ]
   }
 ]
