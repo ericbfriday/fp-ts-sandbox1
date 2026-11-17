@@ -108,6 +108,8 @@ Exit criteria (from report §9): size budgets green, TS 6/7/7.1 matrix green, `e
 - **`@friday-friday/env`** ✅ (PR #27, merged; parseEnv(schema, env?) over process.env/import.meta.env/fixtures — Err(ValidationFailure), no throw at import time; @t3-oss/env interop documented; 638 B)
 - **`@friday-friday/effect`** ✅ (PR #28, merged; fromExit — Fail -> Err, Die/Interrupt -> Panic with Effect's severity ordering; runResult — failures as data, signal forwarded, interrupt -> Panic; toEffect sync+async via typed ErrCarrier across tryPromise; only @stability-stable modules; peer ^4.0.0, devDep exact 4.0.6 for the supply-chain window; 15 tests; 687 B)
 - **`llms.txt`** ✅ (root; LLM-consumable suite summary)
+- **`docs/recipes/orpc.md`** ✅ (oRPC v2 pairing recipe: data-channel default, error-channel via sanitize/reconstruct, resultHandler reuse; first-class-adapter scope notes)
+- **`tooling/codemods/neverthrow-to-core.mjs`** ✅ (mechanical import rewrite + 1:1 identifier map; unmappable APIs flagged for review — 3 tests)
 
 ## Guardrails (all phases)
 
