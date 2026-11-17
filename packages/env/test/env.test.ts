@@ -121,6 +121,43 @@ describe("parseEnv empty strings", () => {
   })
 })
 
+// Spec #30 story 28: the documented boolean recipes (module doc) instead of z.coerce.boolean(),
+// which is JS truthiness ("false" -> true).
+describe("parseEnv strict booleans (documented recipes)", () => {
+  const recipes = [
+    ["zod stringbool", z.object({ DEBUG: z.stringbool().default(false) })],
+    [
+      "valibot picklist + transform",
+      v.object({
+        DEBUG: v.optional(
+          v.pipe(v.picklist(["true", "false", "1", "0"]), v.transform((s) => s === "true" || s === "1")),
+          "false"
+        )
+      })
+    ]
+  ] as const
+
+  it.each(recipes)("%s: \"false\"/\"0\" -> false, \"true\"/\"1\" -> true, unset or \"\" -> false", (_name, schema) => {
+    const debug = (DEBUG?: string): unknown => {
+      const r = parseEnv(schema, DEBUG === undefined ? {} : { DEBUG })
+      return r.ok ? r.value.DEBUG : r.error
+    }
+    expect([debug("false"), debug("0"), debug("true"), debug("1"), debug(), debug("")]).toEqual([
+      false,
+      false,
+      true,
+      true,
+      false,
+      false
+    ])
+  })
+
+  it.each(recipes)("%s: anything else is an issue, not true", (_name, schema) => {
+    const r = parseEnv(schema, { DEBUG: "maybe" })
+    expect(r.ok).toBe(false)
+  })
+})
+
 // Spec #30 story 27: edge runtimes have no `process` global.
 describe("parseEnv default source", () => {
   afterEach(() => {
@@ -149,5 +186,13 @@ describe("envRecord", () => {
   it("falls back to process.env (live)", () => {
     const rec = envRecord()
     expect(typeof rec).toBe("object")
+  })
+})
+
+// Ticket #34: Result constructors come from core, not re-exported here.
+describe("public surface", () => {
+  it("exports only parseEnv and envRecord at runtime", async () => {
+    const mod = await import("@friday-friday/env")
+    expect(Object.keys(mod).toSorted()).toEqual(["envRecord", "parseEnv"])
   })
 })
