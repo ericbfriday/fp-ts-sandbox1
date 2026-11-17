@@ -105,5 +105,15 @@
     "import": "*",
     "limit": "1 kB",
     "gzip": true
+  },
+  {
+    "name": "@friday-friday/effect",
+    "path": "packages/effect/dist/index.js",
+    "import": "*",
+    "limit": "2 kB",
+    "gzip": true,
+    "ignore": [
+      "effect"
+    ]
   }
 ]
