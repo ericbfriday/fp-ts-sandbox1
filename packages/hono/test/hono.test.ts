@@ -121,7 +121,7 @@ describe("sv (Standard Schema validation)", () => {
     expect(res.status).toBe(422)
     // oxlint-disable-next-line no-unsafe-type-assertion -- wire body probe; asserted field-by-field below
     const body = (await res.json()) as Record<string, unknown>
-    expect(body["tag"]).toBe("ValidationError")
+    expect(body["tag"]).toBe("ValidationFailure")
     expect(body["status"]).toBe(422)
     expect(String(body["detail"])).toContain(">=")
     expect(Array.isArray(body["issues"])).toBe(true)

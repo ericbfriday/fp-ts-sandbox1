@@ -32,7 +32,7 @@ const router = t.router({
       return input.name.length < 2 ? err(Conflict({ field: "name" })) : ok({ renamed: input.name })
     })
   ),
-  // Validator failure: zod's ~standard issues must surface as data.fl = ValidationError.
+  // Validator failure: zod's ~standard issues must surface as data.fl = ValidationFailure.
   strict: t.procedure.input(z.object({ n: z.number() })).query(() => "ok")
 })
 
@@ -126,7 +126,7 @@ describe("data channel (resultProcedure)", () => {
 })
 
 describe("validator failures format from ~standard issues (NOT instanceof ZodError)", () => {
-  it("data.fl is a ValidationError with issues", async () => {
+  it("data.fl is a ValidationFailure with issues", async () => {
     let caught: unknown
     try {
       await client.strict.query({ n: "not-a-number" } as never)
@@ -136,7 +136,7 @@ describe("validator failures format from ~standard issues (NOT instanceof ZodErr
     }
     const fl = (caught as { data?: { fl?: unknown } }).data?.fl
     expect(fl).not.toBeNull()
-    expect((fl as { tag?: string }).tag).toBe("ValidationError")
+    expect((fl as { tag?: string }).tag).toBe("ValidationFailure")
     expect(Array.isArray((fl as { issues?: unknown }).issues)).toBe(true)
   })
 })

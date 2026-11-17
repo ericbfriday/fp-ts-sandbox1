@@ -18,11 +18,11 @@
  * TS2589 guidance (report): split routes into sub-apps and export per-slice hc<typeof users>
  * clients; avoid one monolithic AppType.
  *
- * Peer range note (report §6 "lower bound = oldest version in the CI matrix"): CI tests
- * hono 4.13.18 (exact pin; 4.13.19 violates pnpm's supply-chain minimumReleaseAge and no
- * version ships sValidator — see NOTE above), hence `^4.13.18 || ^5`. The 5.0.0-rc line
- * changes onError composition and c.json(undefined) (report trap 4) — NOT covered by this
- * range's testing; extend the range only with an rc fixture in the matrix.
+ * Peer range note: install range follows spec §4 (`^4.10 || ^5.0.0-0`); the CI matrix
+ * TESTS hono 4.13.18 (exact pin — 4.13.19 violates pnpm's supply-chain minimumReleaseAge),
+ * per §6 "lower bound = oldest version in the matrix". The 5.0.0-rc line changes onError
+ * composition and c.json(undefined) (report trap 4) — the range admits rc installs but
+ * rc behavior is NOT covered by testing; extend coverage before relying on it.
  */
 import type { Context, Env, ErrorHandler, MiddlewareHandler, TypedResponse, ValidationTargets } from "hono"
 import { HTTPException } from "hono/http-exception"
@@ -134,7 +134,7 @@ const validationProblem = (issues: ReadonlyArray<StandardIssue>): Problem => ({
   type: "about:blank",
   title: statusTitles[422] ?? "Unprocessable Content",
   status: 422,
-  tag: "ValidationError",
+  tag: "ValidationFailure",
   detail: issues.map((i) => i.message ?? "invalid").join("; "),
   issues: issues.map((i) => ({
     message: i.message ?? "invalid",
