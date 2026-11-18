@@ -1,13 +1,18 @@
 /**
  * Golden RFC 9457 problem bodies for `@friday-friday/core/wire` (RFC-0001 §6, #33).
  *
- * Hand-written literals, NOT derived from the implementation: `toProblem(error, status)` must
- * produce exactly `body`. Adapter tickets (#37 hono, #38 trpc, #39 next, #40 http) import this
- * module (`../../core/test/wire-golden.js`) and assert their real HTTP/wire output against the
- * same bodies, instead of hand-copying fixtures that drift.
+ * Hand-written literals, NOT derived from the implementation: `toProblem(error, status, options)`
+ * must produce exactly `body`. Adapter tickets (#37 hono, #38 trpc, #39 next, #40 http) import this
+ * module as `@friday-friday/core/test/wire-golden` and assert their real HTTP/wire output against
+ * the same bodies, instead of hand-copying fixtures that drift.
+ *
+ * Workspace-internal, test-only: the subpath exists only under the `@friday-friday/source`
+ * condition (set by tsconfig `customConditions` and the Vitest config), and `test/` is not in the
+ * package's `files`. Plain Node or a bundler without that condition gets
+ * `ERR_PACKAGE_PATH_NOT_EXPORTED` (asserted in `test/smoke.mjs`), so it is not runtime interface.
  */
 import type { TaggedError } from "@friday-friday/core"
-import type { Problem, StatusMap } from "@friday-friday/core/wire"
+import type { Problem, ProblemOptions, StatusMap } from "@friday-friday/core/wire"
 
 export interface GoldenProblem {
   readonly name: string
@@ -15,6 +20,8 @@ export interface GoldenProblem {
   readonly error: TaggedError<string>
   /** Second argument to `toProblem`; omitted = RFC §6 default table. */
   readonly status?: number | StatusMap
+  /** Third argument to `toProblem` (`strict`, `safeProps`); omitted = none. */
+  readonly options?: ProblemOptions
   /** The exact body `toProblem(error, status)` must return. */
   readonly body: Problem
 }
@@ -48,15 +55,28 @@ export const goldenProblems: ReadonlyArray<GoldenProblem> = [
     }
   },
   {
-    name: "unmapped tag falls back to 500 and keeps its own tag",
-    error: t("DbUnavailable", { message: "database unavailable" }),
+    name: "a tag with no status (not in the map, not in the RFC §6 table) is masked as InternalDefect",
+    error: t("DbUnavailable", { host: "db.internal:5432", message: "connection refused" }),
     status: { NotFound: 404 },
+    body: {
+      type: "https://friday-friday.dev/errors/internal-defect",
+      title: "Internal Defect",
+      status: 500,
+      detail: "Internal server error",
+      tag: "InternalDefect"
+    }
+  },
+  {
+    name: "an explicit status keeps a tag the RFC §6 table doesn't list",
+    error: t("DbUnavailable", { retryAfter: 30, message: "database unavailable" }),
+    status: 503,
     body: {
       type: "https://friday-friday.dev/errors/db-unavailable",
       title: "Db Unavailable",
-      status: 500,
+      status: 503,
       detail: "database unavailable",
-      tag: "DbUnavailable"
+      tag: "DbUnavailable",
+      retryAfter: 30
     }
   },
   {
@@ -120,6 +140,38 @@ export const goldenProblems: ReadonlyArray<GoldenProblem> = [
       status: 422,
       tag: "ValidationFailure",
       issues: [{ path: ["email"], message: "Invalid email" }, { path: [], message: "Passwords differ" }]
+    }
+  },
+  {
+    name: "strict: a tag missing from the caller's map is masked even if the RFC §6 table lists it",
+    error: t("NotFound", { resource: "user", id: "42", message: "no such user" }),
+    status: { Conflict: 409 },
+    options: { strict: true },
+    body: {
+      type: "https://friday-friday.dev/errors/internal-defect",
+      title: "Internal Defect",
+      status: 500,
+      detail: "Internal server error",
+      tag: "InternalDefect"
+    }
+  },
+  {
+    name: "a safeProps allowlist lets only the named props through (message still maps to detail)",
+    error: t("Unauthenticated", {
+      code: "SESSION_EXPIRED",
+      status: 401,
+      headers: { authorization: "Bearer abc" },
+      message: "session expired"
+    }),
+    options: { safeProps: ["code", "status"] },
+    body: {
+      type: "https://friday-friday.dev/errors/unauthenticated",
+      title: "Unauthenticated",
+      status: 401,
+      detail: "session expired",
+      tag: "Unauthenticated",
+      code: "SESSION_EXPIRED",
+      shadowed: { status: 401 }
     }
   },
   {

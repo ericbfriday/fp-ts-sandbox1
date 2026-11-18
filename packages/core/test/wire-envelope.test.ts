@@ -6,7 +6,8 @@ import { type TaggedError, taggedError } from "@friday-friday/core"
 import { fromWire, PROBLEM_CONTENT_TYPE, sanitize, toDefect, toProblem } from "@friday-friday/core/wire"
 import * as fc from "fast-check"
 import { describe, expect, it } from "vitest"
-import { goldenProblems } from "./wire-golden.js"
+// Imported the way adapters (#37–#40) do: a workspace-only subpath (source condition only, never published).
+import { goldenProblems } from "@friday-friday/core/test/wire-golden"
 
 const Conflict = taggedError("Conflict")<{ field: string }>()
 const NotFound = taggedError("NotFound")<{ resource: string; id: string }>()
@@ -83,9 +84,40 @@ describe("sanitize — JSON-safe projection (RFC-0001 §5.3)", () => {
       }
     })
     for (const e of [trap, unreadable]) {
-      expect(sanitize(e)).toStrictEqual({ _tag: "InternalDefect" })
-      expect(toProblem(e).status).toBe(500)
+      expect(sanitize(e)).toStrictEqual({ _tag: "InternalDefect", message: "Internal server error" })
+      expect(toProblem(e)).toStrictEqual(toProblem(toDefect(e)))
     }
+  })
+
+  it("with a safeProps allowlist, only _tag, message and the named props pass", () => {
+    const e = { _tag: "ApiError", code: "E_AUTH", headers: { authorization: "Bearer abc" }, message: "denied" }
+    expect(sanitize(e)).toStrictEqual({
+      _tag: "ApiError",
+      code: "E_AUTH",
+      headers: { authorization: "Bearer abc" },
+      message: "denied"
+    })
+    expect(sanitize(e, { safeProps: ["code"] })).toStrictEqual({ _tag: "ApiError", code: "E_AUTH", message: "denied" })
+    expect(sanitize(e, { safeProps: [] })).toStrictEqual({ _tag: "ApiError", message: "denied" })
+  })
+
+  it.each([
+    ["an object", { secret: 1 }],
+    ["a number", 42],
+    ["null", null],
+    ["an array", ["x"]]
+  ])("drops a non-string message (%s): message is a string or absent", (_, message) => {
+    // as it arrives from untyped code: `object` hides the ill-typed message from the checker
+    const props: object = { id: "1", message }
+    const e: TaggedError<string> = Object.assign({ _tag: "X" }, props)
+    expect(sanitize(e)).toStrictEqual({ _tag: "X", id: "1" })
+    expect(toProblem(e, 400)).toStrictEqual({
+      type: "https://friday-friday.dev/errors/x",
+      title: "X",
+      status: 400,
+      tag: "X",
+      id: "1"
+    })
   })
 
   it("drops values nested deeper than the depth cap instead of overflowing", () => {
@@ -96,10 +128,90 @@ describe("sanitize — JSON-safe projection (RFC-0001 §5.3)", () => {
 })
 
 describe("toProblem — RFC 9457 body (RFC-0001 §6)", () => {
-  it.each(goldenProblems)("$name", ({ error, status, body }) => {
-    const p = status === undefined ? toProblem(error) : toProblem(error, status)
+  it.each(goldenProblems)("$name", ({ error, status, options, body }) => {
+    const p = toProblem(error, status, options)
     expect(p).toStrictEqual(body)
     roundTrips(p)
+  })
+})
+
+describe("toProblem — a tag with no status is a defect (RFC-0001 §6 \"everything else → 500 as InternalDefect\")", () => {
+  const defectBody = {
+    type: "https://friday-friday.dev/errors/internal-defect",
+    title: "Internal Defect",
+    status: 500,
+    detail: "Internal server error",
+    tag: "InternalDefect"
+  }
+  const leaky = { _tag: "DbUnavailable", host: "db.internal:5432", message: "conn refused" }
+
+  it.each([
+    ["an empty map", {}],
+    ["a map without the tag", { Conflict: 409 }],
+    ["no status at all", undefined],
+    ["a non-error explicit status", 200]
+  ])("sends the fixed envelope, never the tag, message or props, for %s", (_, status) => {
+    const p = toProblem(leaky, status)
+    expect(p).toStrictEqual(defectBody)
+    expect(JSON.stringify(p)).not.toMatch(/db\.internal|conn refused|DbUnavailable/)
+  })
+
+  it("hands the original error to the reporter", () => {
+    const seen: Array<unknown> = []
+    toProblem(leaky, {}, { report: (c) => seen.push(c) })
+    expect(seen).toStrictEqual([leaky])
+    expect(seen[0]).toBe(leaky)
+  })
+
+  it("does not call the reporter for a tag that resolves", () => {
+    const seen: Array<unknown> = []
+    toProblem(NotFound({ resource: "user", id: "1" }), {}, { report: (c) => seen.push(c) })
+    expect(seen).toStrictEqual([])
+  })
+
+  it("never throws when the reporter does", () => {
+    expect(toProblem(leaky, {}, {
+      report: () => {
+        throw new Error("reporter down")
+      }
+    })).toStrictEqual(defectBody)
+  })
+})
+
+describe("toProblem — strict: only the caller's statuses count (#37)", () => {
+  const nf = NotFound({ resource: "user", id: "1", message: "gone" })
+  const defectBody = {
+    type: "https://friday-friday.dev/errors/internal-defect",
+    title: "Internal Defect",
+    status: 500,
+    detail: "Internal server error",
+    tag: "InternalDefect"
+  }
+
+  it("by default the RFC §6 table fills gaps in the caller's map", () => {
+    expect(toProblem(nf, { Conflict: 409 }).status).toBe(404)
+    expect(toProblem(nf, { Conflict: 409 }).tag).toBe("NotFound")
+  })
+
+  it("strict: a tag missing from the map is masked and reported, even one the RFC table lists", () => {
+    const seen: Array<unknown> = []
+    expect(toProblem(nf, { Conflict: 409 }, { strict: true, report: (c) => seen.push(c) })).toStrictEqual(defectBody)
+    expect(seen).toStrictEqual([nf])
+  })
+
+  it("strict: a map hit or an explicit error status keeps the tag", () => {
+    expect(toProblem(nf, { NotFound: 410 }, { strict: true })).toMatchObject({ status: 410, tag: "NotFound" })
+    expect(toProblem(nf, 404, { strict: true })).toMatchObject({ status: 404, tag: "NotFound" })
+  })
+
+  it("strict: a non-error status in the map is not a status, so the tag is masked", () => {
+    expect(toProblem(nf, { NotFound: 200 }, { strict: true })).toStrictEqual(defectBody)
+  })
+
+  it("strict: the defect envelope itself is always a 500, never re-reported", () => {
+    const seen: Array<unknown> = []
+    expect(toProblem(toDefect("boom"), {}, { strict: true, report: (c) => seen.push(c) })).toStrictEqual(defectBody)
+    expect(seen).toStrictEqual([])
   })
 })
 
@@ -168,6 +280,12 @@ describe("fromWire — parse-back (RFC-0001 §6 `tag` reconstruction key)", () =
     })
   })
 
+  it("never yields a non-string message, whatever the wire carries", () => {
+    expect(fromWire({ _tag: "X", message: 42 })).toStrictEqual({ _tag: "X" })
+    expect(fromWire({ tag: "X", status: 400, detail: { a: 1 } })).toStrictEqual({ _tag: "X" })
+    expect(fromWire({ tag: "X", status: 400, shadowed: { message: { a: 1 } } })).toStrictEqual({ _tag: "X" })
+  })
+
   it("returns undefined for anything it cannot attribute to a tag", () => {
     for (const u of [undefined, null, 42, "NotFound", [], {}, { status: 400, title: "Bad Request" }, { tag: 1 }]) {
       expect(fromWire(u)).toBeUndefined()
@@ -214,6 +332,22 @@ describe("toDefect — the one defect envelope (IDEA §4.3, RFC-0001 §2)", () =
     expect(toDefect("x", () => {
       throw new Error("reporter down")
     })).toStrictEqual({ _tag: "InternalDefect", message: "Internal server error" })
+  })
+
+  it("carries an optional correlation digest (RFC-0001 §2), and only a string one", () => {
+    const d = toDefect(new Error(secret), undefined, "req-7f3a")
+    expect(d).toStrictEqual({ _tag: "InternalDefect", message: "Internal server error", digest: "req-7f3a" })
+    roundTrips(d)
+    expect(toProblem(d)).toStrictEqual({
+      type: "https://friday-friday.dev/errors/internal-defect",
+      title: "Internal Defect",
+      status: 500,
+      detail: "Internal server error",
+      tag: "InternalDefect",
+      digest: "req-7f3a"
+    })
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- deliberately ill-typed input
+    expect(toDefect("x", undefined, 42 as unknown as string)).toStrictEqual(toDefect("x"))
   })
 
   it("its problem form is the golden defect body (default status 500)", () => {
@@ -264,21 +398,37 @@ describe("contract over arbitrary props (fast-check)", () => {
     nil: undefined
   })
 
-  it("sanitize / toProblem never throw, always round-trip, and status is an error status", () => {
+  const defectAt = (status: number) => ({
+    type: "https://friday-friday.dev/errors/internal-defect",
+    title: "Internal Defect",
+    status,
+    detail: "Internal server error",
+    tag: "InternalDefect"
+  })
+
+  it("sanitize / toProblem never throw, always round-trip; the body keeps the tag or is the defect envelope", () => {
     fc.assert(fc.property(arbError, arbStatus, (e, status) => {
       roundTrips(sanitize(e))
-      const p = status === undefined ? toProblem(e) : toProblem(e, status)
+      const p = toProblem(e, status)
       roundTrips(p)
-      expect(p.tag).toBe(e._tag)
+      if (p.tag !== e._tag) expect(p).toStrictEqual(defectAt(500))
       expect(p.status >= 400 && p.status <= 599).toBe(true)
     }))
   })
 
-  it("problem → error → problem is a fixed point and error props survive", () => {
+  it("an explicit error status always keeps the tag, and error props survive the round-trip", () => {
+    fc.assert(fc.property(arbError, fc.integer({ min: 400, max: 599 }), (e, status) => {
+      const p = toProblem(e, status)
+      expect(p.status).toBe(status)
+      expect(p.tag).toBe(e._tag)
+      expect(fromWire(JSON.parse(JSON.stringify(p)))).toStrictEqual(sanitize(e))
+    }))
+  })
+
+  it("problem → error → problem is a fixed point", () => {
     fc.assert(fc.property(arbError, arbStatus, (e, status) => {
-      const p = status === undefined ? toProblem(e) : toProblem(e, status)
+      const p = toProblem(e, status)
       const back = fromWire(JSON.parse(JSON.stringify(p)))
-      expect(back).toStrictEqual(sanitize(e))
       expect(toProblem(back!, p.status)).toStrictEqual(p)
     }))
   })

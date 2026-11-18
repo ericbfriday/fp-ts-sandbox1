@@ -30,6 +30,9 @@
       "types": "./dist/wire.d.ts",
       "default": "./dist/wire.js"
     },
+    "./test/wire-golden": {
+      "@friday-friday/source": "./test/wire-golden.ts"
+    },
     "./package.json": "./package.json"
   },
   "files": [

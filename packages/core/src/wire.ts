@@ -5,15 +5,18 @@
  * One deep module at the seam every adapter (next, hono, trpc, http) crosses. Its interface is
  * four functions and a constant; the rules sit behind it, so a fix lands here once:
  *
- * - `sanitize(e)`        JSON-safe projection `{ _tag, message?, ...safeProps }` (tRPC `data.fl`)
- * - `toProblem(e, s?)`   RFC 9457 body; `s` = status | status map | RFC §6 defaults
- * - `fromWire(body)`     problem body or sanitized error → tagged error (or `undefined`)
- * - `toDefect(c, rep?)`  the one `InternalDefect` envelope; the cause goes to `rep`, never the wire
+ * - `sanitize(e, o?)`          JSON-safe projection `{ _tag, message?, ...safeProps }` (tRPC `data.fl`)
+ * - `toProblem(e, s?, o?)`     RFC 9457 body; `s` = status | status map | RFC §6 defaults; a tag
+ *                              with no status is masked as `InternalDefect` (`o.strict`: map only)
+ * - `fromWire(body)`           problem body or sanitized error → tagged error (or `undefined`)
+ * - `toDefect(c, rep?, dig?)`  the one `InternalDefect` envelope; the cause goes to `rep`, never the wire
  * - `PROBLEM_CONTENT_TYPE`
  *
  * Invariants: nothing here throws; every output deep-equals its own `JSON.parse(JSON.stringify(x))`
  * and `structuredClone(x)` (RFC-0001 §5.2); `cause` never appears in any output (IDEA §4.2);
- * `toProblem(fromWire(p)!, p.status)` deep-equals `p` for every `p` this module built.
+ * `toProblem(fromWire(p)!, p.status)` deep-equals `p` for every `p` this module built; `message` is
+ * a string or absent; every `InternalDefect` this module creates (`toDefect`, masking, the hostile-
+ * input fallback) carries the fixed text and nothing from the original but an optional `digest`.
  */
 import type { TaggedError } from "./index.js"
 
@@ -33,16 +36,24 @@ export interface WireError<Tag extends string = string> {
 
 const MAX_DEPTH = 32
 
+/** The only client-facing text a defect ever carries (IDEA §4.3). */
+const DEFECT_MESSAGE = "Internal server error"
+
 /** Own enumerable data property: never triggers the `__proto__` setter. */
 const define = (o: object, k: string, v: unknown): void => {
   Object.defineProperty(o, k, { value: v, enumerable: true, writable: true, configurable: true })
 }
 
-/** Plain-object projection: drops `cause` and every prop whose value projects to nothing. */
-const record = (o: object, depth: number, path: Array<object>): { [key: string]: Json } => {
+/** Plain-object projection: drops `cause`, keys outside `allow` (if given) and props that project to nothing. */
+const record = (
+  o: object,
+  depth: number,
+  path: Array<object>,
+  allow?: ReadonlyArray<string>
+): { [key: string]: Json } => {
   const out: { [key: string]: Json } = {}
   for (const k of Object.keys(o)) {
-    if (k === "cause") continue
+    if (k === "cause" || (allow && !allow.includes(k))) continue
     let v: Json | undefined
     try {
       v = project(Reflect.get(o, k), depth + 1, path)
@@ -88,23 +99,36 @@ const project = (v: unknown, depth: number, path: Array<object>): Json | undefin
 // Interface
 // ---------------------------------------------------------------------------
 
+/** Per-call projection options. */
+export interface WireOptions {
+  /**
+   * Allowlist of prop names that may cross (RFC-0001 §6 "allowlisted JSON-safe props"). When given,
+   * every other prop is dropped; `_tag` and `message` always pass. Omitted = every JSON-safe prop.
+   */
+  readonly safeProps?: ReadonlyArray<string>
+}
+
 /**
- * JSON-safe projection of a tagged error (RFC-0001 §5.3): `_tag`, `message` and plain props survive;
+ * JSON-safe projection of a tagged error (RFC-0001 §5.3): `_tag`, a string `message` and plain props
+ * survive (only the props named in `options.safeProps`, when given); a non-string `message`,
  * `cause` (at every depth), functions, symbols, bigint, `undefined`, non-finite numbers, class
  * instances, cycles and anything deeper than 32 levels are dropped. `Date` → ISO string, `-0` → `0`,
  * a dropped array element → `null`. Never throws: an error whose `_tag` can't be read as a string
- * comes out as `{ _tag: "InternalDefect" }`. The output round-trips JSON and `structuredClone`.
+ * comes out as the defect envelope. The output round-trips JSON and `structuredClone`.
  */
-export const sanitize = <E extends TaggedError<string>>(e: E): WireError<E["_tag"]> => {
+export const sanitize = <E extends TaggedError<string>>(e: E, options?: WireOptions): WireError<E["_tag"]> => {
+  const allow = options?.safeProps
   let out: { [key: string]: Json }
   try {
-    out = record(e, 0, [e])
+    out = record(e, 0, [e], allow && ["_tag", "message", ...allow])
   } catch {
     out = {} // the error object itself is hostile (throwing proxy trap)
   }
-  // An unreadable or non-string tag can't be attributed: degrade to a bare defect tag (no props
+  // An unreadable or non-string tag can't be attributed: degrade to the defect envelope (no props
   // ride along under `InternalDefect`) rather than throw.
-  if (typeof out["_tag"] !== "string") out = { _tag: "InternalDefect" }
+  if (typeof out["_tag"] !== "string") out = { _tag: "InternalDefect", message: DEFECT_MESSAGE }
+  // `message` is a string or absent (RFC-0001 §2 `message?: string`): anything else is dropped.
+  if (typeof out["message"] !== "string") delete out["message"]
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `_tag` is a string (ensured above); props are Json by construction
   return out as unknown as WireError<E["_tag"]>
 }
@@ -132,19 +156,32 @@ export interface StatusMap {
   readonly [tag: string]: number | undefined
 }
 
+/** Per-call options for `toProblem`. */
+export interface ProblemOptions extends WireOptions {
+  /**
+   * Only the caller's `status` counts: a tag missing from the map (or a non-error status) is masked
+   * as `InternalDefect`, instead of falling back to the RFC-0001 §6 table. `InternalDefect` is always 500.
+   */
+  readonly strict?: boolean
+  /** Receives the original error when its tag resolves to no status and is masked as `InternalDefect`. */
+  readonly report?: (cause: unknown) => void
+}
+
 /** Members an error prop can never overwrite; colliding props go into `shadowed`. */
 const RESERVED: ReadonlyArray<string> = ["type", "title", "status", "detail", "instance", "tag", "shadowed"]
 
-/** RFC-0001 §6 fallbacks: adapters pass explicit maps, these only fill the gaps. Everything else → 500. */
+/**
+ * RFC-0001 §6 fallbacks: adapters pass explicit maps, these only fill the gaps. A tag found nowhere
+ * is a defect: "everything else → 500 as `InternalDefect`". `InternalDefect` itself is always 500.
+ */
 const DEFAULT_STATUS: { readonly [tag: string]: number } = {
   NotFound: 404,
   Forbidden: 403,
   Unauthenticated: 401,
   Conflict: 409,
-  ValidationFailure: 422
+  ValidationFailure: 422,
+  InternalDefect: 500
 }
-
-const defaultStatus = (tag: string): number => (Object.hasOwn(DEFAULT_STATUS, tag) ? DEFAULT_STATUS[tag]! : 500)
 
 /** A problem body may only claim an error: integers 400–599. */
 const isErrorStatus = (s: unknown): s is number => typeof s === "number" && Number.isInteger(s) && s >= 400 && s <= 599
@@ -160,24 +197,33 @@ const typeUri = (tag: string): string =>
  * RFC 9457 problem body for a tagged error (RFC-0001 §6):
  * `{ type, title, status, detail: message, tag: _tag, ...safeProps, shadowed? }`.
  *
- * Status: an explicit number, else `status[tag]` from a map, else the RFC §6 default
- * (`NotFound 404`, `Forbidden 403`, `Unauthenticated 401`, `Conflict 409`, `ValidationFailure 422`,
- * anything else `500`). A status outside 400–599 falls back to the default, so `body.status` is
- * always an error status — adapters should send it as the HTTP status with `PROBLEM_CONTENT_TYPE`.
- * Props are projected by `sanitize`; a prop named like a reserved member is carried in `shadowed`.
+ * Status: an explicit number, else `status[tag]` from a map, else (unless `options.strict`) the
+ * RFC §6 default (`NotFound 404`, `Forbidden 403`, `Unauthenticated 401`, `Conflict 409`,
+ * `ValidationFailure 422`, `InternalDefect 500`). A status outside 400–599 counts as no status.
+ * A tag that resolves to no status is a defect (RFC §6 "everything else → 500 as `InternalDefect`"):
+ * the body is `toProblem(toDefect(e, options.report), 500)` — fixed text, no tag, no props — and the
+ * original error goes to `options.report`. So `body.status` is always an error status; adapters send
+ * it as the HTTP status with `PROBLEM_CONTENT_TYPE`. Props are projected by `sanitize` (with
+ * `options.safeProps` as the allowlist); a prop named like a reserved member is carried in `shadowed`.
  */
-export const toProblem = (e: TaggedError<string>, status?: number | StatusMap): Problem => {
-  const { _tag: tag, message, ...props } = sanitize(e)
+export const toProblem = (
+  e: TaggedError<string>,
+  status?: number | StatusMap,
+  options: ProblemOptions = {}
+): Problem => {
+  const { _tag: tag, message, ...props } = sanitize(e, options)
   const wanted = typeof status === "number" ? status : status?.[tag]
-  const body: { [member: string]: Json } = {
-    type: typeUri(tag),
-    title: words(tag),
-    status: isErrorStatus(wanted) ? wanted : defaultStatus(tag)
-  }
-  const shadowed: { [key: string]: Json } = {}
-  if (typeof message === "string") body["detail"] = message
-  else if (message !== undefined) shadowed["message"] = message
+  const resolved = isErrorStatus(wanted)
+    ? wanted
+    : Object.hasOwn(DEFAULT_STATUS, tag) && (!options.strict || tag === "InternalDefect")
+    ? DEFAULT_STATUS[tag]
+    : undefined
+  // RFC-0001 §6: a tag nobody gave a status is a defect — fixed text, no props; the original is reported.
+  if (resolved === undefined) return toProblem(toDefect(e, options.report), 500)
+  const body: { [member: string]: Json } = { type: typeUri(tag), title: words(tag), status: resolved }
+  if (message !== undefined) body["detail"] = message
   body["tag"] = tag
+  const shadowed: { [key: string]: Json } = {}
   for (const [k, v] of Object.entries(props)) {
     if (v !== undefined) define(RESERVED.includes(k) ? shadowed : body, k, v)
   }
@@ -249,20 +295,25 @@ export const fromWire = (body: unknown): WireError | undefined => {
 /** The only defect shape that crosses a boundary: a fixed message, nothing from the cause. */
 export interface InternalDefect extends WireError<"InternalDefect"> {
   readonly message: "Internal server error"
+  /** Caller-supplied correlation id (RFC-0001 §2: `cause` is "stripped (or replaced by a digest)"). */
+  readonly digest?: string
 }
 
 /**
  * Sanitize an unknown throw for the client: always
- * `{ _tag: "InternalDefect", message: "Internal server error" }`. The original `cause` goes to
- * `report` (logging / OpenTelemetry) and is never placed in the envelope. Never throws: a throwing
- * reporter is swallowed, because this is the outermost layer. Problem form:
+ * `{ _tag: "InternalDefect", message: "Internal server error", digest? }`. The original `cause` goes
+ * to `report` (logging / OpenTelemetry) and is never placed in the envelope; `digest` (a string the
+ * caller chose, e.g. a request or trace id, so support can find the report) is the only extra member.
+ * Never throws: a throwing reporter is swallowed, because this is the outermost layer. Problem form:
  * `toProblem(toDefect(cause, report))` (default status 500).
  */
-export const toDefect = (cause: unknown, report?: (cause: unknown) => void): InternalDefect => {
+export const toDefect = (cause: unknown, report?: (cause: unknown) => void, digest?: string): InternalDefect => {
   try {
     report?.(cause)
   } catch {
     // the reporter failing must not turn a sanitized 500 into an unsanitized crash
   }
-  return { _tag: "InternalDefect", message: "Internal server error" }
+  return typeof digest === "string"
+    ? { _tag: "InternalDefect", message: DEFECT_MESSAGE, digest }
+    : { _tag: "InternalDefect", message: DEFECT_MESSAGE }
 }
