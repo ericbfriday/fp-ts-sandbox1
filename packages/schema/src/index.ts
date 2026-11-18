@@ -40,7 +40,7 @@ export interface ValidationFailure extends TaggedError<"ValidationFailure"> {
 export const ValidationFailure: ErrorFactory<
   "ValidationFailure",
   { issues: ReadonlyArray<{ message: string; path: ReadonlyArray<string | number> }> }
-> = taggedError("ValidationFailure")<{
+> = /*#__PURE__*/ taggedError("ValidationFailure")<{
   issues: ReadonlyArray<{ message: string; path: ReadonlyArray<string | number> }>
 }>()
 export type ValidationFailureInstance = ReturnType<typeof ValidationFailure>
@@ -48,18 +48,49 @@ export type ValidationFailureInstance = ReturnType<typeof ValidationFailure>
 export interface Unsupported extends TaggedError<"Unsupported"> {
   readonly reason: string
 }
-export const Unsupported: ErrorFactory<"Unsupported", { reason: string }> = taggedError("Unsupported")<{
+export const Unsupported: ErrorFactory<"Unsupported", { reason: string }> = /*#__PURE__*/ taggedError("Unsupported")<{
   reason: string
 }>()
 
 type PathPart = string | number
 
-/** Normalize a Standard Schema issue path (PropertyKey | {key} segments) to `string | number`. */
-const normalizePath = (path: NonNullable<StandardSchemaV1.Issue["path"]>): ReadonlyArray<PathPart> =>
-  path.map((segment) => {
-    const key = typeof segment === "object" && segment !== null && "key" in segment ? segment.key : segment
-    return typeof key === "symbol" ? "[symbol]" : key
-  })
+/** A path segment as Standard Schema declares it, or as a wire/vendor may actually send it. */
+type Segment = PropertyKey | StandardSchemaV1.PathSegment | null | undefined
+
+/**
+ * Normalize an issue path (PropertyKey | {key} segments) to `string | number`. Defensive
+ * (review of #45): a missing/`null`/non-array path, or one with a nullish segment or key, is the
+ * root `[]`
+ * — an issue whose location is unknown is reported against the form, never a guessed field.
+ */
+const normalizePath = (path: ReadonlyArray<Segment> | null | undefined): ReadonlyArray<PathPart> => {
+  const out: Array<PathPart> = []
+  // `Array.isArray`, not `?? []`: a wire string path must not iterate as characters.
+  for (const segment of Array.isArray(path) ? path : []) {
+    const key = typeof segment === "object" && segment !== null ? segment.key : segment
+    if (key == null) return []
+    out.push(typeof key === "symbol" ? "[symbol]" : key)
+  }
+  return out
+}
+
+/** The message as a string, whatever arrived (a non-string from the wire; `String()` may throw). */
+const toText = (message: unknown): string => {
+  try {
+    return String(message)
+  } catch {
+    return "[object]"
+  }
+}
+
+/**
+ * The issue shapes `toValidationFailure` accepts: Standard Schema V1 issues, and the
+ * reader-shaped issues of a `ValidationFailureLike` (a wire-rebuilt failure, `path` maybe `null`).
+ */
+export interface IssueLike {
+  readonly message: string
+  readonly path?: ReadonlyArray<PropertyKey | StandardSchemaV1.PathSegment> | null | undefined
+}
 
 /**
  * The issue projection: the single producer of `ValidationFailure` (`parse`/`parseAsync` use it,
@@ -67,23 +98,23 @@ const normalizePath = (path: NonNullable<StandardSchemaV1.Issue["path"]>): Reado
  * the shape — Design Report §5.3 "format from Standard Schema issues", §5.7).
  *
  * Contract:
- * - input: Standard Schema V1 issues (`~standard.validate(...).issues`), from any vendor;
+ * - input: Standard Schema V1 issues (`~standard.validate(...).issues`), from any vendor, or
+ *   reader-shaped issues rebuilt from the wire (`IssueLike`);
  * - output: a `ValidationFailure` whose issues are NEW objects with exactly `{ message, path }`;
  *   vendor extras (`input`, `expected`, `received`, `kind`, path-segment `input`/`value`, …)
  *   are dropped, so the submitted input never rides along to a client;
  * - `path` is normalised to property keys (`{ key }` segments unwrapped, symbols noted as
- *   `"[symbol]"`); a missing path is the root, `[]`;
- * - no `cause` (RFC-0001 §2); pure, never throws for spec-shaped issues.
+ *   `"[symbol]"`); a missing or `null` path, or one with a nullish segment, is the root, `[]`;
+ * - `message` is always a string: a non-string is `String()`-ed (with a fixed fallback if that
+ *   throws);
+ * - no `cause` (RFC-0001 §2); pure, never throws for array input.
  *
  * The vendor-authored `message` is kept verbatim (some vendors' default messages quote the
  * received value — choose messages accordingly for secret fields).
  */
-export function toValidationFailure(issues: ReadonlyArray<StandardSchemaV1.Issue>): ValidationFailure {
+export function toValidationFailure(issues: ReadonlyArray<IssueLike>): ValidationFailure {
   return ValidationFailure({
-    issues: issues.map((issue) => ({
-      message: issue.message,
-      path: Array.isArray(issue.path) ? normalizePath(issue.path) : []
-    }))
+    issues: issues.map((issue) => ({ message: toText(issue.message), path: normalizePath(issue.path) }))
   })
 }
 
@@ -95,15 +126,8 @@ const toResult = <S extends StandardSchemaV1>(
 // A vendor `validate` that throws is a defect (IDEA §4.3, RFC-0001 §3): rethrown as `Panic` with
 // the original as `cause`; an existing Panic passes through. Local until core exposes its one
 // idempotent "to Panic" conversion (#30 solution item 3).
+// TODO(#47): replace with core's exported to-Panic conversion once PR #47 merges.
 const toPanic = (cause: unknown): Panic => (cause instanceof Panic ? cause : new Panic(cause))
-
-const orPanic = <T>(thunk: () => T): T => {
-  try {
-    return thunk()
-  } catch (cause) {
-    throw toPanic(cause)
-  }
-}
 
 /**
  * Synchronous parse. Throws `Panic` if the schema validates asynchronously — use `parseAsync`
@@ -114,11 +138,19 @@ export function parse<S extends StandardSchemaV1>(
   schema: S,
   input: unknown
 ): Result<StandardSchemaV1.InferOutput<S>, ValidationFailure> {
-  const result = orPanic(() => schema["~standard"].validate(input))
-  if (result instanceof Promise) {
-    throw new Panic("parse() received an async-validating schema; use parseAsync()")
+  try {
+    const result = schema["~standard"].validate(input)
+    // Any thenable is async, not just this realm's Promise (review of #45: `instanceof Promise`
+    // let a cross-realm Promise or a vendor PromiseLike be read as a sync Result). Inline casts,
+    // not a type-guard helper: env's 1 kB budget.
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- probes an optional `then` only
+    if (typeof (result as { then?: unknown }).then === "function") throw new Panic("async schema; use parseAsync")
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- not a thenable (checked above)
+    return toResult(result as StandardSchemaV1.Result<StandardSchemaV1.InferOutput<S>>)
+  } catch (cause) {
+    // A `null`/`undefined` result (vendor contract breach) fails the reads above: a defect too.
+    throw toPanic(cause)
   }
-  return toResult(result)
 }
 
 /**
@@ -154,14 +186,18 @@ export interface ValidationFailureLike {
  * (root-level issues — empty or missing path — are keyed `"_errors"`).
  */
 export function toFieldErrors(failure: ValidationFailureLike): Record<string, Array<string>> {
-  const out: Record<string, Array<string>> = {}
+  // A Map, not a `{}` accumulator (review of #45): a field named `constructor`, `toString` or
+  // `__proto__` must not read an inherited member as its bucket or reassign a prototype.
+  // `Object.fromEntries` defines every key as an OWN data property on a plain object, so even
+  // `__proto__` is an ordinary key and nothing is polluted.
+  const out = new Map<string, Array<string>>()
   for (const issue of failure.issues) {
     const key = Array.isArray(issue.path) && issue.path.length > 0 ? issue.path.join(".") : "_errors"
-    const bucket = out[key]
-    if (bucket === undefined) out[key] = [issue.message]
+    const bucket = out.get(key)
+    if (bucket === undefined) out.set(key, [issue.message])
     else bucket.push(issue.message)
   }
-  return out
+  return Object.fromEntries(out)
 }
 
 /**

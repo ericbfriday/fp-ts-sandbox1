@@ -7,6 +7,7 @@ import {
   type Brand,
   type brand,
   branded,
+  type IssueLike,
   parse,
   parseAsync,
   type StandardSchemaV1,
@@ -14,6 +15,7 @@ import {
   toFormErrors,
   toValidationFailure,
   type ValidationFailure,
+  type ValidationFailureLike,
   type ValidationIssue
 } from "@friday-friday/schema"
 import { type } from "arktype"
@@ -58,8 +60,10 @@ describe("schema types", () => {
     }>()
   })
 
-  test("toValidationFailure: Standard Schema issues in, ValidationFailure out", () => {
-    expectTypeOf(toValidationFailure).parameter(0).toEqualTypeOf<ReadonlyArray<StandardSchemaV1.Issue>>()
+  test("toValidationFailure: Standard Schema or reader-shaped issues in, ValidationFailure out", () => {
+    expectTypeOf(toValidationFailure).parameter(0).toEqualTypeOf<ReadonlyArray<IssueLike>>()
+    expectTypeOf<ReadonlyArray<StandardSchemaV1.Issue>>().toExtend<ReadonlyArray<IssueLike>>()
+    expectTypeOf<ValidationFailureLike["issues"]>().toExtend<ReadonlyArray<IssueLike>>()
     expectTypeOf(toValidationFailure).returns.toEqualTypeOf<ValidationFailure>()
     expectTypeOf<ValidationFailure["issues"][number]>().toEqualTypeOf<ValidationIssue>()
   })

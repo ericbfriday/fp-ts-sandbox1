@@ -45,4 +45,12 @@ assert.deepEqual(await parseAsync(User, { id: 2 }), err(failing.ok ? undefined :
 const throwing = { "~standard": { version: 1, vendor: "smoke", validate: () => { throw new Error("boom") } } }
 await assert.rejects(parseAsync(throwing, null), (e) => e instanceof Panic)
 
+// Review of #45: prototype-named fields are ordinary keys; any thenable is async for parse().
+const proto = toFormErrors(toValidationFailure([{ message: "m", path: ["__proto__"] }]))
+assert.deepEqual(Object.keys(proto), ["_errors", "__proto__"])
+assert.equal(Object.getPrototypeOf(proto), Object.prototype)
+// oxlint-disable-next-line unicorn/no-thenable -- a hand-made thenable is the fixture under test
+const thenSchema = { "~standard": { version: 1, vendor: "smoke", validate: () => ({ then: () => {} }) } }
+assert.throws(() => parse(thenSchema, null), (e) => e instanceof Panic)
+
 process.stdout.write("schema dist smoke: ok\n")

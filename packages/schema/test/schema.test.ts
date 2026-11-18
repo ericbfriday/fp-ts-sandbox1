@@ -66,6 +66,41 @@ describe("parse", () => {
     }
   })
 
+  it("a non-native thenable from validate is async too: Panic, never read as a value", () => {
+    // A Promise from another realm (or any PromiseLike) fails `instanceof Promise` (review of #45).
+    let thenCalled = false
+    const thenable = {
+      // oxlint-disable-next-line unicorn/no-thenable -- a hand-made thenable is the fixture under test
+      then: (resolve: (r: StandardSchemaV1.Result<number>) => void): void => {
+        thenCalled = true
+        resolve({ value: 1 })
+      }
+    }
+    const schema: StandardSchemaV1<unknown, number> = {
+      "~standard": {
+        version: 1,
+        vendor: "fixture",
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a PromiseLike the spec types as Promise
+        validate: () => thenable as unknown as Promise<StandardSchemaV1.Result<number>>
+      }
+    }
+    expect(() => parse(schema, null)).toThrow(Panic)
+    expect(() => parse(schema, null)).toThrow(/parseAsync/)
+    expect(thenCalled).toBe(false)
+  })
+
+  it("a validate that returns null breaks the contract: a defect (Panic), not a TypeError", () => {
+    const broken: StandardSchemaV1 = {
+      "~standard": {
+        version: 1,
+        vendor: "fixture",
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- deliberately off-contract vendor
+        validate: () => null as unknown as StandardSchemaV1.Result<unknown>
+      }
+    }
+    expect(() => parse(broken, null)).toThrow(Panic)
+  })
+
   it("symbol path segments are noted as [symbol] placeholders", () => {
     // Build an issue path with a symbol via a hand-rolled Standard Schema implementation.
     const sym = Symbol("secret")
@@ -117,6 +152,39 @@ describe("toValidationFailure (the one ValidationFailure producer)", () => {
     const f = toValidationFailure([{ message: "bad", path: [{ key: "a" }, 1] }, { message: "root" }])
     const rebuilt: typeof f = JSON.parse(JSON.stringify(f))
     expect(toValidationFailure(rebuilt.issues)).toStrictEqual(f)
+  })
+
+  it("accepts the reader-shaped issues: a null path is the root", () => {
+    expect(toValidationFailure([{ message: "root", path: null }, { message: "a", path: ["a"] }])).toStrictEqual(
+      ValidationFailure({ issues: [{ message: "root", path: [] }, { message: "a", path: ["a"] }] })
+    )
+  })
+
+  it("normalises defensively: wire issues that lie about their types (review of #45)", () => {
+    const unprintable = {
+      toString: (): never => {
+        throw new Error("no")
+      }
+    }
+    // Shapes a JSON wire or a sloppy vendor can produce despite the declared types.
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- deliberately off-type wire data
+    const wire = [
+      { message: { secret: "x" }, path: [] },
+      { message: 404 },
+      { message: unprintable, path: [] },
+      { message: Object.create(null), path: [] },
+      { message: "null segment", path: [null, "a"] },
+      { message: "undefined segment", path: ["a", undefined] },
+      { message: "null key", path: [{ key: null }] },
+      { message: "null path", path: null },
+      { message: "string path", path: "abc" }
+    ] as unknown as ReadonlyArray<StandardSchemaV1.Issue>
+    const f = toValidationFailure(wire)
+    for (const issue of f.issues) expect(typeof issue.message).toBe("string")
+    expect(f.issues.map((i) => i.message).slice(0, 2)).toEqual(["[object Object]", "404"])
+    expect(f.issues.slice(4).map((i) => i.path)).toEqual([[], [], [], [], []])
+    expect(JSON.parse(JSON.stringify(f))).toStrictEqual(f)
+    expect(toValidationFailure(f.issues)).toStrictEqual(f)
   })
 
   it("parse emits exactly the projection (valibot root issue: path [], no input echoed)", () => {
@@ -241,6 +309,29 @@ describe("flatteners", () => {
     ])
     expect(cases.map(toFieldErrors)).toEqual([{}, { "a.0": ["x", "y"] }, { _errors: ["root"], b: ["b"] }])
   })
+
+  // Review of PR #45: a field named after an Object.prototype member used to read the inherited
+  // member as its bucket (`TypeError: bucket.push is not a function`), and `__proto__` could
+  // reassign the accumulator's prototype.
+  it.each(["constructor", "toString", "hasOwnProperty", "__proto__"])(
+    "a field named %s is an ordinary own key; Object.prototype is untouched",
+    (key) => {
+      const protoBefore = Object.getOwnPropertyNames(Object.prototype)
+      const f = toValidationFailure([{ message: "m", path: [key] }, { message: "n", path: [key] }])
+      const fields = toFieldErrors(f)
+      const form = toFormErrors(f)
+      for (const [record, keys] of [[fields, [key]], [form, ["_errors", key]]] as const) {
+        expect(Object.getPrototypeOf(record)).toBe(Object.prototype)
+        expect(Object.keys(record)).toEqual(keys)
+        expect(Object.getOwnPropertyDescriptor(record, key)?.value).toEqual(["m", "n"])
+        // Entries, not toStrictEqual: an own `constructor` key defeats the matcher's type check.
+        expect(Object.entries(JSON.parse(JSON.stringify(record)))).toEqual(Object.entries(record))
+      }
+      expect(Object.getOwnPropertyNames(Object.prototype)).toEqual(protoBefore)
+      expect(Object.getPrototypeOf(Object.prototype)).toBeNull()
+      expect(({} as Record<string, unknown>)["m"]).toBeUndefined()
+    }
+  )
 
   it("toFormErrors collects root issues under _errors", () => {
     const Failing = z.object({ a: z.string() }).refine(() => false, "root-level problem")
