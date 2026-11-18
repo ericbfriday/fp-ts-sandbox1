@@ -119,20 +119,31 @@ export class Panic extends Error {
 }
 
 /**
- * A readable log message for any thrown value: an `Error`'s message, a string as-is, a tagged
- * error as `Tag: message`, anything else as JSON, falling back to `String()` when JSON can't
- * represent it (bigint, cycles, functions, symbols). Never `[object Object]` for plain data.
+ * A short, bounded log line for any thrown value (RFC-0001 §3) that never prints the value's
+ * data: a primitive via `String()` (a string as-is); an object or function only by its string
+ * `_tag` and `message` (`name` standing in for a missing message), so a tagged error reads
+ * `Tag: message` and an `Error` its message; anything else `"Non-Error thrown"`. A thrown config
+ * object can't leak its secrets into logs, and the full value stays on `.cause`. Capped at 200
+ * chars. Total: a revoked Proxy or a throwing getter gives `"Unprintable thrown value"`.
  */
 const describeCause = (cause: unknown): string => {
-  if (cause instanceof Error) return cause.message
-  if (typeof cause === "string") return cause
-  if (typeof cause === "object" && cause !== null && "_tag" in cause && typeof cause._tag === "string") {
-    return "message" in cause && typeof cause.message === "string" ? `${cause._tag}: ${cause.message}` : cause._tag
-  }
   try {
-    return JSON.stringify(cause) ?? String(cause)
+    const { _tag, message, name }: { _tag?: unknown; message?: unknown; name?: unknown } = Object(cause)
+    return (Object(cause) !== cause
+      ? String(cause)
+      : [_tag, message || name].filter((part) => typeof part === "string" && part).join(": ") || "Non-Error thrown")
+      .slice(0, 200)
   } catch {
-    return String(cause)
+    return "Unprintable thrown value"
+  }
+}
+
+/** `instanceof Panic`, total: a revoked Proxy throws from `instanceof`, and is no Panic. */
+const isPanic = (u: unknown): u is Panic => {
+  try {
+    return u instanceof Panic
+  } catch {
+    return false
   }
 }
 
@@ -142,8 +153,9 @@ const describeCause = (cause: unknown): string => {
  * nested combinators and adapters never double-wrap. Exported for adapters and bridges that
  * triage throws at their own seam (rethrow framework sentinels first, then `throw toPanic(cause)`).
  * Recognises `Panic` by `instanceof`: a Panic from a duplicate copy of core is wrapped once more.
+ * Total: never throws, whatever was thrown (revoked Proxy, throwing getters, null prototype).
  */
-export const toPanic = (cause: unknown): Panic => cause instanceof Panic ? cause : new Panic(cause)
+export const toPanic = (cause: unknown): Panic => isPanic(cause) ? cause : new Panic(cause)
 
 /** Boundary triage (sync half; the async half lives in `./async.js`). */
 

@@ -57,7 +57,7 @@ function tryAsync<T, E>(fn: (signal?: AbortSignal) => Promise<T>, opts: TryOptio
 function trySync<T, E>(fn: () => T, opts: Omit<TryOptions<E>, "signal">): Result<T, E>;
 ```
 
-Every lane (sync combinators, `/async`, `/gen`) converts through one exported, idempotent `toPanic(cause): Panic`: a foreign throw or rejection becomes `Panic` with the original as `cause`, and an existing `Panic` passes through as the same instance. Adapters and bridges reuse it after rethrowing their framework sentinels. A `Panic` built from a non-`Error` has a readable message (string as-is, tagged error as `Tag: message`, other data as JSON).
+Every lane (sync combinators, `/async`, `/gen`) converts through one exported, idempotent `toPanic(cause): Panic`: a foreign throw or rejection becomes `Panic` with the original as `cause`, and an existing `Panic` passes through as the same instance. Adapters and bridges reuse it after rethrowing their framework sentinels. A `Panic` has a short, bounded message that never prints the thrown value's data (a thrown config object must not leak its secrets into logs): a string as-is, other primitives via `String()`, an object by its string `_tag`/`message` only (`name` standing in for a missing message; a tagged error reads `Tag: message`, an `Error` its message), else `"Non-Error thrown"`; capped at 200 chars, the full value stays on `cause`. `toPanic` and the message are total: a value that throws when inspected (revoked Proxy, throwing getter) gives `"Unprintable thrown value"`.
 
 No global rethrow registry. Adapters export pre-bound variants (`@friday-friday/next`'s `tryAsync` calls `unstable_rethrow` first, walking `cause` to depth 5).
 

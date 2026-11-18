@@ -103,7 +103,7 @@
     "name": "@friday-friday/env",
     "path": "packages/env/dist/index.js",
     "import": "*",
-    "limit": "1 kB",
+    "limit": "1.1 kB",
     "gzip": true
   },
   {

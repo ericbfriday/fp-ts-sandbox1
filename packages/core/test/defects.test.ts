@@ -214,4 +214,40 @@ describe("toPanic (the one Panic conversion, exported for adapters and bridges)"
     expect(toPanic(p)).toBe(p)
     expect(toPanic(toPanic("y"))).toStrictEqual(toPanic("y"))
   })
+
+  const revoked = (): object => {
+    const { proxy, revoke } = Proxy.revocable({}, {})
+    revoke()
+    return proxy
+  }
+
+  it.each<[string, () => unknown, string]>([
+    ["a revoked Proxy", revoked, "Unprintable thrown value"],
+    [
+      "an object whose _tag getter throws",
+      () => ({
+        get _tag(): string {
+          throw new Error("getter")
+        }
+      }),
+      "Unprintable thrown value"
+    ],
+    [
+      "an Error whose message getter throws",
+      () =>
+        Object.defineProperty(new Error("x"), "message", {
+          get(): string {
+            throw new Error("message getter")
+          }
+        }),
+      "Unprintable thrown value"
+    ],
+    ["a null-prototype object", () => Object.create(null), "Non-Error thrown"]
+  ])("is total: %s becomes a Panic (never throws), the value kept as cause", (_name, make, message) => {
+    const cause = make()
+    const p = toPanic(cause)
+    expect(p).toBeInstanceOf(Panic)
+    expect(p.message).toBe(message)
+    expect(p.cause).toBe(cause)
+  })
 })

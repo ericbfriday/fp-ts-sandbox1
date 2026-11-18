@@ -36,7 +36,7 @@ export interface ValidationFailure extends TaggedError<"ValidationFailure"> {
 export const ValidationFailure: ErrorFactory<
   "ValidationFailure",
   { issues: ReadonlyArray<{ message: string; path: ReadonlyArray<string | number> }> }
-> = taggedError("ValidationFailure")<{
+> = /*#__PURE__*/ taggedError("ValidationFailure")<{
   issues: ReadonlyArray<{ message: string; path: ReadonlyArray<string | number> }>
 }>()
 export type ValidationFailureInstance = ReturnType<typeof ValidationFailure>
@@ -44,7 +44,7 @@ export type ValidationFailureInstance = ReturnType<typeof ValidationFailure>
 export interface Unsupported extends TaggedError<"Unsupported"> {
   readonly reason: string
 }
-export const Unsupported: ErrorFactory<"Unsupported", { reason: string }> = taggedError("Unsupported")<{
+export const Unsupported: ErrorFactory<"Unsupported", { reason: string }> = /*#__PURE__*/ taggedError("Unsupported")<{
   reason: string
 }>()
 

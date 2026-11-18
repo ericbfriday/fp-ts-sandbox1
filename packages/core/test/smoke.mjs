@@ -32,9 +32,12 @@ assert.equal(toThrowable(missing.error).name, "NotFound")
 assert.deepEqual(all([ok(1), ok(2)]), ok([1, 2]))
 
 assert.throws(() => map(ok(1), () => { throw new Error("boom") }), (e) => e instanceof Panic && e.cause.message === "boom")
-const existing = new Panic({ a: 1 })
-assert.equal(existing.message, "{\"a\":1}")
+const existing = new Panic({ dsn: "postgres://admin:hunter2@db" })
+assert.equal(existing.message, "Non-Error thrown") // never the object's data
 assert.equal(toPanic(existing), existing)
+const { proxy, revoke } = Proxy.revocable({}, {})
+revoke()
+assert.equal(toPanic(proxy).message, "Unprintable thrown value") // total
 
 // /async subpath (dist/async.js)
 const asyncOk = await mapAsync(Promise.resolve(ok(2)), async (n) => n * 10)
