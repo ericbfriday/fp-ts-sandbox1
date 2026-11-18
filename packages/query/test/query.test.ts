@@ -86,6 +86,56 @@ describe("resultQueryOptions + real query-core run", () => {
     ).rejects.toEqual(NotFound({ id: "404" }))
   })
 
+  it("accepts an `as const` key and caches under it (getQueryData reads it back)", async () => {
+    const client = new QueryClient()
+    const opts = resultQueryOptions({
+      queryKey: ["user", 1] as const,
+      queryFn: (): Promise<Result<{ id: string }, NotFoundT>> => Promise.resolve(ok({ id: "1" }))
+    })
+    await client.fetchQuery(opts)
+    expect(client.getQueryData(opts.queryKey)).toEqual({ id: "1" })
+  })
+
+  it("passes TanStack's other options through (staleTime keeps the cache fresh)", async () => {
+    let calls = 0
+    const client = new QueryClient()
+    const opts = resultQueryOptions({
+      queryKey: ["fresh"],
+      queryFn: (): Promise<Result<number>> => Promise.resolve(ok(++calls)),
+      staleTime: Infinity
+    })
+    await expect(client.fetchQuery(opts)).resolves.toBe(1)
+    await expect(client.fetchQuery(opts)).resolves.toBe(1)
+    expect(calls).toBe(1)
+  })
+
+  it("passes a numeric retry through to query-core", async () => {
+    let calls = 0
+    const client = new QueryClient()
+    const opts = resultQueryOptions({
+      queryKey: ["numeric-retry"],
+      queryFn: (): Promise<Result<number, string>> => Promise.resolve(err(`fail-${++calls}`)),
+      retry: 1,
+      retryDelay: 0
+    })
+    await expect(client.fetchQuery(opts)).rejects.toBe("fail-2")
+    expect(calls).toBe(2)
+  })
+
+  it("forwards query-core's abort signal to the Result fetcher", async () => {
+    let seen: AbortSignal | undefined
+    const client = new QueryClient()
+    const opts = resultQueryOptions({
+      queryKey: ["signal"],
+      queryFn: (signal): Promise<Result<number>> => {
+        seen = signal
+        return Promise.resolve(ok(1))
+      }
+    })
+    await client.fetchQuery(opts)
+    expect(seen).toBeInstanceOf(AbortSignal)
+  })
+
   it("retryUnless integrates with query-core retries then surfaces the last error", async () => {
     let calls = 0
     const client = new QueryClient()

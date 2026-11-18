@@ -115,5 +115,15 @@
     "ignore": [
       "effect"
     ]
+  },
+  {
+    "name": "@friday-friday/query",
+    "path": "packages/query/dist/index.js",
+    "import": "*",
+    "limit": "1 kB",
+    "gzip": true,
+    "ignore": [
+      "@tanstack/query-core"
+    ]
   }
 ]
