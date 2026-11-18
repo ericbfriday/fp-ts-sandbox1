@@ -20,8 +20,9 @@
  *   - a *user* signal abort is a defect: `Panic(abort reason)`; a signal that is ALREADY aborted
  *     short-circuits `allAsync`, `mapConcurrent`, `retry` and `timeout` before any user code runs;
  *   - `retry()` is the exception: an abort mid-retry (between attempts, during a delay, or during
- *     an attempt whose fn rejects on abort) returns the *last* `Err` when one exists (the domain
- *     error that got us here), and throws `Panic` only if nothing had settled yet.
+ *     an attempt whose fn rejects WITH the abort: `signal.reason` or an `AbortError`) returns the
+ *     *last* `Err` when one exists (the domain error that got us here), and throws `Panic` only if
+ *     nothing had settled yet. Any other throw after the abort is still a defect (`Panic`).
  */
 
 import {
@@ -245,15 +246,29 @@ export const retry: Retry = /*#__PURE__*/ async <T, E>(
       if (opts.signal?.aborted) return result
     }
     try {
-      result = await attempt()
-    } catch (defect) {
-      // A signal-honouring fn rejects when aborted mid-attempt: that is the abort, not a new
-      // defect, so the last Err (the domain error that got us here) wins, per the module doc.
-      if (opts.signal?.aborted) return result
-      throw defect
+      result = await fn(opts.signal)
+    } catch (cause) {
+      // A signal-honouring fn rejects with the abort when aborted mid-attempt: that is the abort,
+      // not a new defect, so the last Err (the domain error that got us here) wins, per the
+      // module doc. Any OTHER throw, even after the abort, is a real defect and surfaces.
+      if (opts.signal?.aborted && isAbortOf(cause, opts.signal)) return result
+      throw toPanic(cause)
     }
   }
   return result
+}
+
+/**
+ * Is `cause` the abort of `signal` itself: its `reason` (what `fetch` and `reject(signal.reason)`
+ * reject with), or an `AbortError` (what libraries that mint their own abort error reject with)?
+ * Total: a hostile `cause` (revoked Proxy, throwing `name` getter) is not an abort.
+ */
+const isAbortOf = (cause: unknown, signal: AbortSignal): boolean => {
+  try {
+    return cause === signal.reason || (cause instanceof Error && cause.name === "AbortError")
+  } catch {
+    return false
+  }
 }
 
 const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>

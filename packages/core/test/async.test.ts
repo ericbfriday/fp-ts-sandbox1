@@ -331,6 +331,42 @@ describe("retry", () => {
     expect(calls).toBe(2)
   })
 
+  it("an UNRELATED throw after abort is still a defect: Panic(cause), not the last Err", async () => {
+    const controller = new AbortController()
+    const bug = new TypeError("real bug unrelated to abort")
+    let calls = 0
+    const promise = retry(
+      async () => {
+        calls++
+        if (calls === 1) return err<string>("first")
+        controller.abort()
+        throw bug
+      },
+      { times: 3, signal: controller.signal }
+    )
+    await expect(promise).rejects.toThrow(Panic)
+    await expect(promise).rejects.toMatchObject({ cause: bug })
+  })
+
+  it("a fn rejecting with an AbortError of its own (not signal.reason) on abort returns the last Err", async () => {
+    const controller = new AbortController()
+    let calls = 0
+    const r = await retry(
+      (signal?: AbortSignal) => {
+        calls++
+        if (calls === 1) return Promise.resolve(err<string>("first-err"))
+        return new Promise<Result<number, string>>((_resolve, reject) => {
+          signal?.addEventListener("abort", () => reject(new DOMException("op aborted", "AbortError")), {
+            once: true
+          })
+          controller.abort(new Error("caller gave up"))
+        })
+      },
+      { times: 3, signal: controller.signal }
+    )
+    expect(r).toEqual(err("first-err"))
+  })
+
   it("abort mid-FIRST-attempt has no last Err, so it is a defect (Panic)", async () => {
     const controller = new AbortController()
     const promise = retry(
