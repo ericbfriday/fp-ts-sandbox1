@@ -16,6 +16,7 @@ import {
 } from "../dist/index.js"
 import { allAsync, mapAsync, retry, timeout, tryAsync } from "../dist/async.js"
 import { $, gen } from "../dist/gen.js"
+import { fromWire, PROBLEM_CONTENT_TYPE, sanitize, toDefect, toProblem } from "../dist/wire.js"
 
 const NotFound = taggedError("NotFound")()
 
@@ -50,5 +51,32 @@ const genResult = gen(function* () {
   return a + b
 })
 assert.deepEqual(genResult, ok(3))
+
+// /wire subpath (dist/wire.js)
+const nf = NotFound({ resource: "user", id: "1", message: "gone", big: 1n, cause: new Error("db") })
+assert.deepEqual(sanitize(nf), { _tag: "NotFound", resource: "user", id: "1", message: "gone" })
+const problem = toProblem(nf)
+assert.deepEqual(problem, {
+  type: "https://friday-friday.dev/errors/not-found",
+  title: "Not Found",
+  status: 404,
+  detail: "gone",
+  tag: "NotFound",
+  resource: "user",
+  id: "1"
+})
+assert.deepEqual(fromWire(JSON.parse(JSON.stringify(problem))), sanitize(nf))
+assert.deepEqual(toProblem(fromWire(problem), problem.status), problem)
+assert.deepEqual(toDefect(new Error("postgres://admin:hunter2@db")), { _tag: "InternalDefect", message: "Internal server error" })
+assert.equal(toProblem(toDefect("boom")).status, 500)
+assert.equal(PROBLEM_CONTENT_TYPE, "application/problem+json")
+// RFC-0001 §6: a tag with no status is masked as the defect envelope; the original is reported.
+const reported = []
+const masked = toProblem({ _tag: "DbUnavailable", host: "db.internal:5432" }, {}, { report: (c) => reported.push(c) })
+assert.deepEqual(masked, toProblem(toDefect("x")))
+assert.equal(reported[0].host, "db.internal:5432")
+assert.equal(toProblem(nf, { Conflict: 409 }).status, 404)
+assert.equal(toProblem(nf, { Conflict: 409 }, { strict: true }).tag, "InternalDefect")
+assert.deepEqual(sanitize(nf, { safeProps: ["id"] }), { _tag: "NotFound", id: "1", message: "gone" })
 
 process.stdout.write("core dist smoke: ok\n")
