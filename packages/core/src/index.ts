@@ -6,7 +6,7 @@
  * - Tagged errors are plain data with a literal `_tag` and a structural `is()` guard
  *   (never `instanceof`: duplicate module copies break it).
  * - Defects are thrown, not values: a callback that throws inside a combinator is rethrown
- *   as `Panic` with the original as `cause`.
+ *   as `Panic` with the original as `cause`, through the one idempotent `toPanic` conversion.
  * - Every combinator is dual (data-first and data-last, dispatched on `arguments.length`)
  *   and a separate `#__PURE__`-annotated export so unused ones tree-shake.
  * - `pipe` / `flow` are explicit overloads (16 / 12 arity): no recursive types, no HKTs.
@@ -114,12 +114,48 @@ export const toThrowable = <E extends TaggedError<string>>(e: E): Throwable<E> =
 export class Panic extends Error {
   override readonly name = "Panic" as const
   constructor(cause: unknown) {
-    super(cause instanceof Error ? cause.message : String(cause), { cause })
+    super(describeCause(cause), { cause })
   }
 }
 
-/** Run a user callback; anything it throws is rethrown as `Panic` (an existing `Panic` passes through).
- * Shared with the `/async` subpath via `./internal.js` (not part of the public API). */
+/**
+ * A short, bounded log line for any thrown value (RFC-0001 §3) that never prints the value's
+ * data: a primitive via `String()` (a string as-is); an object or function only by its string
+ * `_tag` and `message` (`name` standing in for a missing message), so a tagged error reads
+ * `Tag: message` and an `Error` its message; anything else `"Non-Error thrown"`. A thrown config
+ * object can't leak its secrets into logs, and the full value stays on `.cause`. Capped at 200
+ * chars. Total: a revoked Proxy or a throwing getter gives `"Unprintable thrown value"`.
+ */
+const describeCause = (cause: unknown): string => {
+  try {
+    const { _tag, message, name }: { _tag?: unknown; message?: unknown; name?: unknown } = Object(cause)
+    return (Object(cause) !== cause
+      ? String(cause)
+      : [_tag, message || name].filter((part) => typeof part === "string" && part).join(": ") || "Non-Error thrown")
+      .slice(0, 200)
+  } catch {
+    return "Unprintable thrown value"
+  }
+}
+
+/** `instanceof Panic`, total: a revoked Proxy throws from `instanceof`, and is no Panic. */
+const isPanic = (u: unknown): u is Panic => {
+  try {
+    return u instanceof Panic
+  } catch {
+    return false
+  }
+}
+
+/**
+ * The one defect conversion every lane uses (IDEA §4.3, RFC-0001 §3): a foreign throw becomes
+ * `Panic` with the original as `cause`; an existing `Panic` is returned as the SAME instance, so
+ * nested combinators and adapters never double-wrap. Exported for adapters and bridges that
+ * triage throws at their own seam (rethrow framework sentinels first, then `throw toPanic(cause)`).
+ * Recognises `Panic` by `instanceof`: a Panic from a duplicate copy of core is wrapped once more.
+ * Total: never throws, whatever was thrown (revoked Proxy, throwing getters, null prototype).
+ */
+export const toPanic = (cause: unknown): Panic => isPanic(cause) ? cause : new Panic(cause)
 
 /** Boundary triage (sync half; the async half lives in `./async.js`). */
 
@@ -147,7 +183,7 @@ export const trySync: TrySync = /*#__PURE__*/ <T, E>(fn: () => T, opts: TryOptio
   } catch (cause) {
     opts.rethrow?.(cause)
     const mapped = call(opts.catch, cause)
-    if (mapped === undefined) throw new Panic(cause)
+    if (mapped === undefined) throw toPanic(cause)
     return err(mapped)
   }
 }
