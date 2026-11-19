@@ -25,21 +25,40 @@ function services(context: Rule.RuleContext): Services | undefined {
   }
 }
 
-/** True when the node's type is (a union containing) a type whose symbol/alias name is in `names`. */
-function typeMatchesNames(context: Rule.RuleContext, node: TSESTree.Node, names: Set<string>): boolean {
-  const svc = services(context)
-  if (svc === undefined) return false
-  const type = svc.checker.getTypeAtLocation(svc.toTSNode(node))
-  const parts = type.isUnion() ? type.types : [type]
-  return parts.some((part) => {
+type TSType = ReturnType<TypeChecker["getTypeAtLocation"]>
+
+/** The members of a union type, or the type itself. */
+const unionParts = (type: TSType): ReadonlyArray<TSType> => (type.isUnion() ? type.types : [type])
+
+/** True when `type` is (a union containing) a type whose symbol/alias name is in `names`. */
+function namedIn(type: TSType, names: ReadonlySet<string>): boolean {
+  return unionParts(type).some((part) => {
     const name = part.aliasSymbol?.name ?? part.symbol?.name
     return name !== undefined && names.has(name)
   })
 }
 
-/** True when the node's type is (a union containing) `Result` or `AsyncResult`. */
+/** True when the node's type is (a union containing) a type whose symbol/alias name is in `names`. */
+function typeMatchesNames(context: Rule.RuleContext, node: TSESTree.Node, names: ReadonlySet<string>): boolean {
+  const svc = services(context)
+  if (svc === undefined) return false
+  return namedIn(svc.checker.getTypeAtLocation(svc.toTSNode(node)), names)
+}
+
+/** True when the node's type is (a union containing) `Result` or `AsyncResult`, or a promise or
+ * other thenable of one (#105): `Promise<Result<…>>` spelled without the `AsyncResult` alias, an
+ * `async` function's return, `PromiseLike<Result<…>>`. A `Promise<number>` is not matched; floating
+ * non-Result promises are `no-floating-promises`' job. */
 function isResultType(context: Rule.RuleContext, node: TSESTree.Node): boolean {
-  return typeMatchesNames(context, node, RESULT_TYPE_NAMES)
+  const svc = services(context)
+  if (svc === undefined) return false
+  const type = svc.checker.getTypeAtLocation(svc.toTSNode(node))
+  if (namedIn(type, RESULT_TYPE_NAMES)) return true
+  return unionParts(type).some((part) => {
+    if (part.getProperty("then") === undefined) return false
+    const awaited = svc.checker.getAwaitedType(part)
+    return awaited !== undefined && awaited !== part && namedIn(awaited, RESULT_TYPE_NAMES)
+  })
 }
 
 /** True when the node's type is (a union containing) an `ErrorFactory`. */
@@ -63,7 +82,8 @@ const mustUseResult: Rule.RuleModule = {
   meta: {
     type: "problem",
     docs: {
-      description: "Flags discarded Result/AsyncResult expressions — TypeScript does not force consumption",
+      description:
+        "Flags discarded Result/AsyncResult expressions, including un-awaited promises of a Result — TypeScript does not force consumption",
       recommended: false
     },
     schema: [],
