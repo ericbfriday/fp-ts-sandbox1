@@ -14,7 +14,7 @@ import { z } from "zod"
 /* oxlint-disable no-unsafe-type-assertion, no-unnecessary-type-assertion -- wire probes: tRPC error shapes are structurally accessed in tests */
 import { Conflict, err, NotFound, ok, Panic, taggedError } from "@friday-friday/core"
 import type { ValidationFailure } from "@friday-friday/schema"
-import { errorFormatter, fromTRPC, resultMiddleware, sanitize } from "@friday-friday/trpc"
+import { errorFormatter, fromTRPC, resultMiddleware, resultResolver, sanitize } from "@friday-friday/trpc"
 
 const DbUnavailable = taggedError("DbUnavailable")<{ host?: string }>()
 
@@ -65,7 +65,7 @@ const buildRouter = (opts: { isDev: boolean; report?: (cause: unknown) => void }
 type AppRouter = ReturnType<typeof buildRouter>
 
 /** A client wired straight into the fetch handler; `wire()` is the last raw response text. */
-const connect = (router: AnyTRPCRouter) => {
+const connect = <R extends AnyTRPCRouter = AppRouter>(router: R) => {
   let last = ""
   const link: TRPCLink<AppRouter> = httpBatchLink({
     url: "http://localhost/trpc",
@@ -80,7 +80,10 @@ const connect = (router: AnyTRPCRouter) => {
       return res
     }
   })
-  return { client: createTRPCClient<AppRouter>({ links: [link] }), wire: (): string => last }
+  // The link is router-agnostic at runtime; it's typed against AppRouter only for httpBatchLink's options.
+  // oxlint-disable-next-line no-unsafe-type-assertion -- same link, retyped for the router under test
+  const links = [link as unknown as TRPCLink<R>]
+  return { client: createTRPCClient<R>({ links }), wire: (): string => last }
 }
 
 /** Await a rejection and return the thrown value. */
@@ -250,5 +253,74 @@ describe("fromTRPC fallback", () => {
   it("non-tRPC failures -> Err(TRPCTransportError)", async () => {
     const r = await fromTRPC<string>(Promise.reject(new Error("socket hangup")))
     expect(r).toEqual(err({ _tag: "TRPCTransportError", message: "socket hangup" }))
+  })
+})
+
+describe("resultResolver: .output() with the error channel (#108, #44 decision 4)", () => {
+  const codes = { NotFound: "NOT_FOUND", Conflict: "CONFLICT" } as const
+  const reported: Array<unknown> = []
+  const t = initTRPC.create({ isDev: false, errorFormatter: errorFormatter({ report: (c) => reported.push(c) }) })
+  const user = z.object({ id: z.string(), name: z.string() })
+  const find = (id: string) =>
+    id === "missing"
+      ? err(NotFound({ id, message: "no such user" }))
+      : id === "taken"
+      ? err(Conflict({ field: "id" }))
+      // oxlint-disable-next-line no-unsafe-type-assertion -- "bad" deliberately breaks the output schema at runtime
+      : ok({ id, name: id === "bad" ? (42 as unknown as string) : "ada" })
+  const router = t.router({
+    // The output schema validates the UNWRAPPED value; Err takes the error channel.
+    getUser: t.procedure.input(z.string()).output(user).query(
+      resultResolver(codes, async ({ input }) => find(input))
+    ),
+    rename: t.procedure.input(z.string()).output(user).mutation(
+      resultResolver(
+        codes,
+        ({ input }) => input === "taken" ? err(Conflict({ field: "id" })) : ok({ id: input, name: "ada" })
+      )
+    ),
+    // The misordering resultResolver replaces: the output schema sees the Result envelope.
+    misordered: t.procedure.use(resultMiddleware(codes)).output(user).input(z.string()).query(
+      // oxlint-disable-next-line no-unsafe-type-assertion -- tRPC types the resolver against the schema; this misuse needs a cast
+      ({ input }) => find(input) as never
+    )
+  })
+  const { client } = connect(router)
+
+  it("Ok: the output schema validates the unwrapped value, which is what the client receives", async () => {
+    expect(await client.getUser.query("1")).toEqual({ id: "1", name: "ada" })
+    expect(await client.rename.mutate("1")).toEqual({ id: "1", name: "ada" })
+  })
+
+  it("Err: the mapped code and data.friday_friday, exactly as resultMiddleware", async () => {
+    const data = dataOf(await rejection(client.getUser.query("missing")))
+    expect(data?.code).toBe("NOT_FOUND")
+    expect(data?.friday_friday).toEqual({ _tag: "NotFound", message: "no such user", id: "missing" })
+    const r = await fromTRPC<{ id: string; name: string }, ReturnType<typeof Conflict>>(client.rename.mutate("taken"))
+    expect(r).toEqual(err({ _tag: "Conflict", field: "id" }))
+  })
+
+  it("an Ok that fails the output schema is a defect (InternalDefect), never a ValidationFailure", async () => {
+    reported.length = 0
+    const data = dataOf(await rejection(client.getUser.query("bad")))
+    expect(data?.code).toBe("INTERNAL_SERVER_ERROR")
+    expect(data?.friday_friday).toEqual({ _tag: "InternalDefect", message: DEFECT_TEXT })
+    expect(reported).toHaveLength(1)
+  })
+
+  it("an unmapped tag is a defect, as with resultMiddleware", async () => {
+    const only = t.router({
+      q: t.procedure.output(user).query(resultResolver({}, () => err(NotFound({ id: "x" }))))
+    })
+    const data = dataOf(await rejection(connect(only).client.q.query()))
+    expect(data?.friday_friday).toEqual({ _tag: "InternalDefect", message: DEFECT_TEXT })
+  })
+
+  it("pins the misordering: .use(resultMiddleware).output() fails EVERY call as InternalDefect", async () => {
+    for (const id of ["1", "missing"]) {
+      const data = dataOf(await rejection(client.misordered.query(id)))
+      expect(data?.code).toBe("INTERNAL_SERVER_ERROR")
+      expect(data?.friday_friday).toEqual({ _tag: "InternalDefect", message: DEFECT_TEXT })
+    }
   })
 })

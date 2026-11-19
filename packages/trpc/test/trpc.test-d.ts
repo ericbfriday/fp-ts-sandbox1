@@ -3,11 +3,18 @@
  * (tRPC types the formatter shape globally, not per procedure — report §5.3 design limit)
  * and the dual-channel procedure shapes.
  */
-import type { Conflict, NotFound, Result } from "@friday-friday/core"
+import { type Conflict, err, NotFound, ok, type Result } from "@friday-friday/core"
 import type { WireError } from "@friday-friday/core/wire"
-import { errorFormatter, fromTRPC, resultMiddleware, type TRPCTransportError } from "@friday-friday/trpc"
+import {
+  errorFormatter,
+  fromTRPC,
+  resultMiddleware,
+  resultResolver,
+  type TRPCTransportError
+} from "@friday-friday/trpc"
 import { type AnyTRPCMiddlewareFunction, initTRPC, type TRPCError } from "@trpc/server"
 import { describe, expectTypeOf, it } from "vitest"
+import { z } from "zod"
 
 type NotFoundE = ReturnType<typeof NotFound>
 type ConflictE = ReturnType<typeof Conflict>
@@ -76,5 +83,36 @@ describe("resultMiddleware public type (#57: stable @trpc/server entry points on
     const domain = t.procedure.use(resultMiddleware({ NotFound: "NOT_FOUND" }))
     const router = t.router({ ping: domain.query(() => "pong") })
     expectTypeOf(router.ping).not.toBeAny()
+  })
+})
+
+describe("resultResolver (#108): .output() with the error channel, no casts", () => {
+  const t = initTRPC.context<{ uid: string }>().create()
+  const user = z.object({ id: z.string() })
+
+  it("ctx and input are inferred from the procedure; the client output type is T, not the Result", () => {
+    const router = t.router({
+      me: t.procedure.input(z.string()).output(user).query(
+        resultResolver({ NotFound: "NOT_FOUND" }, ({ ctx, input }) => {
+          expectTypeOf(ctx.uid).toEqualTypeOf<string>()
+          expectTypeOf(input).toEqualTypeOf<string>()
+          return input === ctx.uid ? ok({ id: input }) : err(NotFound({ id: input }))
+        })
+      ),
+      double: t.procedure.input(z.number()).mutation(resultResolver({}, async ({ input }) => ok(input * 2)))
+    })
+    expectTypeOf<typeof router.me._def.$types.output>().toEqualTypeOf<{ id: string }>()
+    expectTypeOf<typeof router.double._def.$types.output>().toEqualTypeOf<number>()
+  })
+
+  it("an Ok value that doesn't match the output schema is a type error", () => {
+    t.procedure.output(user).query(
+      // @ts-expect-error -- `{ nope }` is not the output schema's type
+      resultResolver({}, () => ok({ nope: 1 }))
+    )
+  })
+
+  it("map values are exactly TRPCError's code union", () => {
+    expectTypeOf(resultResolver).parameter(0).toEqualTypeOf<{ readonly [tag: string]: TRPCError["code"] }>()
   })
 })
