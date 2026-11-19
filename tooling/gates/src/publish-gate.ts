@@ -3,7 +3,7 @@
  *
  *   node tooling/gates/src/publish-gate.ts        (pnpm run pack:check; needs `pnpm run build`)
  *
- * For every `packages/*` package: `pnpm pack` it (pnpm rewrites `workspace:` ranges and swaps in
+ * For every `packages/*` package, and each `shippedTooling` directory: `pnpm pack` it (pnpm rewrites `workspace:` ranges and swaps in
  * `publishConfig.exports`), then check the tarball, not the workspace:
  * - the packed manifest has no `@friday-friday/source` condition (src is not in the tarball) and
  *   no `workspace:` range, and has `repository` with `directory` (npm provenance);
@@ -29,12 +29,17 @@ type Target = string | { readonly [condition: string]: Target }
 type Exports = Readonly<Record<string, Target>>
 
 /**
+ * Workspaces under tooling/ that ship like a `packages/*` package (built to dist, packed and
+ * checked here). #44 decision 8: the eslint-plugin ships with the suite's first release.
+ */
+export const shippedTooling: ReadonlyArray<string> = ["tooling/eslint-plugin"]
+
+/**
  * Workspaces under tooling/ that are never packed or published, with the reason. tooling/gates
- * checks that every tooling directory is listed and that any with a package.json is private.
+ * checks that every tooling directory is listed here or in `shippedTooling`, and that any listed
+ * here with a package.json is private.
  */
 export const notShipped: Readonly<Record<string, string>> = {
-  "tooling/eslint-plugin":
-    "exports ./src/index.ts with no build or `files`, and eslint/@typescript-eslint/utils are devDependencies; whether it ships is open, see docs/decisions/2026-11-19-tooling-not-shipped.md",
   "tooling/codemods":
     "a plain script with no package.json, so nothing can pack it; it stays internal (#44 decisions 3 and 8), see docs/decisions/2026-11-19-tooling-not-shipped.md",
   "tooling/gates": "repo-internal CI gates (plain dir, no package.json)",
@@ -157,6 +162,7 @@ const main = (): void => {
   const dirs = readdirSync(join(root, "packages"), { withFileTypes: true })
     .filter((d) => d.isDirectory() && existsSync(join(root, "packages", d.name, "package.json")))
     .map((d) => `packages/${d.name}`)
+    .concat(shippedTooling)
   const failures: Array<string> = []
   for (const dir of dirs) {
     const found = checkPackage(join(root, dir))

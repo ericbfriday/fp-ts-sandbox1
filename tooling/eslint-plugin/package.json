@@ -1,8 +1,7 @@
 {
   "name": "@friday-friday/eslint-plugin",
   "version": "0.0.0",
-  "private": true,
-  "description": "Local type-aware lint rules: must-use-result, no-try-around-redirect, no-instanceof-tagged-error (ADR-0003; rules land in #8)",
+  "description": "Type-aware ESLint rules for the @friday-friday suite: must-use-result, no-try-around-redirect, no-instanceof-tagged-error (ADR-0003). Needs typescript-eslint's parser with type information.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -15,11 +14,33 @@
     "node": ">=24"
   },
   "exports": {
-    ".": "./src/index.ts",
+    ".": {
+      "@friday-friday/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
     "./package.json": "./package.json"
   },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./package.json": "./package.json"
+    }
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
+    "build": "tsdown",
+    "smoke": "node test/smoke.mjs",
     "lint": "cd ../.. && eslint --config tooling/eslint-plugin/eslint.config.js --max-warnings 0 packages examples"
+  },
+  "peerDependencies": {
+    "eslint": "^10.15.0",
+    "typescript-eslint": "^8.72.2"
   },
   "devDependencies": {
     "@typescript-eslint/utils": "~8.72.2",

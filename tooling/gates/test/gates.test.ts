@@ -9,7 +9,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import { notShipped, repository, stripSource } from "../src/publish-gate.ts"
+import { notShipped, repository, shippedTooling, stripSource } from "../src/publish-gate.ts"
 import { excluded as sourceSmokeExcluded } from "../src/source-smoke.ts"
 
 const root = join(import.meta.dirname, "..", "..", "..")
@@ -297,7 +297,9 @@ describe("publish gate (#65, #51 story 22)", () => {
 
   // pnpm 12 swaps `publishConfig.exports` in on pack, so the workspace keeps the source condition
   // (vitest, tsconfig customConditions, smoke:source) and the tarball never names `src`.
-  it.each(packages.map((p) => [p.manifest.name, p] as const))(
+  const shipped = workspaces("tooling").filter((w) => shippedTooling.includes(w.dir))
+
+  it.each([...packages, ...shipped].map((p) => [p.manifest.name, p] as const))(
     "%s publishConfig.exports is its exports without the source condition",
     (_name, p) => {
       expect(p.manifest.publishConfig?.exports).toEqual(stripSource(p.manifest.exports ?? {}))
@@ -311,7 +313,9 @@ describe("publish gate (#65, #51 story 22)", () => {
     }
   )
 
-  it.each(tooling.map((d) => [`tooling/${d.name}`] as const))(
+  it.each(
+    tooling.filter((d) => !shippedTooling.includes(`tooling/${d.name}`)).map((d) => [`tooling/${d.name}`] as const)
+  )(
     "%s is not shipped: listed in notShipped, and private if it has a package.json",
     (dir) => {
       expect(notShipped[dir]?.length ?? 0).toBeGreaterThan(20)
@@ -321,12 +325,34 @@ describe("publish gate (#65, #51 story 22)", () => {
     }
   )
 
-  // Eric decides whether the lint rules and the codemod ship (#65); until then they stay private.
-  it.each(["tooling/eslint-plugin", "tooling/codemods"])("%s points at the open shipping decision", (dir) => {
-    const note = "docs/decisions/2026-11-19-tooling-not-shipped.md"
+  // #44 decision 8: the eslint-plugin ships, the codemod stays internal.
+  const note = "docs/decisions/2026-11-19-tooling-not-shipped.md"
+
+  it("the codemod points at the shipping decision", () => {
     expect(existsSync(join(root, note))).toBe(true)
-    expect(notShipped[dir]).toContain(note)
+    expect(notShipped["tooling/codemods"]).toContain(note)
   })
+
+  it("the shipping decision is recorded as decided", () => {
+    expect(readFileSync(join(root, note), "utf8")).toMatch(/\*\*Status: decided/)
+  })
+
+  it.each(shippedTooling.map((dir) => [dir] as const))(
+    "shipped %s is gated like a package: public, dist-only, built and smoked by the root scripts",
+    (dir) => {
+      expect(notShipped[dir]).toBeUndefined()
+      // oxlint-disable-next-line no-unsafe-type-assertion -- package.json is the shape npm defines
+      const m = readJson(`${dir}/package.json`) as Manifest & { readonly files?: ReadonlyArray<string> }
+      expect(m.private).toBeUndefined()
+      expect(m.files).toEqual(["dist"])
+      expect(m.scripts?.["build"]).toBe("tsdown")
+      expect(m.scripts?.["smoke"]).toBe("node test/smoke.mjs")
+      expect(existsSync(join(root, dir, "test", "smoke.mjs"))).toBe(true)
+      for (const script of ["build", "smoke"]) {
+        expect(rootManifest.scripts?.[script]).toContain(`--filter "./${dir}"`)
+      }
+    }
+  )
 })
 
 describe("peer floors (IDEA §4 'lower bound = oldest in the CI matrix', #109)", () => {

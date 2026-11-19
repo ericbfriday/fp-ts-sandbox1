@@ -1,32 +1,35 @@
-# 2026-11-19 — Open: do `tooling/eslint-plugin` and `tooling/codemods` ship? (#65, parent #51)
+# 2026-11-19 — Do `tooling/eslint-plugin` and `tooling/codemods` ship? (#65, parent #51)
 
-**Status: open. Eric decides.** Until then neither ships: `@friday-friday/eslint-plugin` is
-`private: true`, and `tooling/codemods` has no package.json, so nothing can pack it. The publish
-gate (`pnpm run pack:check`, `tooling/gates/src/publish-gate.ts`) packs only `packages/*` and lists
-both under `notShipped`; `tooling/gates` fails if a tooling directory is missing from that list or
-has a package.json that isn't private. No IDEA §4 decision changes. IDEA §8 asks for the three
-lint rules, but not for publishing them.
+**Status: decided (Eric, #44 decision 8): option 2.** The eslint-plugin ships with the suite's first
+release. The codemod stays internal. Nothing is published until Eric says so (AGENTS.md).
 
-## What shipping would take
+## What was done
 
-**eslint-plugin** (today it only runs in this repo, from source):
+**eslint-plugin** (#106):
 
-- A build (tsdown, as in `packages/*`) and `exports` that point at `dist`, plus `files: ["dist"]`.
-- Runtime deps out of devDependencies: `@typescript-eslint/utils` as a dependency; `eslint`,
-  `typescript-eslint` and `typescript` as peers with tested ranges. The plugin pins its own
-  TypeScript `~6.0` today while the repo runs 7.0, so the `typescript` peer range is a real
-  decision (`U`: which TypeScript majors typescript-eslint 8.x supports when this is decided).
-- Move it under `packages/`, or teach the gate a second directory, so the publish gate covers it.
-  It already has `repository`.
+- A tsdown build to `dist`. `exports` keeps the `@friday-friday/source` condition for in-repo use
+  (vitest, the repo's `eslint.config.js` imports `src` directly), and `publishConfig.exports` drops
+  it, as in `packages/*`. `files: ["dist"]`, no `private`.
+- Dependencies: `src` imports `@typescript-eslint/utils`, `eslint` and `typescript` as **types
+  only**, so the built JS imports nothing and the `.d.ts` names only `eslint`. Hence:
+  - peers `eslint ^10.15.0` and `typescript-eslint ^8.72.2`. Their lower bounds are the versions
+    CI runs (the lockfile), so the regular test job is the floor. Without typescript-eslint's
+    parser and type information the rules can't see types and report nothing;
+  - **no `typescript` peer.** The rules use the `ts.Program` that typescript-eslint's parser
+    services hand them and never import `typescript`, so typescript-eslint's own `typescript` peer
+    range is what governs. (In this repo that's TypeScript ~6.0, because typescript-eslint 8.x
+    needs the classic compiler API; the repo itself builds on 7.0, see `eslint.config.js`.)
+  - `@typescript-eslint/utils` stays a devDependency (types only, not in the artifact).
+- It stays in `tooling/`. The publish gate packs `packages/*` plus `shippedTooling`
+  (`tooling/gates/src/publish-gate.ts`). The root `build` and `smoke` scripts include it, and
+  `tooling/gates` checks all of that. It has no size budget: it isn't browser code.
 
-**codemods** (one script, `neverthrow-to-core.mjs`):
+**codemods** (#107): `neverthrow-imports.mjs` is an honest import rewriter that flags every method
+call for REVIEW (#44 decision 3). It has no package.json, and `notShipped` lists it.
 
-- Settle #44 item 3 (codemod scope) first. On a realistic file it emits code that doesn't typecheck,
-  and it raises no REVIEW flags.
-- Then a package.json with a `bin`, `private` removed, `repository`, and a place in the gate.
+## Options that were on the table
 
-## Options
-
-1. Ship neither (status quo): the rules and the codemod stay repo-internal.
-2. Ship the eslint-plugin only, after the work above. The codemod waits for #44 item 3.
+1. Ship neither (status quo then).
+2. **Ship the eslint-plugin only. The codemod waits for #44 item 3** (chosen; item 3 then kept it
+   internal).
 3. Ship both.

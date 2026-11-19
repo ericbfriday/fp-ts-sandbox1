@@ -10,14 +10,14 @@
     "node": ">=24"
   },
   "scripts": {
-    "build": "pnpm -r --filter \"./packages/*\" run build",
+    "build": "pnpm -r --filter \"./packages/*\" --filter \"./tooling/eslint-plugin\" run build",
     "check": "tsc -p tsconfig.json && tsc -p examples/next-app/tsconfig.json && node tooling/type-budget/src/check.ts",
     "lint": "oxlint -f unix && pnpm -r --filter \"./tooling/eslint-plugin\" run lint && dprint check",
     "lint-fix": "oxlint --fix && dprint fmt",
     "test": "vitest run",
     "test:types": "vitest run --typecheck.only",
     "size": "pnpm run build && size-limit",
-    "smoke": "pnpm -r --filter \"./packages/*\" run smoke",
+    "smoke": "pnpm -r --filter \"./packages/*\" --filter \"./tooling/eslint-plugin\" run smoke",
     "smoke:source": "node tooling/gates/src/source-smoke.ts",
     "pack:check": "node tooling/gates/src/publish-gate.ts",
     "build:examples": "pnpm -r --filter \"./examples/*\" run build",
