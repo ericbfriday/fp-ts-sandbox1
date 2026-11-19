@@ -6,14 +6,9 @@ import { isNotFound, isRedirect, notFound, redirect } from "@tanstack/router-cor
 import { describe, expect, it } from "vitest"
 
 /* oxlint-disable no-unsafe-type-assertion, no-floating-promises -- wire probes: router sentinels are structurally accessed; intentional throw-probes are documented */
-import { err, ok, Panic, taggedError } from "@friday-friday/core"
+import { Conflict, err, Forbidden, NotFound, ok, Panic, Unauthenticated } from "@friday-friday/core"
 import { loaderResult, resultHandler } from "@friday-friday/tanstack-start"
 import { z } from "zod"
-
-const NotFound = taggedError("NotFound")<{ readonly id: string }>()
-const Unauthenticated = taggedError("Unauthenticated")()
-const Forbidden = taggedError("Forbidden")<{ readonly required: string }>()
-const Conflict = taggedError("Conflict")<{ readonly field: string }>()
 
 const PostSchema = z.object({ title: z.string().min(2), body: z.string() })
 

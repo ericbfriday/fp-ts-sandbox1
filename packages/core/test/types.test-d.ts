@@ -19,6 +19,7 @@ import {
   pipe,
   type Result,
   type TaggedError,
+  taggedError,
   tap,
   tapErr,
   type Throwable,
@@ -67,16 +68,21 @@ describe("constructors and guards", () => {
 })
 
 describe("tagged errors", () => {
-  test("factory + ReturnType twin type", () => {
-    expectTypeOf(NotFound).toEqualTypeOf<ErrorFactory<"NotFound", { resource: string; id: string }>>()
-    expectTypeOf(NotFound.tag).toEqualTypeOf<"NotFound">()
-    expectTypeOf<NotFound>().toEqualTypeOf<TaggedError<"NotFound"> & Readonly<{ resource: string; id: string }>>()
-    const e = NotFound({ resource: "user", id: "1", message: "m", cause: new Error("x") })
-    expectTypeOf(e._tag).toEqualTypeOf<"NotFound">()
+  test("factory + ReturnType twin type (an app tag may require props)", () => {
+    const UserMissing: ErrorFactory<"UserMissing", { resource: string; id: string }> = taggedError("UserMissing")<
+      { resource: string; id: string }
+    >()
+    type UserMissing = ReturnType<typeof UserMissing>
+    expectTypeOf(UserMissing.tag).toEqualTypeOf<"UserMissing">()
+    expectTypeOf<UserMissing>().toEqualTypeOf<
+      TaggedError<"UserMissing"> & Readonly<{ resource: string; id: string }>
+    >()
+    const e = UserMissing({ resource: "user", id: "1", message: "m", cause: new Error("x") })
+    expectTypeOf(e._tag).toEqualTypeOf<"UserMissing">()
     expectTypeOf(e.id).toEqualTypeOf<string>()
     expectTypeOf(e.message).toEqualTypeOf<string | undefined>()
     // @ts-expect-error props are required
-    NotFound({ resource: "user" })
+    UserMissing({ resource: "user" })
   })
 
   test("a _tag prop is rejected, even when spread in (#60: the factory owns _tag)", () => {
@@ -181,8 +187,8 @@ describe("dual overloads infer correctly", () => {
 describe("matchTag is exhaustive over _tag", () => {
   const handlers = {
     ok: (n: number): string => String(n),
-    NotFound: (e: NotFound): number => e.id.length,
-    Forbidden: (e: Forbidden): boolean => e.reason.length > 0
+    NotFound: (e: NotFound): number => e.id?.length ?? 0,
+    Forbidden: (e: Forbidden): boolean => e.reason !== undefined
   }
 
   test("return type is the union of every handler's return type", () => {

@@ -4,14 +4,12 @@
  * No mock: each loader must raise Next's own sentinel, identified by its `digest` (the field
  * Next's boundaries and `unstable_rethrow` read), never by `message`.
  */
-import { err, ok, type Result, taggedError } from "@friday-friday/core"
+import { Conflict, err, NotFound, ok, type Result, taggedError } from "@friday-friday/core"
 import { orForbidden, orNotFound, orRedirect } from "@friday-friday/next"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-const NotFound = taggedError("NotFound")<{ id: string }>()
-const Forbidden = taggedError("Forbidden")<{ action: string }>()
-const Unauthenticated = taggedError("Unauthenticated")<{ where: string }>()
-const Conflict = taggedError("Conflict")<{ field: string }>()
+const Forbidden = taggedError("Forbidden")<{ action?: string }>()
+const Unauthenticated = taggedError("Unauthenticated")<{ where?: string }>()
 
 /** The digest of whatever `fn` throws; fails the test if it returns normally. */
 const digestOf = (fn: () => unknown): unknown => {

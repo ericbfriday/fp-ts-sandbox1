@@ -1,15 +1,13 @@
 /**
  * `@friday-friday/hono` type tests — the status-literal union is the product here.
  */
-import { err, ok, taggedError } from "@friday-friday/core"
+import { err, type Forbidden, NotFound, ok, taggedError } from "@friday-friday/core"
 import { respond, sv } from "@friday-friday/hono"
 import { Hono } from "hono"
 import { hc } from "hono/client"
 import { describe, expectTypeOf, it } from "vitest"
 import { z } from "zod"
 
-const NotFound = taggedError("NotFound")<{ id: string }>()
-const Forbidden = taggedError("Forbidden")<{ required: string }>()
 const Teapot = taggedError("Teapot")<{}>()
 
 type AppError = ReturnType<typeof NotFound> | ReturnType<typeof Forbidden> | ReturnType<typeof Teapot>

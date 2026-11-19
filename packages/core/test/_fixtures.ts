@@ -1,17 +1,16 @@
-import { err, type ErrorFactory, ok, type Result, taggedError } from "@friday-friday/core"
+import { err, type ErrorFactory, NotFound, ok, type Result, taggedError, Timeout } from "@friday-friday/core"
 import * as fc from "fast-check"
 
-// RFC-0001 §2 usage pattern: explicit ErrorFactory annotation + ReturnType twin type.
-export const NotFound: ErrorFactory<"NotFound", { resource: string; id: string }> = taggedError("NotFound")<
-  { resource: string; id: string }
+// Fixed tags are core's (ADR-0005): `NotFound` and `Timeout` are core root's factories (value +
+// type twins), so every prop on them is optional.
+export { NotFound, Timeout }
+
+// RFC-0001 §2 usage pattern for an extension of a fixed tag: explicit ErrorFactory annotation +
+// ReturnType twin type; the extra prop is optional, as ADR-0005 requires (#92).
+export const Forbidden: ErrorFactory<"Forbidden", { readonly reason?: string }> = taggedError("Forbidden")<
+  { readonly reason?: string }
 >()
-export type NotFound = ReturnType<typeof NotFound>
-
-export const Forbidden: ErrorFactory<"Forbidden", { reason: string }> = taggedError("Forbidden")<{ reason: string }>()
 export type Forbidden = ReturnType<typeof Forbidden>
-
-export const Timeout: ErrorFactory<"Timeout", {}> = taggedError("Timeout")()
-export type Timeout = ReturnType<typeof Timeout>
 
 // JSON round-trips normalize -0 to +0, so the arbitrary must not produce -0
 // (toStrictEqual distinguishes them; JSON.stringify(-0) === "0").

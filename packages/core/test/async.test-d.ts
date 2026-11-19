@@ -1,8 +1,8 @@
 /**
  * `/async` type tests (RFC-0001 §4).
  */
-import { type AsyncResult, err, ok, pipe, taggedError } from "@friday-friday/core"
-import { andThenAsync, mapAsync, mapConcurrent, retry, Timeout, timeout, tryAsync } from "@friday-friday/core/async"
+import { type AsyncResult, err, ok, pipe, taggedError, Timeout } from "@friday-friday/core"
+import { andThenAsync, mapAsync, mapConcurrent, retry, timeout, tryAsync } from "@friday-friday/core/async"
 import { describe, expectTypeOf, test } from "vitest"
 
 describe("async types", () => {
@@ -35,7 +35,7 @@ describe("async types", () => {
   })
 
   test("tryAsync maps the catch handler's error type", () => {
-    const NotFound = taggedError("NotFound")<{ id: string }>()
+    const NotFound = taggedError("NotFound")<{ readonly id?: string }>()
     const r = tryAsync(
       async () => 1,
       { catch: () => NotFound({ id: "1" }) }

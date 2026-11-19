@@ -2,15 +2,21 @@
  * Contract test for `@friday-friday/core/wire` (RFC-0001 §5–§6, IDEA §4.2–§4.3, #33).
  * Every assertion goes through the public interface; expected values are literals (goldens).
  */
-import { DbUnavailable, NetworkError, type TaggedError, taggedError, Timeout } from "@friday-friday/core"
+import {
+  Conflict,
+  DbUnavailable,
+  NetworkError,
+  NotFound,
+  type TaggedError,
+  taggedError,
+  Timeout
+} from "@friday-friday/core"
 import { fromWire, PROBLEM_CONTENT_TYPE, sanitize, toDefect, toProblem } from "@friday-friday/core/wire"
 import * as fc from "fast-check"
 import { describe, expect, it } from "vitest"
 // Imported the way adapters (#37–#40) do: a workspace-only subpath (source condition only, never published).
 import { goldenProblems } from "@friday-friday/core/test/wire-golden"
 
-const Conflict = taggedError("Conflict")<{ field: string }>()
-const NotFound = taggedError("NotFound")<{ resource: string; id: string }>()
 const Weird = taggedError("Weird")<Record<string, unknown>>()
 
 /** RFC-0001 §5.2: every output of the module survives JSON and structuredClone unchanged. */

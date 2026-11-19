@@ -246,7 +246,7 @@ describe("no-try-around-redirect", () => {
 
 describe("no-instanceof-tagged-error", () => {
   const header =
-    "import { taggedError, ok, Panic } from '@friday-friday/core'\nconst NotFound = taggedError('NotFound')<{ id: string }>()\n"
+    "import { taggedError, ok, Panic } from '@friday-friday/core'\nconst NotFound = taggedError('NotFound')<{ id?: string }>()\n"
 
   ruleTester.run("no-instanceof-tagged-error", pluginRules["no-instanceof-tagged-error"]!, {
     valid: [

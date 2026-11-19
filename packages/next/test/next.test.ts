@@ -6,7 +6,7 @@
  * `unstable_rethrow` read), never by `message`. The loaders have their own file
  * (loaders.test.ts, including `orForbidden` against the real `forbidden()`).
  */
-import { err, ok, type Result, taggedError } from "@friday-friday/core"
+import { err, NotFound, ok, type Result } from "@friday-friday/core"
 import { mapAsync } from "@friday-friday/core/async"
 import { goldenProblems } from "@friday-friday/core/test/wire-golden"
 import { fromWire, PROBLEM_CONTENT_TYPE } from "@friday-friday/core/wire"
@@ -16,7 +16,6 @@ import { notFound, redirect, unstable_rethrow } from "next/navigation"
 import { describe, expect, it } from "vitest"
 import { z } from "zod"
 
-const NotFound = taggedError("NotFound")<{ id: string }>()
 type NotFoundT = ReturnType<typeof NotFound>
 
 /** Whatever `fn` throws (a real Next sentinel here); fails the test if it returns. */

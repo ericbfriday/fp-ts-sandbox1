@@ -4,7 +4,18 @@
  * Pattern: every assertion wraps the call itself in `expectTypeOf(...)`. An annotated const
  * (`const r: X = f()`) only checks assignability, so it passes when `f` returns `any` (#61).
  */
-import { type AsyncResult, err, matchTag, ok, type Result, type TaggedError, taggedError } from "@friday-friday/core"
+import {
+  type AsyncResult,
+  Conflict,
+  err,
+  type Forbidden,
+  matchTag,
+  NotFound,
+  ok,
+  type Result,
+  type TaggedError,
+  taggedError
+} from "@friday-friday/core"
 import type { InternalDefect } from "@friday-friday/core/wire"
 import {
   action,
@@ -22,13 +33,10 @@ import type { ComponentType, ReactNode } from "react"
 import { describe, expectTypeOf, test } from "vitest"
 import { z } from "zod"
 
-const NotFound = taggedError("NotFound")<{ id: string }>()
 type NotFoundT = ReturnType<typeof NotFound>
-const Conflict = taggedError("Conflict")<{ field: string }>()
 type ConflictT = ReturnType<typeof Conflict>
-const Forbidden = taggedError("Forbidden")()
 type ForbiddenT = ReturnType<typeof Forbidden>
-const Unauthenticated = taggedError("Unauthenticated")<{ where: string }>()
+const Unauthenticated = taggedError("Unauthenticated")<{ where?: string }>()
 type UnauthenticatedT = ReturnType<typeof Unauthenticated>
 
 // Inputs are declared (not inferred from a literal) so E is the full union under test.
@@ -78,7 +86,7 @@ describe("next types", () => {
   })
 
   test("matchTag over the narrowed Result is exhaustive without the removed tag", () => {
-    expectTypeOf(matchTag(orNotFound(loaded), { ok: (n) => n, Conflict: (e) => e.field })).toEqualTypeOf<
+    expectTypeOf(matchTag(orNotFound(loaded), { ok: (n) => n, Conflict: (e) => e.field ?? "" })).toEqualTypeOf<
       number | string
     >()
     // Once every loader tag is gone, `ok` alone is exhaustive.

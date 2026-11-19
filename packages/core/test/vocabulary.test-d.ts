@@ -5,15 +5,20 @@
  * comparison equates that intersection with the flat shape written here.
  */
 import {
+  type AsyncResult,
   Conflict,
   DbUnavailable,
+  err,
+  type ErrorFactory,
   Forbidden,
   NetworkError,
   NotFound,
+  taggedError,
   Timeout,
   Unauthenticated
 } from "@friday-friday/core"
-import { Timeout as AsyncTimeout, timeout, type TimeoutFn } from "@friday-friday/core/async"
+import * as Async from "@friday-friday/core/async"
+import { timeout, type TimeoutFn } from "@friday-friday/core/async"
 import { describe, expectTypeOf, test } from "vitest"
 
 describe("fixed-vocabulary factories: exactly the ADR-0005 props, every one optional", () => {
@@ -76,11 +81,60 @@ describe("fixed-vocabulary factories: exactly the ADR-0005 props, every one opti
   })
 })
 
-describe("/async's Timeout twin is core root's (expand step)", () => {
-  test("same factory type, same error type; timeout() is still TimeoutFn and unions it into E", () => {
-    expectTypeOf(AsyncTimeout).toEqualTypeOf(Timeout)
-    expectTypeOf(AsyncTimeout({ ms: 1 })).toEqualTypeOf<Timeout>()
-    expectTypeOf<AsyncTimeout>().toEqualTypeOf<Timeout>()
+describe("taggedError enforces ADR-0005 on fixed tags (#92)", () => {
+  test("a required prop on a fixed tag is a compile error", () => {
+    // @ts-expect-error -- `id` must be optional: "NotFound" is a fixed tag
+    taggedError("NotFound")<{ id: string }>()
+    // @ts-expect-error -- `required` must be optional: "Forbidden" is a fixed tag
+    taggedError("Forbidden")<{ readonly required: string }>()
+    // @ts-expect-error -- an extension prop must be optional too
+    taggedError("Unauthenticated")<{ where: string }>()
+    // @ts-expect-error -- infrastructure tags follow the same rule
+    taggedError("DbUnavailable")<{ host: string }>()
+  })
+
+  test("a retyped core prop is a compile error", () => {
+    // @ts-expect-error -- `id` must keep core's "NotFound" type (string)
+    taggedError("NotFound")<{ id?: number }>()
+    // @ts-expect-error -- `ms` must keep core's "Timeout" type (number)
+    taggedError("Timeout")<{ readonly ms?: string }>()
+  })
+
+  test("optional extension props compile and keep the fixed tag", () => {
+    const Extended: ErrorFactory<"NotFound", { readonly id?: string; readonly table?: string }> = taggedError(
+      "NotFound"
+    )<{ readonly id?: string; readonly table?: string }>()
+    expectTypeOf(Extended.tag).toEqualTypeOf<"NotFound">()
+    expectTypeOf(Extended({ table: "users" }).table).toEqualTypeOf<string | undefined>()
+    // Core's own factories pass their own rule; `{}` and no type argument compile.
+    expectTypeOf(taggedError("Unauthenticated")()).toEqualTypeOf<ErrorFactory<"Unauthenticated", {}>>()
+    expectTypeOf(taggedError("Conflict")<{}>()).toEqualTypeOf<ErrorFactory<"Conflict", {}>>()
+  })
+
+  test("schema's ValidationFailure may (must) require `issues`", () => {
+    taggedError("ValidationFailure")<{ issues: ReadonlyArray<{ message: string; path: ReadonlyArray<string> }> }>()
+    // @ts-expect-error -- `issues` is required by "ValidationFailure"
+    taggedError("ValidationFailure")<{ issues?: [] }>()
+    // @ts-expect-error -- `issues` must keep core's "ValidationFailure" type
+    taggedError("ValidationFailure")<{ issues: ReadonlyArray<string> }>()
+  })
+
+  test("app and adapter tags may still require props", () => {
+    const PaymentDeclined: ErrorFactory<"PaymentDeclined", { reason: string }> = taggedError("PaymentDeclined")<
+      { reason: string }
+    >()
+    expectTypeOf(PaymentDeclined({ reason: "card" }).reason).toEqualTypeOf<string>()
+    expectTypeOf(taggedError("HttpError")<{ status: number }>()).toEqualTypeOf<
+      ErrorFactory<"HttpError", { status: number }>
+    >()
+  })
+})
+
+describe("/async does not re-export Timeout (contract step, #92)", () => {
+  test("Timeout comes from core root only; timeout() still unions core's Timeout into E", () => {
+    expectTypeOf(Async).not.toHaveProperty("Timeout")
     expectTypeOf(timeout).toEqualTypeOf<TimeoutFn>()
+    const slow = async (): AsyncResult<number, "slow"> => err("slow")
+    expectTypeOf(timeout(slow, 5)).toEqualTypeOf<AsyncResult<number, "slow" | Timeout>>()
   })
 })

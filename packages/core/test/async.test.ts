@@ -4,7 +4,7 @@
  * NOTE on data-first forms: the TS 7.0.2 root-tsc inference quirk documented in result.test.ts
  * applies here too — tests use `pipe` / data-first sparingly and prefer data-last forms.
  */
-import { andThen, type AsyncResult, err, ok, Panic, pipe, type Result, trySync } from "@friday-friday/core"
+import { andThen, type AsyncResult, err, ok, Panic, pipe, type Result, Timeout, trySync } from "@friday-friday/core"
 import {
   allAsync,
   andThenAsync,
@@ -14,7 +14,6 @@ import {
   retry,
   tapAsync,
   tapErrAsync,
-  Timeout,
   timeout,
   tryAsync
 } from "@friday-friday/core/async"

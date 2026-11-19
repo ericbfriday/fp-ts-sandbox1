@@ -12,7 +12,7 @@ import {
   map,
   matchTag,
   NetworkError,
-  NotFound as CoreNotFound,
+  NotFound,
   ok,
   Panic,
   pipe,
@@ -22,11 +22,10 @@ import {
   toThrowable,
   Unauthenticated
 } from "../dist/index.js"
-import { allAsync, mapAsync, retry, Timeout as AsyncTimeout, timeout, tryAsync } from "../dist/async.js"
+import * as Async from "../dist/async.js"
+import { allAsync, mapAsync, retry, timeout, tryAsync } from "../dist/async.js"
 import { $, gen } from "../dist/gen.js"
 import { fromWire, PROBLEM_CONTENT_TYPE, sanitize, toDefect, toProblem } from "../dist/wire.js"
-
-const NotFound = taggedError("NotFound")()
 
 const r = pipe(ok(1), map((n) => n + 1), andThen((n) => n > 1 ? ok(n) : err("small")))
 assert.deepEqual(r, { ok: true, value: 2 })
@@ -48,7 +47,7 @@ revoke()
 assert.equal(toPanic(proxy).message, "Unprintable thrown value") // total
 
 // Fixed vocabulary (ADR-0005): one factory per fixed tag, every prop optional.
-const fixed = [CoreNotFound, Conflict, Forbidden, Unauthenticated, Timeout, NetworkError, DbUnavailable]
+const fixed = [NotFound, Conflict, Forbidden, Unauthenticated, Timeout, NetworkError, DbUnavailable]
 assert.deepEqual(fixed.map((f) => f.tag), [
   "NotFound",
   "Conflict",
@@ -59,10 +58,12 @@ assert.deepEqual(fixed.map((f) => f.tag), [
   "DbUnavailable"
 ])
 for (const f of fixed) assert.deepEqual(f({}), { _tag: f.tag })
-assert.equal(CoreNotFound.is(JSON.parse(JSON.stringify(CoreNotFound({ resource: "user", id: "1" })))), true)
+assert.equal(NotFound.is(JSON.parse(JSON.stringify(NotFound({ resource: "user", id: "1" })))), true)
+const PaymentDeclined = taggedError("PaymentDeclined")() // an app tag: its own factory
+assert.deepEqual(PaymentDeclined({ reason: "card" }), { _tag: "PaymentDeclined", reason: "card" })
 
 // /async subpath (dist/async.js)
-assert.equal(AsyncTimeout, Timeout) // the same factory across the two dist entries
+assert.equal("Timeout" in Async, false) // contract step (#92): only core root exports Timeout
 assert.deepEqual(await timeout(() => new Promise((r) => setTimeout(() => r(ok(1)), 50)), 5), err(Timeout({ ms: 5 })))
 const asyncOk = await mapAsync(Promise.resolve(ok(2)), async (n) => n * 10)
 assert.deepEqual(asyncOk, { ok: true, value: 20 })

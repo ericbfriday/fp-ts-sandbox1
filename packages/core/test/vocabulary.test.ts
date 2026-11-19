@@ -1,7 +1,7 @@
 /**
  * The fixed vocabulary (ADR-0005, #87): core's root owns one factory per fixed tag except
- * `ValidationFailure` (schema owns it). Every prop is optional and JSON-safe; `/async`'s `Timeout`
- * is core root's `Timeout`; `/wire`'s default status table is built from the factories' `.tag`.
+ * `ValidationFailure` (schema owns it). Every prop is optional and JSON-safe; `/async` exports no
+ * `Timeout` (#92) but `timeout()` produces core root's; `/wire`'s default status table is built from the factories' `.tag`.
  */
 import {
   Conflict,
@@ -12,7 +12,8 @@ import {
   Timeout,
   Unauthenticated
 } from "@friday-friday/core"
-import { Timeout as AsyncTimeout, timeout } from "@friday-friday/core/async"
+import * as Async from "@friday-friday/core/async"
+import { timeout } from "@friday-friday/core/async"
 import { fromWire, toProblem } from "@friday-friday/core/wire"
 import { describe, expect, it } from "vitest"
 
@@ -55,12 +56,12 @@ describe("core root exports the fixed-vocabulary factories (ADR-0005)", () => {
   })
 })
 
-describe("/async's Timeout is core root's Timeout (expand step of #66)", () => {
-  it("is the same value", () => {
-    expect(AsyncTimeout).toBe(Timeout)
+describe("/async and core root's Timeout (contract step of #66, #92)", () => {
+  it("/async no longer exports Timeout", () => {
+    expect(Object.keys(Async)).not.toContain("Timeout")
   })
 
-  it("timeout() produces it", async () => {
+  it("timeout() produces core root's Timeout", async () => {
     const r = await timeout(() => new Promise<never>(() => {}), 10)
     expect(r).toStrictEqual({ ok: false, error: Timeout({ ms: 10 }) })
     expect(!r.ok && Timeout.is(r.error)).toBe(true)

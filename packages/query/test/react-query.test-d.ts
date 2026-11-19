@@ -4,12 +4,11 @@
  * `queryOptions` does (conditional queries), and must not leak `SkipToken` into options built
  * without it, or `useSuspenseQuery` (which rejects `skipToken`) would stop compiling.
  */
-import { ok, type Result, taggedError } from "@friday-friday/core"
+import { type NotFound, ok, type Result } from "@friday-friday/core"
 import { resultQueryOptions } from "@friday-friday/query"
 import { skipToken, useQuery, useSuspenseQuery } from "@tanstack/react-query"
 import { describe, expectTypeOf, it } from "vitest"
 
-const NotFound = taggedError("NotFound")<{ id: string }>()
 type NotFoundE = ReturnType<typeof NotFound>
 
 const fetchUser = (_signal: AbortSignal): Promise<Result<{ id: string }, NotFoundE>> => Promise.resolve(ok({ id: "1" }))

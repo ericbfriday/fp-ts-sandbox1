@@ -1,4 +1,4 @@
-import { taggedError } from "@friday-friday/core"
+import { NotFound } from "@friday-friday/core"
 import {
   fromWire,
   type InternalDefect,
@@ -14,8 +14,6 @@ import {
   type WireOptions
 } from "@friday-friday/core/wire"
 import { describe, expectTypeOf, it } from "vitest"
-
-const NotFound = taggedError("NotFound")<{ id: string }>()
 
 describe("@friday-friday/core/wire types", () => {
   it("sanitize keeps the literal tag", () => {

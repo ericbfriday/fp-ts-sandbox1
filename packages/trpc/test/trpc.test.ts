@@ -12,13 +12,11 @@ import { describe, expect, it } from "vitest"
 import { z } from "zod"
 
 /* oxlint-disable no-unsafe-type-assertion, no-unnecessary-type-assertion -- wire probes: tRPC error shapes are structurally accessed in tests */
-import { err, ok, Panic, taggedError } from "@friday-friday/core"
+import { Conflict, err, NotFound, ok, Panic, taggedError } from "@friday-friday/core"
 import type { ValidationFailure } from "@friday-friday/schema"
 import { errorFormatter, fromTRPC, resultMiddleware, sanitize } from "@friday-friday/trpc"
 
-const NotFound = taggedError("NotFound")<{ id: string }>()
-const Conflict = taggedError("Conflict")<{ field: string }>()
-const DbUnavailable = taggedError("DbUnavailable")<{ host: string }>()
+const DbUnavailable = taggedError("DbUnavailable")<{ host?: string }>()
 
 /** The secret every defect test throws; it must never appear in a production wire body. */
 const SECRET = "connect ECONNREFUSED postgres://admin:hunter2@db"

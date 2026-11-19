@@ -10,7 +10,7 @@
  *   `cause` whenever `"cause" in error` (enumerable or not), and never any other own property.
  * So `toThrowable`'s `data` never reaches the client, and a `cause` on the thrown Error would.
  */
-import { taggedError, toThrowable } from "@friday-friday/core"
+import { NotFound, toThrowable } from "@friday-friday/core"
 import { createRequire, registerHooks } from "node:module"
 import { dirname, join } from "node:path"
 import { Writable } from "node:stream"
@@ -84,7 +84,6 @@ const errorRow = (payload: string): Record<string, unknown> => {
   return JSON.parse(row.slice(row.indexOf(":E") + 2)) as Record<string, unknown>
 }
 
-const NotFound = taggedError("NotFound")<{ id: string }>()
 const secret = { password: "hunter2" }
 const thrown = (): Error => toThrowable(NotFound({ id: "1", message: "no such user", cause: secret }))
 

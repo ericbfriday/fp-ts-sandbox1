@@ -6,15 +6,12 @@
  *
  * Rendered with the real react-dom client and the real `catchError` from `next/error`.
  */
-import { err, ok, type Result, taggedError } from "@friday-friday/core"
+import { err, NotFound, ok, type Result } from "@friday-friday/core"
 import { type BoundaryProps, orThrow, resultBoundary } from "@friday-friday/next/client"
 import { Window } from "happy-dom"
 import { act, createElement, type ReactNode } from "react"
 import { createRoot } from "react-dom/client"
-import { afterEach, describe, expect, it } from "vitest"
-
-const NotFound = taggedError("NotFound")<{ id: string }>()
-type NotFound = ReturnType<typeof NotFound> // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- React's documented act() flag
+import { afterEach, describe, expect, it } from "vitest" // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- React's documented act() flag
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 let unmount: (() => void) | undefined
