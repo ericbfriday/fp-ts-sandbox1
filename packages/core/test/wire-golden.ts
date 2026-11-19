@@ -43,15 +43,15 @@ export const goldenProblems: ReadonlyArray<GoldenProblem> = [
     }
   },
   {
-    name: "status map hit",
-    error: t("Timeout", { ms: 500 }),
-    status: { Timeout: 504, NotFound: 404 },
+    name: "status map hit (beats the RFC §6 default)",
+    error: t("Forbidden", { required: "admin" }),
+    status: { Forbidden: 404, NotFound: 404 },
     body: {
-      type: "https://friday-friday.dev/errors/timeout",
-      title: "Timeout",
-      status: 504,
-      tag: "Timeout",
-      ms: 500
+      type: "https://friday-friday.dev/errors/forbidden",
+      title: "Forbidden",
+      status: 404,
+      tag: "Forbidden",
+      required: "admin"
     }
   },
   {
@@ -80,37 +80,34 @@ export const goldenProblems: ReadonlyArray<GoldenProblem> = [
     }
   },
   {
-    name: "infrastructure default (ADR-0005): DbUnavailable → 503",
-    error: t("DbUnavailable", { message: "database unavailable" }),
+    name: "infrastructure default (ADR-0005): DbUnavailable → 503, tag + status only (no message, no props)",
+    error: t("DbUnavailable", { host: "db.internal:5432", message: "connect ECONNREFUSED 10.0.0.5:5432" }),
     body: {
       type: "https://friday-friday.dev/errors/db-unavailable",
       title: "Db Unavailable",
       status: 503,
-      detail: "database unavailable",
       tag: "DbUnavailable"
     }
   },
   {
-    name: "infrastructure default (ADR-0005): Timeout → 504, also filling a gap in a map",
-    error: t("Timeout", { ms: 500 }),
+    name: "infrastructure default (ADR-0005): Timeout → 504 filling a gap in a map; `ms` dropped",
+    error: t("Timeout", { ms: 500, message: "query took 500 ms" }),
     status: { NotFound: 404 },
     body: {
       type: "https://friday-friday.dev/errors/timeout",
       title: "Timeout",
       status: 504,
-      tag: "Timeout",
-      ms: 500
+      tag: "Timeout"
     }
   },
   {
-    name: "infrastructure default (ADR-0005): NetworkError → 502",
-    error: t("NetworkError", { reason: "ECONNRESET" }),
+    name: "infrastructure default (ADR-0005): NetworkError → 502; driver `reason` dropped",
+    error: t("NetworkError", { reason: "connect ECONNREFUSED 10.0.0.5:5432" }),
     body: {
       type: "https://friday-friday.dev/errors/network-error",
       title: "Network Error",
       status: 502,
-      tag: "NetworkError",
-      reason: "ECONNRESET"
+      tag: "NetworkError"
     }
   },
   {

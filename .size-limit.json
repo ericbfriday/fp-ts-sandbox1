@@ -31,7 +31,7 @@
     "name": "@friday-friday/core — full /wire subpath",
     "path": "packages/core/dist/wire.js",
     "import": "*",
-    "limit": "1.5 kB",
+    "limit": "1.6 kB",
     "gzip": true
   },
   {

@@ -14,7 +14,8 @@
  *
  * Invariants: nothing here throws; every output deep-equals its own `JSON.parse(JSON.stringify(x))`
  * and `structuredClone(x)` (RFC-0001 §5.2); `cause` never appears in any output (IDEA §4.2);
- * `toProblem(fromWire(p)!, p.status)` deep-equals `p` for every `p` this module built; `message` is
+ * `toProblem(fromWire(p)!, p.status)` deep-equals `p` for every `p` this module built (pass the same
+ * `safeProps` for an infrastructure tag); infrastructure tags (ADR-0005) send tag + status only; `message` is
  * a string or absent; every `InternalDefect` this module creates (`toDefect`, masking, the hostile-
  * input fallback) carries the fixed text and nothing from the original but an optional `digest`.
  */
@@ -118,29 +119,43 @@ export interface WireOptions {
 }
 
 /**
- * JSON-safe projection of a tagged error (RFC-0001 §5.3): `_tag`, a string `message` and plain props
- * survive (only the props named in `options.safeProps`, when given); a non-string `message`,
- * `cause` (at every depth), functions, symbols, bigint, `undefined`, non-finite numbers, class
- * instances, cycles and anything deeper than 32 levels are dropped. `Date` → ISO string, `-0` → `0`,
- * a dropped array element → `null`. Never throws: an error whose `_tag` can't be read as a string
- * comes out as the defect envelope. The output round-trips JSON and `structuredClone`.
+ * The projection both directions share. Outbound (`sanitize`, `toProblem`) an infrastructure tag
+ * (ADR-0005: the default-table rows above 500, `NetworkError`, `DbUnavailable`, `Timeout`) keeps
+ * only `_tag` plus the keys `allow` names, `message` included only if named: their props and text
+ * come from drivers and sockets (hosts, DSNs, `ECONNREFUSED 10.0.0.5:5432`), the leak class of #30.
+ * Parse-back (`inbound`) keeps what the server chose to send, so `fromWire` stays a fixed point.
  */
-export const sanitize = <E extends TaggedError<string>>(e: E, options?: WireOptions): WireError<E["_tag"]> => {
-  const allow = options?.safeProps
+const projectError = (e: TaggedError<string>, allow?: ReadonlyArray<string>, inbound?: boolean): WireError => {
   let out: { [key: string]: Json }
   try {
     out = record(e, 0, [e], allow && ["_tag", "message", ...allow])
   } catch {
     out = {} // the error object itself is hostile (throwing proxy trap)
   }
+  const tag = out["_tag"]
   // An unreadable or non-string tag can't be attributed: degrade to the defect envelope (no props
   // ride along under `InternalDefect`) rather than throw.
-  if (typeof out["_tag"] !== "string") out = { _tag: "InternalDefect", message: DEFECT_MESSAGE }
+  if (typeof tag !== "string") out = { _tag: "InternalDefect", message: DEFECT_MESSAGE }
+  else if (!inbound && (DEFAULT_STATUS[tag] ?? 0) > 500) out = record(out, 0, [], ["_tag", ...(allow ?? [])])
   // `message` is a string or absent (RFC-0001 §2 `message?: string`): anything else is dropped.
   if (typeof out["message"] !== "string") delete out["message"]
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `_tag` is a string (ensured above); props are Json by construction
-  return out as unknown as WireError<E["_tag"]>
+  return out as unknown as WireError
 }
+
+/**
+ * JSON-safe projection of a tagged error (RFC-0001 §5.3): `_tag`, a string `message` and plain props
+ * survive (only the props named in `options.safeProps`, when given); a non-string `message`,
+ * `cause` (at every depth), functions, symbols, bigint, `undefined`, non-finite numbers, class
+ * instances, cycles and anything deeper than 32 levels are dropped. `Date` → ISO string, `-0` → `0`,
+ * a dropped array element → `null`. Never throws: an error whose `_tag` can't be read as a string
+ * comes out as the defect envelope. The output round-trips JSON and `structuredClone`.
+ *
+ * Infrastructure tags (`NetworkError`, `DbUnavailable`, `Timeout`; ADR-0005) cross as `_tag` only:
+ * `message` and every prop are dropped unless `options.safeProps` names them (`message` too).
+ */
+export const sanitize = <E extends TaggedError<string>>(e: E, options?: WireOptions): WireError<E["_tag"]> =>
+  projectError(e, options?.safeProps)
 
 // ---------------------------------------------------------------------------
 // Problem Details (RFC 9457) — RFC-0001 §6
@@ -285,7 +300,7 @@ export const fromWire = (body: unknown): WireError | undefined => {
   if (!isPlainObject(body)) return undefined
   try {
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `_tag` checked right here; sanitize re-projects the rest
-    if (typeof body["_tag"] === "string") return sanitize(body as unknown as TaggedError<string>)
+    if (typeof body["_tag"] === "string") return projectError(body as unknown as TaggedError<string>, undefined, true)
     const tag = tagOf(body)
     if (tag === undefined) return undefined
     const raw: Record<string, unknown> = {}
@@ -295,7 +310,7 @@ export const fromWire = (body: unknown): WireError | undefined => {
     if (isPlainObject(shadowed)) { for (const k of Object.keys(shadowed)) define(raw, k, shadowed[k]) }
     raw["_tag"] = tag // last: nothing on the wire can replace the reconstruction key
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `_tag` set on the line above
-    return sanitize(raw as unknown as TaggedError<string>)
+    return projectError(raw as unknown as TaggedError<string>, undefined, true)
   } catch {
     return undefined
   }
