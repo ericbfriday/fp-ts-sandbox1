@@ -13,10 +13,10 @@ Thanks for contributing to `@friday-friday/*`. This repo has one rule above all 
 
 1. Branch from `main`: `feat/<area>` or `fix/<area>`.
 2. One package or concern per PR. Land it with tests — runtime behavior, `*.test-d.ts` type tests, property laws where math applies, wire contracts (`JSON` + `structuredClone` round-trip) for every public output.
-3. Run `pnpm ci` (lint + typecheck matrix + test + size) locally. CI runs the same thing plus a TS 6.0 → 7.0 → 7.1-beta matrix.
+3. Run `pnpm run ci` (lint + typecheck + test + size + smoke) locally. Locally that typechecks on TS 7 only; CI runs the same gates plus a TS 6.0 / 7.0 / 7.1-beta typecheck matrix. (A bare `pnpm ci` is pnpm 12's built-in clean install and never runs the script.)
 4. PR description: what, which spec/issue section is normative, size numbers for new dist output, deviations called out explicitly.
 5. Reviews are two-axis (standards + spec) and findings are fixed before merge — expect the spec reviewer to quote your issue's acceptance criteria back at you.
-6. Merge to `main` by merge commit (history stays linear per slice); the issue closes with an evidence comment.
+6. Squash-merge to `main` (one commit per PR; the PR body's `Closes #N` closes the issue). The PR body carries the evidence.
 
 ## Code standards
 

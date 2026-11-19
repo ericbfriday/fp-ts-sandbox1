@@ -2,9 +2,9 @@
 
 > Project brief for the Hermes client. Read this first, then read `AGENTS.md` for repo conventions once it exists.
 
-> **LIVING STATUS (16 Nov 2026, evening):** Phase 1 (MVP) is 5/6 complete — `core` (+/async, /gen), `schema`, `next` and the lint rules are implemented, reviewed and merged to main (issues #2–#8 closed via PRs #10–#16). The one open item is `examples/next-app` (#9). The authoritative working plan — including the verified version/issue evidence table, the deferred-and-accepted-limitations register, and implementation notes for #9 — is **`docs/plan/IMPLEMENTATION_PLAN.md`**; it supersedes the open questions in §10 below (all now resolved in `docs/adr/` and the plan). `AGENTS.md` now exists with repo conventions.
+> **LIVING STATUS (18 Nov 2026):** Phases 0–5 code scope is complete and merged to main: `core` (+ `/async`, `/gen`), `schema`, `next`, `examples/next-app` (#9), `query`, `better-auth`, `http`, `otel`, `hono`, `trpc`, `tanstack-start`, `db`, `env`, `effect`, the ESLint rules, the neverthrow codemod, the oRPC recipe and `llms.txt`. Current work is architecture-review follow-ups (#30, #51): interfaces that keep their promises and gates that can fail. Two §5 items were not built and are explicitly deferred (`toMutationFn`, core `/interop`; reasons in the plan's register). The authoritative working plan — verified version/issue evidence table, deferred-and-accepted-limitations register, phase status — is **`docs/plan/IMPLEMENTATION_PLAN.md`**; it supersedes the open questions in §10 below (all resolved in `docs/adr/` and the plan). Repo conventions: `AGENTS.md`; domain terms: `GLOSSARY.md`.
 
-> Status date: **16 Nov 2026**. Version facts below are moving targets; re-verify before pinning peer ranges.
+> Status date: **18 Nov 2026**. Version facts below are moving targets; re-verify before pinning peer ranges.
 
 ## 1. The idea in one paragraph
 
@@ -54,20 +54,20 @@ Known conflicts, resolved in favor of the Design Report:
 
 ## 5. Package map
 
-All adapters import `core` (and `schema`) plus their own peers. They never import each other.
+All adapters import `core` (and `schema`) plus their own peers. They never import each other. Rows marked *deferred* were not built; the reason is in the plan's deferred-work register.
 
 | Package | What it does | Peers |
 |---|---|---|
-| `core` | Result, tagged errors, pipe/flow, combinators; subpaths `/async`, `/gen`, `/interop` | none |
+| `core` | Result, tagged errors, pipe/flow, combinators; subpaths `/async`, `/gen` (`/interop`: *deferred*) | none |
 | `schema` | `parse`/`parseAsync` → `Result<T, ValidationFailure>`, `toFieldErrors`, `toFormErrors`, `branded`, `toJsonSchema` | none |
 | `next` | `action` (for `useActionState`), `tryAsync` with `unstable_rethrow`, `orNotFound`/`orRedirect`, `toResponse`, `catchError` fallbacks | `next >=16.3 <18`, `react >=19.2` |
-| `query` | `toQueryFn`, `toMutationFn`, `resultQueryOptions`, `retryUnless` | `@tanstack/query-core ^5` |
+| `query` | `toQueryFn`, `resultQueryOptions`, `retryUnless` (`toMutationFn`: *deferred*) | `@tanstack/query-core ^5` |
 | `better-auth` | `authCall`, `fromAuthTuple`, `requireSession`, `requireRole`, `beforeDbHook` | `better-auth ^1.6 \|\| ^1.7` |
 | `hono` | `respond` (status-literal unions), `problem` (RFC 9457), `sv`, `onErrorHandler` | `hono ^4.10 \|\| ^5.0.0-0` |
-| `trpc` | `resultProcedure`, `errorFormatter`, `fromTRPC` | `@trpc/server ^11` |
-| `tanstack-start` | `resultServerFn`, loader helpers, Form mappers | `@tanstack/react-start >=1.169` |
+| `trpc` | `resultMiddleware`, `errorFormatter`, `fromTRPC` (+ `resultProcedure`, removal pending #64) | `@trpc/server ^11`, `@trpc/client ^11` |
+| `tanstack-start` | `resultHandler` (alias `resultServerFn`), `loaderResult`, `formErrorMap` | `@tanstack/router-core ^1.169` |
 | `http`, `db`, `env`, `effect`, `otel` | `fetchResult`, DB error mappers, `parseEnv`, Effect bridge, tracing | optional |
-| `eslint-plugin` / `oxlint-plugin` | `must-use-result`, `no-try-around-redirect`, `no-instanceof-tagged-error` | lint host |
+| `eslint-plugin` (no Oxlint-native plugin: type-aware JS plugins unsupported, ADR-0003) | `must-use-result`, `no-try-around-redirect`, `no-instanceof-tagged-error` | lint host |
 
 ## 6. Framework traps the adapters must absorb
 

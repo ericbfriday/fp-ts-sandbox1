@@ -34,7 +34,7 @@ Boundary rules: `core` imports nothing; `schema` imports only `core`; adapters i
 
 All via pnpm at the root (see also `README.md`):
 
-- `pnpm ci` — the full local gate: lint, typecheck, test, size. **Run this before pushing.**
+- `pnpm run ci` — the full local gate: lint, typecheck (TS 7 only; the 6.0/7.1-beta matrix runs in CI), test, size, smoke. **Run this before pushing.** Not `pnpm ci`: in pnpm 12 that is the built-in clean install and never runs the script.
 - `pnpm test` — Vitest runtime + `--typecheck` type tests; `pnpm test <file>` filters
 - `pnpm --filter "@friday-friday/<pkg>" exec tsc --noEmit -p tsconfig.json` — per-package check
 
