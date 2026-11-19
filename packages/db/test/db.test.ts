@@ -52,7 +52,7 @@ import {
   socketRefused,
   socketReset,
   socketTimedOut
-} from "./_fixtures.js"
+} from "./_fixtures.ts"
 
 /**
  * What survives a boundary: every sanitizer drops `cause` (RFC-0001 §5.3) and keeps the

@@ -16,7 +16,7 @@ import {
   trySync
 } from "@friday-friday/core"
 import { describe, expect, it } from "vitest"
-import { type Forbidden, NotFound, type NotFound as NotFoundT, Timeout } from "./_fixtures.js"
+import { type Forbidden, NotFound, type NotFound as NotFoundT, Timeout } from "./_fixtures.ts"
 
 /** Runs `run`, returns the thrown Panic; fails the test loudly if anything else happened. */
 const capturePanic = (run: () => unknown): Panic => {

@@ -23,7 +23,7 @@ import {
 } from "@friday-friday/core"
 import * as fc from "fast-check"
 import { describe, expect, it } from "vitest"
-import { arbJsonResult, arbNotFound, arbTagged, arbTaggedResult, jsonValue, NotFound } from "./_fixtures.js"
+import { arbJsonResult, arbNotFound, arbTagged, arbTaggedResult, jsonValue, NotFound } from "./_fixtures.ts"
 
 const roundTrips = (x: unknown): void => {
   expect(JSON.parse(JSON.stringify(x))).toStrictEqual(x)

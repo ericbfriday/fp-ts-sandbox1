@@ -39,7 +39,7 @@ import {
 } from "@friday-friday/core/async"
 import { $, gen, genAsync } from "@friday-friday/core/gen"
 import { describe, expect, it } from "vitest"
-import { type Forbidden, NotFound, type NotFound as NotFoundT } from "./_fixtures.js"
+import { type Forbidden, NotFound, type NotFound as NotFoundT } from "./_fixtures.ts"
 
 type Kind = "sync throw" | "async rejection" | "rejecting input"
 

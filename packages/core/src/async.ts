@@ -25,8 +25,8 @@
  *     nothing had settled yet. Any other throw after the abort is still a defect (`Panic`).
  */
 
-import { type AsyncResult, err, ok, type Result, Timeout, toPanic, type TryOptions } from "./index.js"
-import { call, callAsync, dual } from "./internal.js"
+import { type AsyncResult, err, ok, type Result, Timeout, toPanic, type TryOptions } from "./index.ts"
+import { call, callAsync, dual } from "./internal.ts"
 
 /** A `Result` that may already be wrapped in a promise. */
 type AsyncInput<T, E> = Result<T, E> | Promise<Result<T, E>>

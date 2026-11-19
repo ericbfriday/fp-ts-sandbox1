@@ -28,7 +28,7 @@ import {
   type TaggedError,
   Timeout,
   Unauthenticated
-} from "./index.js"
+} from "./index.ts"
 
 /** A value that survives `JSON.parse(JSON.stringify(x))` and `structuredClone(x)` unchanged. */
 export type Json = null | boolean | number | string | ReadonlyArray<Json> | { readonly [key: string]: Json }

@@ -19,7 +19,7 @@ import {
 } from "@friday-friday/core/async"
 import * as fc from "fast-check"
 import { describe, expect, it } from "vitest"
-import { jsonValue } from "./_fixtures.js"
+import { jsonValue } from "./_fixtures.ts"
 
 const roundTrips = (x: unknown): void => {
   expect(JSON.parse(JSON.stringify(x))).toStrictEqual(x)

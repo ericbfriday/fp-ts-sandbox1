@@ -18,8 +18,9 @@
     "test:types": "vitest run --typecheck.only",
     "size": "pnpm run build && size-limit",
     "smoke": "pnpm -r --filter \"./packages/*\" run smoke",
+    "smoke:source": "node tooling/gates/src/source-smoke.ts",
     "build:examples": "pnpm -r --filter \"./examples/*\" run build",
-    "ci": "pnpm run lint && pnpm run check && pnpm run test && pnpm run size && pnpm run smoke && pnpm run build:examples"
+    "ci": "pnpm run lint && pnpm run check && pnpm run test && pnpm run size && pnpm run smoke && pnpm run smoke:source && pnpm run build:examples"
   },
   "devDependencies": {
     "@size-limit/preset-small-lib": "^14.3.0",

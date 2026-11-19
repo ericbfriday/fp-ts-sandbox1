@@ -2,7 +2,7 @@
  * Internal helpers shared by the core entry points. NOT part of the public API —
  * never re-exported from `index.ts` or `async.ts`.
  */
-import { toPanic } from "./index.js"
+import { toPanic } from "./index.ts"
 
 /** Run a user callback; anything it throws is rethrown as `Panic` (an existing `Panic` passes through). */
 export const call = <A, B>(f: (a: A) => B, a: A): B => {

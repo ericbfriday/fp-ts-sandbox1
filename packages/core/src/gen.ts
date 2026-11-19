@@ -14,7 +14,7 @@
  * cost stack-trace quality and some inference time.
  */
 
-import { type AsyncResult, type Err, ok, Panic, type Result, toPanic } from "./index.js"
+import { type AsyncResult, type Err, ok, Panic, type Result, toPanic } from "./index.ts"
 
 /** The error channel extracted from a yielded `Err` envelope. `Err<any>` here is the deliberate
  * idiom documented on `dual()` in index.ts: the envelope is returned verbatim, never sniffed. */

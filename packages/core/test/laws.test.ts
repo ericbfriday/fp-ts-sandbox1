@@ -15,7 +15,7 @@ import {
 } from "@friday-friday/core"
 import * as fc from "fast-check"
 import { describe, expect, it } from "vitest"
-import { arbResult, arbTagged, type Forbidden, type NotFound, type Timeout } from "./_fixtures.js"
+import { arbResult, arbTagged, type Forbidden, type NotFound, type Timeout } from "./_fixtures.ts"
 
 const arbFn = fc.func(fc.integer())
 const arbKleisli = fc.func(arbResult)
