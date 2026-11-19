@@ -12,7 +12,11 @@ const config: UserConfig = defineConfig({
   dts: true,
   fixedExtension: false,
   clean: true,
-  treeshake: true
+  treeshake: true,
+  // #65: nothing from node_modules may be inlined (tsdown fails the build instead of hinting).
+  // `@standard-schema/spec` was inlined into index.d.ts while it was a devDependency; it is a
+  // dependency now, as in schema, so consumers share one StandardSchemaV1.
+  deps: { onlyBundle: [] }
 })
 
 export default config

@@ -47,7 +47,8 @@ Functional-light TypeScript suite: a plain-object `Result` core with thin, frame
 - `pnpm size`: build, then size-limit budgets (ADR-0004)
 - `pnpm run smoke`: run built `dist` output under plain Node (every package; next's smoke stubs `next/*`, which ships no `exports` map, and checks `/client` refuses to load under `react-server`)
 - `pnpm run smoke:source`: import every package entry from `src` under plain Node 24 with `--conditions=@friday-friday/source` and compare its exports with `dist` (needs `pnpm run build`; next is excluded, see ADR-0002)
-- `pnpm run ci`: run every gate CI runs, locally, before pushing: lint, typecheck (TS 7 only; CI adds the 6.0 and 7.1-beta matrix), test, size, smoke, source smoke, example build. Spell it `pnpm run ci`: in pnpm 12 a bare `pnpm ci` is the built-in clean install and never runs this script
+- `pnpm run pack:check`: pack every package into a temp dir and run publint `--strict` and attw `--profile esm-only` on each tarball; the packed manifest must carry no `@friday-friday/source` condition and a `repository.directory` (needs `pnpm run build`; never publishes)
+- `pnpm run ci`: run every gate CI runs, locally, before pushing: lint, typecheck (TS 7 only; CI adds the 6.0 and 7.1-beta matrix), test, size, smoke, source smoke, publish gate, example build. Spell it `pnpm run ci`: in pnpm 12 a bare `pnpm ci` is the built-in clean install and never runs this script
 
 ## Status
 

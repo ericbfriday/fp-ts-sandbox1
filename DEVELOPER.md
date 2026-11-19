@@ -34,7 +34,8 @@ Boundary rules: `core` imports nothing; `schema` imports only `core`; adapters i
 
 All via pnpm at the root (see also `README.md`):
 
-- `pnpm run ci` — the full local gate: lint, typecheck (TS 7 only; the 6.0/7.1-beta matrix runs in CI), test, size, smoke, source smoke (`smoke:source`), example build. **Run this before pushing.** Not `pnpm ci`: in pnpm 12 that is the built-in clean install and never runs the script.
+- `pnpm run ci` — the full local gate: lint, typecheck (TS 7 only; the 6.0/7.1-beta matrix runs in CI), test, size, smoke, source smoke (`smoke:source`), publish gate (`pack:check`), example build. **Run this before pushing.** Not `pnpm ci`: in pnpm 12 that is the built-in clean install and never runs the script.
+- `pnpm run pack:check` — publish gate (#65): packs every `packages/*` package into a temp dir and runs publint `--strict` + attw `--profile esm-only` on the tarball, and checks the packed manifest (no `@friday-friday/source`, no `workspace:`, `repository.directory`, every imported package declared). Needs `pnpm run build`. Never publishes.
 - `pnpm test` — Vitest runtime + `--typecheck` type tests; `pnpm test <file>` filters
 - `pnpm --filter "@friday-friday/<pkg>" exec tsc --noEmit -p tsconfig.json` — per-package check
 
@@ -73,7 +74,7 @@ All via pnpm at the root (see also `README.md`):
 
 ## Adding a package
 
-1. `packages/<name>/package.json` — `@friday-friday/<name>`, core (+schema) as **peers** `workspace:^` plus devDeps `workspace:*`, never `dependencies` (ADR-0006; `tooling/gates` checks it), framework vendors as **peers** with conservative ranges (lower bound = oldest CI-matrix version), vendors as devDeps for fixtures.
+1. `packages/<name>/package.json` — `@friday-friday/<name>`, core (+schema) as **peers** `workspace:^` plus devDeps `workspace:*`, never `dependencies` (ADR-0006; `tooling/gates` checks it), framework vendors as **peers** with conservative ranges (lower bound = oldest CI-matrix version), vendors as devDeps for fixtures. Add `repository` (with `directory`) and `publishConfig.exports` = `exports` without the `@friday-friday/source` condition (pnpm uses it on pack; `tooling/gates` checks both).
 2. `tsconfig.json` extending `../../tsconfig.base.json`, `tsdown.config.ts` (see `packages/core`), `test/` suite, size-limit entry (≤ 2 kB adapters) in `.size-limit.json`.
 3. Wire docs: README table row + plan checkbox. Root `tsconfig.json`/vitest globs pick everything else up automatically.
 4. Peer caveat: some frameworks (next@16.4) ship empty `exports` maps, so their dist cannot import them under plain Node. The smoke stubs just those modules with an in-thread resolve hook (`module.registerHooks`; see `packages/next/test/smoke.mjs`) and keeps everything else real; cover runtime behavior in vitest + an example app.

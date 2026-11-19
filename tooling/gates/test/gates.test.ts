@@ -9,6 +9,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
+import { notShipped, repository, stripSource } from "../src/publish-gate.ts"
 import { excluded as sourceSmokeExcluded } from "../src/source-smoke.ts"
 
 const root = join(import.meta.dirname, "..", "..", "..")
@@ -20,6 +21,9 @@ interface Manifest {
   readonly dependencies?: Record<string, string>
   readonly peerDependencies?: Record<string, string>
   readonly devDependencies?: Record<string, string>
+  readonly private?: boolean
+  readonly repository?: unknown
+  readonly publishConfig?: { readonly exports?: unknown }
 }
 
 interface Workspace {
@@ -208,6 +212,7 @@ describe("example build (Phase 1 exit: the example app builds under Next)", () =
       "pnpm run size",
       "pnpm run smoke",
       "pnpm run smoke:source",
+      "pnpm run pack:check",
       "pnpm run build:examples"
     ])
     expect(workflow).toContain("- run: pnpm run build:examples")
@@ -268,5 +273,58 @@ describe("AGENTS.md package map", () => {
     )
     const line = map.split("\n").find((l) => l.includes(`\`${p.dir}\``)) ?? ""
     for (const subpath of subpaths) expect(line).toContain(`\`${subpath.slice(1)}\``)
+  })
+})
+
+describe("publish gate (#65, #51 story 22)", () => {
+  // oxlint-disable-next-line no-unsafe-type-assertion -- package.json is the shape npm defines
+  const rootManifest = readJson("package.json") as Manifest
+  const workflow = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8")
+  const tooling = readdirSync(join(root, "tooling"), { withFileTypes: true }).filter((d) => d.isDirectory())
+
+  it("pnpm run ci and a CI job pack every package after building it", () => {
+    expect(rootManifest.scripts?.["pack:check"]).toBe("node tooling/gates/src/publish-gate.ts")
+    const ci = rootManifest.scripts?.["ci"]?.split(" && ") ?? []
+    expect(ci.indexOf("pnpm run pack:check")).toBeGreaterThan(ci.indexOf("pnpm run size"))
+    const job = workflow.slice(workflow.indexOf("\n  publish-check:"))
+    expect(job).toMatch(/- run: pnpm run build\n\s+(#.*\n\s+)*- run: pnpm run pack:check\n/)
+  })
+
+  // CI must not fetch the gate's tools at run time (offline-safe after a frozen install).
+  it.each(["publint", "@arethetypeswrong/cli"])("root devDependencies pin %s exactly", (tool) => {
+    expect(rootManifest.devDependencies?.[tool]).toMatch(/^\d+\.\d+\.\d+$/)
+  })
+
+  // pnpm 12 swaps `publishConfig.exports` in on pack, so the workspace keeps the source condition
+  // (vitest, tsconfig customConditions, smoke:source) and the tarball never names `src`.
+  it.each(packages.map((p) => [p.manifest.name, p] as const))(
+    "%s publishConfig.exports is its exports without the source condition",
+    (_name, p) => {
+      expect(p.manifest.publishConfig?.exports).toEqual(stripSource(p.manifest.exports ?? {}))
+    }
+  )
+
+  it.each([...packages, ...workspaces("tooling")].map((w) => [w.dir, w] as const))(
+    "%s has repository with its directory (npm provenance, IDEA §8)",
+    (dir, w) => {
+      expect(w.manifest.repository).toEqual(repository(dir))
+    }
+  )
+
+  it.each(tooling.map((d) => [`tooling/${d.name}`] as const))(
+    "%s is not shipped: listed in notShipped, and private if it has a package.json",
+    (dir) => {
+      expect(notShipped[dir]?.length ?? 0).toBeGreaterThan(20)
+      const path = join(root, dir, "package.json")
+      // oxlint-disable-next-line no-unsafe-type-assertion -- package.json is the shape npm defines
+      if (existsSync(path)) expect((readJson(`${dir}/package.json`) as Manifest).private).toBe(true)
+    }
+  )
+
+  // Eric decides whether the lint rules and the codemod ship (#65); until then they stay private.
+  it.each(["tooling/eslint-plugin", "tooling/codemods"])("%s points at the open shipping decision", (dir) => {
+    const note = "docs/decisions/2026-11-19-tooling-not-shipped.md"
+    expect(existsSync(join(root, note))).toBe(true)
+    expect(notShipped[dir]).toContain(note)
   })
 })

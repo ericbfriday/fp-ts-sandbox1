@@ -4,6 +4,11 @@
   "private": true,
   "description": "Env parsing: parseEnv validates process.env / import.meta.env with value-free issue messages, blank-as-unset and a process-free default (Design Report section 5.9; documents @t3-oss/env interop)",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ericbfriday/fp-ts-sandbox1.git",
+    "directory": "packages/env"
+  },
   "type": "module",
   "sideEffects": false,
   "engines": {
@@ -16,6 +21,15 @@
       "default": "./dist/index.js"
     },
     "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./package.json": "./package.json"
+    }
   },
   "files": [
     "dist"

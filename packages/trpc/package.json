@@ -4,6 +4,11 @@
   "private": true,
   "description": "tRPC v11 adapter: dual-channel Results via resultMiddleware + errorFormatter (data.friday_friday member via core /wire) + fromTRPC reconstruction (Design Report section 5.3)",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ericbfriday/fp-ts-sandbox1.git",
+    "directory": "packages/trpc"
+  },
   "type": "module",
   "sideEffects": false,
   "engines": {
@@ -16,6 +21,15 @@
       "default": "./dist/index.js"
     },
     "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./package.json": "./package.json"
+    }
   },
   "files": [
     "dist"
