@@ -2,7 +2,7 @@
 
 > Project brief for the Hermes client. Read this first, then read `AGENTS.md` for repo conventions once it exists.
 
-> **LIVING STATUS (18 Nov 2026):** Phases 0–5 code scope is complete and merged to main: `core` (+ `/async`, `/gen`), `schema`, `next`, `examples/next-app` (#9), `query`, `better-auth`, `http`, `otel`, `hono`, `trpc`, `tanstack-start`, `db`, `env`, `effect`, the ESLint rules, the neverthrow codemod, the oRPC recipe and `llms.txt`. Current work is architecture-review follow-ups (#30, #51): interfaces that keep their promises and gates that can fail. Two §5 items were not built and are explicitly deferred (`toMutationFn`, core `/interop`; reasons in the plan's register). The authoritative working plan — verified version/issue evidence table, deferred-and-accepted-limitations register, phase status — is **`docs/plan/IMPLEMENTATION_PLAN.md`**; it supersedes the open questions in §10 below (all resolved in `docs/adr/` and the plan). Repo conventions: `AGENTS.md`; domain terms: `GLOSSARY.md`.
+> **LIVING STATUS (18 Nov 2026):** Phases 0–5 code scope is complete and merged to main: `core` (+ `/async`, `/gen`, `/wire`), `schema`, `next`, `examples/next-app` (#9), `query`, `better-auth`, `http`, `otel`, `hono`, `trpc`, `tanstack-start`, `db`, `env`, `effect`, the ESLint rules, the neverthrow codemod, the oRPC recipe and `llms.txt`. Current work is architecture-review follow-ups (#30, #51): interfaces that keep their promises and gates that can fail. Two §5 items were not built and are explicitly deferred (`toMutationFn`, core `/interop`; reasons in the plan's register). The authoritative working plan — verified version/issue evidence table, deferred-and-accepted-limitations register, phase status — is **`docs/plan/IMPLEMENTATION_PLAN.md`**; it supersedes the open questions in §10 below (all resolved in `docs/adr/` and the plan). Repo conventions: `AGENTS.md`; domain terms: `GLOSSARY.md`.
 
 > Status date: **18 Nov 2026**. Version facts below are moving targets; re-verify before pinning peer ranges.
 
@@ -58,7 +58,7 @@ All adapters import `core` (and `schema`) plus their own peers. They never impor
 
 | Package | What it does | Peers |
 |---|---|---|
-| `core` | Result, tagged errors, pipe/flow, combinators; subpaths `/async`, `/gen` (`/interop`: *deferred*) | none |
+| `core` | Result, tagged errors, pipe/flow, combinators; subpaths `/async`, `/gen`, `/wire` (`/interop`: *deferred*) | none |
 | `schema` | `parse`/`parseAsync` → `Result<T, ValidationFailure>`, `toFieldErrors`, `toFormErrors`, `branded`, `toJsonSchema` | none |
 | `next` | `action` (for `useActionState`), `tryAsync` with `unstable_rethrow`, `orNotFound`/`orRedirect`, `toResponse`, `catchError` fallbacks | `next >=16.3 <18`, `react >=19.2` |
 | `query` | `toQueryFn`, `resultQueryOptions`, `retryUnless` (`toMutationFn`: *deferred*) | `@tanstack/query-core ^5` |

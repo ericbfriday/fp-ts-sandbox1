@@ -49,11 +49,11 @@ A failure nobody planned for (a bug, or a throw that triage did not map); it is 
 _Avoid_: unexpected error, crash, fatal error
 
 **Panic**:
-The `Error` subclass a defect is thrown as, holding the original throw as `cause`; a throwing combinator callback or a declined triage produces it (RFC §3).
+The `Error` subclass a defect is thrown as, holding the original throw as `cause`; every lane produces it through the idempotent `toPanic(cause)` (RFC §3).
 _Avoid_: fatal, bug error
 
 **InternalDefect**:
-The tagged error that stands in for a defect at the wire, carrying no `cause` or internals while the adapter reports the original server-side (RFC §2, §6).
+The tagged error that stands in for a defect at the wire, carrying no `cause` or internals while the adapter reports the original server-side; core `/wire`'s `toDefect` builds it (RFC §2, §6).
 _Avoid_: 500 error, server error
 
 **triage**:
@@ -71,15 +71,15 @@ The JSON form a Result takes across a boundary, `{ ok, value }` or `{ ok: false,
 _Avoid_: payload, DTO
 
 **sanitize**:
-To project a tagged error onto its wire-safe form: keep `_tag`, `message` and JSON-safe props, and drop `cause` and everything else (RFC §5.3).
+To project a tagged error onto its wire-safe form: keep `_tag`, `message` and JSON-safe props, and drop `cause` and everything else; core `/wire`'s `sanitize` is the one implementation (RFC §5.3).
 _Avoid_: serialize, strip, scrub
 
 **problem body**:
-An RFC 9457 `application/problem+json` object (`type`, `title`, `status`, `detail`) plus a `tag` member and the error's safe props (RFC §6).
+An RFC 9457 `application/problem+json` object (`type`, `title`, `status`, `detail`) plus a `tag` member and the error's safe props, built by core `/wire`'s `toProblem` (RFC §6).
 _Avoid_: error response, problem details JSON
 
 **reconstruct**:
-To rebuild a tagged error on the receiving side from a problem body's `tag` or a sanitized error, so client and server see the same `_tag` and props (RFC §6).
+To rebuild a tagged error on the receiving side from a problem body's `tag` or a sanitized error, so client and server see the same `_tag` and props; core `/wire`'s `fromWire` does it (RFC §6).
 _Avoid_: deserialize, rehydrate, revive
 
 ## Packages
