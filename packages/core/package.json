@@ -2,7 +2,7 @@
   "name": "@friday-friday/core",
   "version": "0.0.0",
   "private": true,
-  "description": "Plain-object Result, tagged errors, dual combinators and boundary triage — sync surface plus /async (retry/timeout/concurrency) and /gen (do-notation) subpaths",
+  "description": "Plain-object Result, tagged errors, dual combinators and boundary triage — sync surface plus /async (retry/timeout/concurrency) /gen (do-notation) and /wire (sanitize, RFC 9457 problem out/in, defect envelope) subpaths",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
@@ -24,6 +24,14 @@
       "@friday-friday/source": "./src/gen.ts",
       "types": "./dist/gen.d.ts",
       "default": "./dist/gen.js"
+    },
+    "./wire": {
+      "@friday-friday/source": "./src/wire.ts",
+      "types": "./dist/wire.d.ts",
+      "default": "./dist/wire.js"
+    },
+    "./test/wire-golden": {
+      "@friday-friday/source": "./test/wire-golden.ts"
     },
     "./package.json": "./package.json"
   },

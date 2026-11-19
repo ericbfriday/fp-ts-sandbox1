@@ -10,7 +10,7 @@
  */
 
 import type { Result } from "@friday-friday/core"
-import type { DataTag, QueryFunction, QueryKey, QueryObserverOptions } from "@tanstack/query-core"
+import type { DataTag, QueryFunction, QueryKey, QueryObserverOptions, SkipToken } from "@tanstack/query-core"
 
 /** Minimal structural view of TanStack's QueryFunctionContext (keeps this package core-only). */
 export interface QueryContext {
@@ -64,15 +64,23 @@ export const retryUnless: RetryUnless =
  * `staleTime`, `enabled`, `select`, `meta`, `throwOnError`, a numeric or boolean `retry` and the
  * rest pass through unchanged), with `queryFn` replaced by a Result fetcher. `E` is inferred from
  * the fetcher only, so a mistyped `retry` / `throwOnError` is reported where it is written.
+ * `S` is TanStack's `SkipToken` when `queryFn` may be `skipToken` (a conditional query), else
+ * `never`, so options built without it stay valid for `useSuspenseQuery`.
  */
-export interface ResultQueryOptionsInput<T, E, TData = QueryFnReturn<T>, K extends QueryKey = QueryKey> extends
+export interface ResultQueryOptionsInput<
+  T,
+  E,
+  TData = QueryFnReturn<T>,
+  K extends QueryKey = QueryKey,
+  S extends SkipToken = never
+> extends
   Omit<
     QueryObserverOptions<QueryFnReturn<T>, NoInfer<E>, TData, QueryFnReturn<T>, K>,
     "queryFn"
   >
 {
-  /** The Result fetcher; receives the query context signal. */
-  readonly queryFn: (signal: AbortSignal) => Promise<Result<T, E>>
+  /** The Result fetcher (receives the query context signal), or `skipToken` to disable the query. */
+  readonly queryFn: ((signal: AbortSignal) => Promise<Result<T, E>>) | S
 }
 
 /**
@@ -80,26 +88,44 @@ export interface ResultQueryOptionsInput<T, E, TData = QueryFnReturn<T>, K exten
  * throwing `queryFn`, and the key tagged with `DataTag` (as `queryOptions` from the framework
  * packages does) so `queryClient.getQueryData(opts.queryKey)` infers data and error.
  */
-export interface ResultQueryOptions<T, E, TData = QueryFnReturn<T>, K extends QueryKey = QueryKey>
-  extends Omit<QueryObserverOptions<QueryFnReturn<T>, E, TData, QueryFnReturn<T>, K>, "queryFn" | "queryKey">
-{
+export interface ResultQueryOptions<
+  T,
+  E,
+  TData = QueryFnReturn<T>,
+  K extends QueryKey = QueryKey,
+  S extends SkipToken = never
+> extends Omit<QueryObserverOptions<QueryFnReturn<T>, E, TData, QueryFnReturn<T>, K>, "queryFn" | "queryKey"> {
   readonly queryKey: DataTag<K, QueryFnReturn<T>, E>
-  readonly queryFn: QueryFunction<QueryFnReturn<T>, K>
+  readonly queryFn: QueryFunction<QueryFnReturn<T>, K> | S
 }
 
 /**
  * Build TanStack query options from a Result fetcher (Design Report §5.4). The `queryFn` throws
  * the plain tagged error on `Err` (so `query.error` is exactly `E`) and normalizes `Ok(undefined)`
  * to `null`; every other option is passed through untouched. The result spreads into `useQuery`,
- * `queryOptions`, `fetchQuery`, `prefetchQuery` and `ensureQueryData`.
+ * `queryOptions`, `fetchQuery`, `prefetchQuery` and `ensureQueryData`. `queryFn: skipToken`
+ * passes through as-is, so TanStack disables the query exactly as with its own `queryOptions`.
  */
 export function resultQueryOptions<T, E, TData = QueryFnReturn<T>, K extends QueryKey = QueryKey>(
   o: ResultQueryOptionsInput<T, E, TData, K>
-): ResultQueryOptions<T, E, TData, K> {
+): ResultQueryOptions<T, E, TData, K>
+/**
+ * Conditional query: `queryFn` is a Result fetcher or `skipToken` (TanStack's own `queryOptions`
+ * has the same split). The result keeps `SkipToken` in its `queryFn`, so `useQuery` accepts it
+ * and the Suspense hooks reject it, as they do for TanStack's options.
+ */
+export function resultQueryOptions<T, E, TData = QueryFnReturn<T>, K extends QueryKey = QueryKey>(
+  o: ResultQueryOptionsInput<T, E, TData, K, SkipToken>
+): ResultQueryOptions<T, E, TData, K, SkipToken>
+export function resultQueryOptions(
+  o: ResultQueryOptionsInput<unknown, unknown, unknown, QueryKey, SkipToken>
+): ResultQueryOptions<unknown, unknown, unknown, QueryKey, SkipToken> {
   const { queryFn, ...rest } = o
-  const options: unknown = { ...rest, queryFn: toQueryFn(queryFn) }
+  // `skipToken` is the only non-function the type admits. Passing it through by identity (not
+  // importing it) keeps the runtime free of query-core and matches whichever copy the app uses.
+  const options: unknown = { ...rest, queryFn: typeof queryFn === "function" ? toQueryFn(queryFn) : queryFn }
   // DataTag is a phantom brand on the key (no runtime field), so an assertion is the only way to
   // attach it; TanStack's own `queryOptions` likewise returns its input with a re-typed key.
   // oxlint-disable-next-line no-unsafe-type-assertion -- phantom DataTag brand on queryKey
-  return options as ResultQueryOptions<T, E, TData, K>
+  return options as ResultQueryOptions<unknown, unknown, unknown, QueryKey, SkipToken>
 }
