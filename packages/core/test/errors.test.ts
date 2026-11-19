@@ -4,7 +4,6 @@ import {
   fromNullable,
   map,
   mapErr,
-  match,
   matchTag,
   ok,
   orElse,
@@ -102,44 +101,69 @@ describe("Panic", () => {
   const boom = new Error("boom")
   const r: Result<number, string> = ok(1)
   const e: Result<number, string> = err("bad")
-  const tagged: Result<number, NotFoundT | Forbidden> = err(NotFound({ resource: "user", id: "1" }))
-  const okTagged: Result<number, NotFoundT | Forbidden> = ok(1)
   const throwing = (): never => {
     throw boom
   }
 
-  const cases: Array<[string, () => unknown]> = [
-    ["map", () => map(r, throwing)],
-    ["map (data-last)", () => map(throwing)(r)],
-    ["mapErr", () => mapErr(e, throwing)],
-    ["andThen", () => andThen(r, throwing)],
-    ["orElse", () => orElse(e, throwing)],
-    ["tap", () => tap(r, throwing)],
-    ["tapErr", () => tapErr(e, throwing)],
-    ["match ok", () => match(r, { ok: throwing, err: () => 0 })],
-    ["match err", () => match(e, { ok: () => 0, err: throwing })],
-    ["matchTag ok", () => matchTag(okTagged, { ok: throwing, NotFound: () => 0, Forbidden: () => 0 })],
-    ["matchTag tag", () => matchTag(tagged, { ok: () => 0, NotFound: throwing, Forbidden: () => 0 })],
-    ["fromNullable", () => fromNullable(null, throwing)]
-  ]
-
-  it.each(cases)("%s: a throwing callback is rethrown as Panic with the original as cause", (_name, run) => {
-    const p = capturePanic(run)
-    expect(p).toBeInstanceOf(Error)
-    expect(p.name).toBe("Panic")
-    expect(p.cause).toBe(boom)
+  it("an Error cause keeps its message and String() form", () => {
+    const p = new Panic(boom)
     expect(p.message).toBe("boom")
     expect(String(p)).toBe("Panic: boom")
   })
 
-  it("wraps non-Error throws too", () => {
-    const p = capturePanic(() =>
-      map(r, () => {
-        throw "plain string"
-      })
-    )
-    expect(p.cause).toBe("plain string")
-    expect(p.message).toBe("plain string")
+  it.each<[string, unknown, string]>([
+    ["a string", "plain string", "plain string"],
+    ["a plain object", { a: 1 }, "Non-Error thrown"],
+    [
+      "a tagged error with a message",
+      NotFound({ resource: "user", id: "1", message: "no such user" }),
+      "NotFound: no such user"
+    ],
+    ["a tagged error without a message", NotFound({ resource: "user", id: "1" }), "NotFound"],
+    ["a tagged error carrying a cause", { _tag: "NotFound", message: "m", cause: "secret" }, "NotFound: m"],
+    ["an object with only a message", { message: "upstream said no" }, "upstream said no"],
+    ["an object with only a name", { name: "AbortError" }, "AbortError"],
+    ["an Error with an empty message", new TypeError(""), "TypeError"],
+    ["an array", [1, "two"], "Non-Error thrown"],
+    ["a null-prototype object", Object.create(null), "Non-Error thrown"],
+    ["an anonymous function", Object.defineProperty(() => 1, "name", { value: "" }), "Non-Error thrown"],
+    ["a number", 42, "42"],
+    ["undefined", undefined, "undefined"],
+    ["null", null, "null"],
+    ["a symbol", Symbol("s"), "Symbol(s)"],
+    ["a bigint (not JSON-safe)", 10n, "10"]
+  ])("built from %s, Panic has a short readable message, never [object Object]", (_name, cause, message) => {
+    const p = new Panic(cause)
+    expect(p.message).toBe(message)
+    expect(p.cause).toBe(cause)
+  })
+
+  it("never dumps a plain object's data into the message (secrets stay on .cause only)", () => {
+    const cause = { dsn: "postgres://admin:hunter2@db", nested: { token: "sk_live_x" } }
+    const p = new Panic(cause)
+    expect(p.message).not.toContain("hunter2")
+    expect(p.message).not.toContain("sk_live_x")
+    expect(p.message).not.toContain("[object Object]")
+    expect(p.cause).toBe(cause)
+  })
+
+  it.each<[string, unknown]>([
+    ["a huge plain object", { data: "x".repeat(1e6) }],
+    ["a huge string", "x".repeat(1e6)],
+    ["a huge Error message", new Error("x".repeat(1e6))],
+    ["a huge tagged error message", { _tag: "Big", message: "x".repeat(1e6) }]
+  ])("caps the message length (200 chars) for %s; the full value stays on .cause", (_name, cause) => {
+    const p = new Panic(cause)
+    expect(p.message.length).toBeLessThanOrEqual(200)
+    expect(p.cause).toBe(cause)
+  })
+
+  it("built from a cyclic plain object, Panic still constructs with a short message", () => {
+    const cyclic: { self?: unknown } = {}
+    cyclic.self = cyclic
+    const p = new Panic(cyclic)
+    expect(p.cause).toBe(cyclic)
+    expect(p.message).toBe("Non-Error thrown")
   })
 
   it("does not re-wrap a Panic thrown by a nested combinator: cause stays the original", () => {

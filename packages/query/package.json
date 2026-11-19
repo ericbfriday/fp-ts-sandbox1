@@ -27,7 +27,10 @@
     "@tanstack/query-core": "^5"
   },
   "devDependencies": {
-    "@tanstack/query-core": "^5.107.1"
+    "@tanstack/query-core": "^5.107.1",
+    "@tanstack/react-query": "5.107.1",
+    "@types/react": "^19.3.0",
+    "react": "19.3.1"
   },
   "scripts": {
     "build": "tsdown"

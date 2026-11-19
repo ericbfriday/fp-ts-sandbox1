@@ -14,7 +14,7 @@
  * cost stack-trace quality and some inference time.
  */
 
-import { type AsyncResult, type Err, ok, Panic, type Result } from "./index.js"
+import { type AsyncResult, type Err, ok, Panic, type Result, toPanic } from "./index.js"
 
 /** The error channel extracted from a yielded `Err` envelope. `Err<any>` here is the deliberate
  * idiom documented on `dual()` in index.ts: the envelope is returned verbatim, never sniffed. */
@@ -43,7 +43,7 @@ export function gen<Y extends Err<any>, T>(f: () => Generator<Y, T>): Result<T, 
     // via the generator's return channel, never via yield). Identity is preserved.
     return step.value
   } catch (e) {
-    throw e instanceof Panic ? e : new Panic(e)
+    throw toPanic(e)
   }
 }
 
@@ -57,7 +57,7 @@ export function genAsync<Y extends Err<any>, T>(
       if (step.done) return ok(step.value)
       return step.value
     } catch (e) {
-      throw e instanceof Panic ? e : new Panic(e)
+      throw toPanic(e)
     }
   }
   return drive()

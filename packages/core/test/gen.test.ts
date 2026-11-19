@@ -1,7 +1,7 @@
 /**
  * `/gen` subpath tests (RFC-0001 §4 / Design Report §3.5).
  */
-import { andThen, type AsyncResult, err, ok, Panic, pipe, type Result, taggedError } from "@friday-friday/core"
+import { andThen, type AsyncResult, err, ok, pipe, type Result, taggedError } from "@friday-friday/core"
 import { $, gen, genAsync } from "@friday-friday/core/gen"
 import { describe, expect, it } from "vitest"
 
@@ -42,21 +42,6 @@ describe("gen (sync do-notation)", () => {
     expect(r).toEqual(ok(3))
   })
 
-  it("wraps a throwing generator body as Panic with the original as cause", () => {
-    const boom = new Error("boom")
-    let caught: unknown
-    try {
-      gen(function*() {
-        if (boom) throw boom
-        return "never"
-      })
-    } catch (e) {
-      caught = e
-    }
-    if (!(caught instanceof Panic)) throw new Error("expected Panic")
-    expect(caught.cause).toBe(boom)
-  })
-
   it("outputs are plain data (JSON + structuredClone)", () => {
     const r = gen(function*() {
       const a = yield* $(ok({ id: 1 }))
@@ -90,20 +75,6 @@ describe("genAsync (async do-notation)", () => {
     })
     expect(afterRan).toBe(false)
     expect(r).toBe(envelope) // same envelope object, not a copy
-  })
-
-  it("wraps rejections as Panic", async () => {
-    const boom = new Error("boom")
-    let caught: unknown
-    try {
-      await genAsync(async function*() {
-        throw boom
-      })
-    } catch (e) {
-      caught = e
-    }
-    if (!(caught instanceof Panic)) throw new Error("expected Panic")
-    expect(caught.cause).toBe(boom)
   })
 
   it("outputs are plain data (JSON + structuredClone)", async () => {

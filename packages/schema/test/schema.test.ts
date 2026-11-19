@@ -5,13 +5,14 @@
 import { err, ok, Panic, taggedError } from "@friday-friday/core"
 import {
   type Brand,
-  brand,
+  type brand,
   branded,
   parse,
   parseAsync,
   toFieldErrors,
   toFormErrors,
   toJsonSchema,
+  toValidationFailure,
   ValidationFailure
 } from "@friday-friday/schema"
 import type { StandardJSONSchemaV1, StandardSchemaV1 } from "@standard-schema/spec"
@@ -46,6 +47,60 @@ describe("parse", () => {
     expect(() => parse(AsyncSchema, "x")).toThrow(Panic)
   })
 
+  it("a validate that throws is a defect: Panic with the original cause", () => {
+    const boom = new Error("vendor exploded")
+    const throwing: StandardSchemaV1 = {
+      "~standard": {
+        version: 1,
+        vendor: "fixture",
+        validate: () => {
+          throw boom
+        }
+      }
+    }
+    expect(() => parse(throwing, null)).toThrow(Panic)
+    try {
+      parse(throwing, null)
+    } catch (e) {
+      expect(e).toMatchObject({ cause: boom })
+    }
+  })
+
+  it("a non-native thenable from validate is async too: Panic, never read as a value", () => {
+    // A Promise from another realm (or any PromiseLike) fails `instanceof Promise` (review of #45).
+    let thenCalled = false
+    const thenable = {
+      // oxlint-disable-next-line unicorn/no-thenable -- a hand-made thenable is the fixture under test
+      then: (resolve: (r: StandardSchemaV1.Result<number>) => void): void => {
+        thenCalled = true
+        resolve({ value: 1 })
+      }
+    }
+    const schema: StandardSchemaV1<unknown, number> = {
+      "~standard": {
+        version: 1,
+        vendor: "fixture",
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a PromiseLike the spec types as Promise
+        validate: () => thenable as unknown as Promise<StandardSchemaV1.Result<number>>
+      }
+    }
+    expect(() => parse(schema, null)).toThrow(Panic)
+    expect(() => parse(schema, null)).toThrow(/parseAsync/)
+    expect(thenCalled).toBe(false)
+  })
+
+  it("a validate that returns null breaks the contract: a defect (Panic), not a TypeError", () => {
+    const broken: StandardSchemaV1 = {
+      "~standard": {
+        version: 1,
+        vendor: "fixture",
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- deliberately off-contract vendor
+        validate: () => null as unknown as StandardSchemaV1.Result<unknown>
+      }
+    }
+    expect(() => parse(broken, null)).toThrow(Panic)
+  })
+
   it("symbol path segments are noted as [symbol] placeholders", () => {
     // Build an issue path with a symbol via a hand-rolled Standard Schema implementation.
     const sym = Symbol("secret")
@@ -64,6 +119,101 @@ describe("parse", () => {
   })
 })
 
+describe("toValidationFailure (the one ValidationFailure producer)", () => {
+  it("projects Standard Schema issues to message + property-key path only", () => {
+    // Shapes vendors really emit: valibot-style extras on the issue and on each path segment.
+    const segment = { key: "user", type: "object", input: { secret: "pw" }, value: {} }
+    const vendorIssue = {
+      message: "Invalid type",
+      path: [segment, 0],
+      kind: "schema",
+      input: "hunter2",
+      expected: "string",
+      received: "number"
+    }
+    const issues: ReadonlyArray<StandardSchemaV1.Issue> = [vendorIssue, { message: "a must equal b" }]
+    expect(toValidationFailure(issues)).toStrictEqual({
+      _tag: "ValidationFailure",
+      issues: [
+        { message: "Invalid type", path: ["user", 0] },
+        { message: "a must equal b", path: [] }
+      ]
+    })
+  })
+
+  it("wire contract: JSON and structuredClone round-trips are lossless (RFC-0001 §5.2)", () => {
+    const f = toValidationFailure([{ message: "bad", path: [{ key: "a" }, 1] }, { message: "root" }])
+    expect(JSON.parse(JSON.stringify(f))).toStrictEqual(f)
+    expect(structuredClone(f)).toStrictEqual(f)
+    expect(JSON.parse(JSON.stringify(err(f)))).toStrictEqual(err(f))
+  })
+
+  it("is idempotent: re-projecting wire-rebuilt issues changes nothing", () => {
+    const f = toValidationFailure([{ message: "bad", path: [{ key: "a" }, 1] }, { message: "root" }])
+    const rebuilt: typeof f = JSON.parse(JSON.stringify(f))
+    expect(toValidationFailure(rebuilt.issues)).toStrictEqual(f)
+  })
+
+  it("accepts the reader-shaped issues: a null path is the root", () => {
+    expect(toValidationFailure([{ message: "root", path: null }, { message: "a", path: ["a"] }])).toStrictEqual(
+      ValidationFailure({ issues: [{ message: "root", path: [] }, { message: "a", path: ["a"] }] })
+    )
+  })
+
+  it("normalises defensively: wire issues that lie about their types (review of #45)", () => {
+    const unprintable = {
+      toString: (): never => {
+        throw new Error("no")
+      }
+    }
+    // Shapes a JSON wire or a sloppy vendor can produce despite the declared types.
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- deliberately off-type wire data
+    const wire = [
+      { message: { secret: "x" }, path: [] },
+      { message: 404 },
+      { message: unprintable, path: [] },
+      { message: Object.create(null), path: [] },
+      { message: "null segment", path: [null, "a"] },
+      { message: "undefined segment", path: ["a", undefined] },
+      { message: "null key", path: [{ key: null }] },
+      { message: "null path", path: null },
+      { message: "string path", path: "abc" }
+    ] as unknown as ReadonlyArray<StandardSchemaV1.Issue>
+    const f = toValidationFailure(wire)
+    for (const issue of f.issues) expect(typeof issue.message).toBe("string")
+    expect(f.issues.map((i) => i.message).slice(0, 2)).toEqual(["[object Object]", "404"])
+    expect(f.issues.slice(4).map((i) => i.path)).toEqual([[], [], [], [], []])
+    expect(JSON.parse(JSON.stringify(f))).toStrictEqual(f)
+    expect(toValidationFailure(f.issues)).toStrictEqual(f)
+  })
+
+  it("parse emits exactly the projection (valibot root issue: path [], no input echoed)", () => {
+    const Pair = v.pipe(
+      v.object({ a: v.string(), b: v.string() }),
+      v.check((x) => x.a === x.b, "a must equal b")
+    )
+    const r = parse(Pair, { a: "x", b: "y" })
+    expect(r).toStrictEqual(err(toValidationFailure([{ message: "a must equal b" }])))
+    expect(JSON.stringify(r)).not.toContain("\"x\"")
+  })
+
+  it("never carries vendor extras such as `input` (zod, valibot, arktype)", () => {
+    // NOTE: the vendor-authored `message` text is kept verbatim; valibot's default message
+    // embeds the received value (`… but received "<value>"`), which the projection cannot strip.
+    const secret = "sk_live_do_not_echo"
+    for (const S of [z.object({ pw: z.number() }), v.object({ pw: v.number() }), type({ pw: "number" })]) {
+      const r = parse(S, { pw: secret })
+      expect(r.ok).toBe(false)
+      if (!r.ok) {
+        for (const issue of r.error.issues) {
+          expect(Object.keys(issue).sort()).toEqual(["message", "path"])
+          expect(JSON.stringify(issue.path)).not.toContain(secret)
+        }
+      }
+    }
+  })
+})
+
 describe("parseAsync", () => {
   it("awaits async-validating schemas", async () => {
     const AsyncSchema = z.string().refine(async (v) => v.length > 0, "empty")
@@ -75,6 +225,49 @@ describe("parseAsync", () => {
 
   it("works for sync schemas too", async () => {
     expect(await parseAsync(z.number(), 5)).toEqual(ok(5))
+  })
+
+  // IDEA §4.3: a vendor `validate` that throws is a defect — it rejects as Panic, never a sync throw.
+  const boom = new Error("vendor exploded")
+  const throwing: StandardSchemaV1 = {
+    "~standard": {
+      version: 1,
+      vendor: "fixture",
+      validate: () => {
+        throw boom
+      }
+    }
+  }
+  const rejecting: StandardSchemaV1 = {
+    "~standard": { version: 1, vendor: "fixture", validate: () => Promise.reject(boom) }
+  }
+
+  it("never throws synchronously when validate throws: it rejects with Panic(cause)", async () => {
+    let pending: Promise<unknown> | undefined
+    expect(() => {
+      pending = parseAsync(throwing, null)
+    }).not.toThrow()
+    await expect(pending).rejects.toBeInstanceOf(Panic)
+    await expect(pending).rejects.toMatchObject({ cause: boom })
+  })
+
+  it("an async validate that rejects also rejects with Panic(cause)", async () => {
+    await expect(parseAsync(rejecting, null)).rejects.toBeInstanceOf(Panic)
+    await expect(parseAsync(rejecting, null)).rejects.toMatchObject({ cause: boom })
+  })
+
+  it("an existing Panic passes through unwrapped", async () => {
+    const panic = new Panic("already a defect")
+    const panicking: StandardSchemaV1 = {
+      "~standard": {
+        version: 1,
+        vendor: "fixture",
+        validate: () => {
+          throw panic
+        }
+      }
+    }
+    await expect(parseAsync(panicking, null)).rejects.toBe(panic)
   })
 })
 
@@ -90,6 +283,55 @@ describe("flatteners", () => {
       expect(fields["address.city"]).toBeDefined()
     }
   })
+
+  it("readers tolerate failures rebuilt from the wire: a missing path is the root", () => {
+    // Exactly what hono `sv` put on the wire before #32, after a JSON round-trip (repro in #32).
+    const rebuilt = {
+      _tag: "ValidationFailure",
+      issues: [{ message: "a must equal b" }, { message: "too short", path: ["name"] }]
+    } as const
+    expect(toFieldErrors(rebuilt)).toEqual({ _errors: ["a must equal b"], name: ["too short"] })
+    expect(toFormErrors(rebuilt)).toEqual({ _errors: ["a must equal b"], name: ["too short"] })
+    // JSON has no `undefined`: some encoders write the missing root path as `null`.
+    expect(toFieldErrors({ issues: [{ message: "root", path: null }] })).toEqual({ _errors: ["root"] })
+  })
+
+  it("toFormErrors is toFieldErrors with an always-present _errors bucket", () => {
+    const cases = [
+      toValidationFailure([]),
+      toValidationFailure([{ message: "x", path: ["a", 0] }, { message: "y", path: ["a", 0] }]),
+      toValidationFailure([{ message: "root" }, { message: "b", path: ["b"] }])
+    ]
+    expect(cases.map(toFormErrors)).toEqual([
+      { _errors: [] },
+      { _errors: [], "a.0": ["x", "y"] },
+      { _errors: ["root"], b: ["b"] }
+    ])
+    expect(cases.map(toFieldErrors)).toEqual([{}, { "a.0": ["x", "y"] }, { _errors: ["root"], b: ["b"] }])
+  })
+
+  // Review of PR #45: a field named after an Object.prototype member used to read the inherited
+  // member as its bucket (`TypeError: bucket.push is not a function`), and `__proto__` could
+  // reassign the accumulator's prototype.
+  it.each(["constructor", "toString", "hasOwnProperty", "__proto__"])(
+    "a field named %s is an ordinary own key; Object.prototype is untouched",
+    (key) => {
+      const protoBefore = Object.getOwnPropertyNames(Object.prototype)
+      const f = toValidationFailure([{ message: "m", path: [key] }, { message: "n", path: [key] }])
+      const fields = toFieldErrors(f)
+      const form = toFormErrors(f)
+      for (const [record, keys] of [[fields, [key]], [form, ["_errors", key]]] as const) {
+        expect(Object.getPrototypeOf(record)).toBe(Object.prototype)
+        expect(Object.keys(record)).toEqual(keys)
+        expect(Object.getOwnPropertyDescriptor(record, key)?.value).toEqual(["m", "n"])
+        // Entries, not toStrictEqual: an own `constructor` key defeats the matcher's type check.
+        expect(Object.entries(JSON.parse(JSON.stringify(record)))).toEqual(Object.entries(record))
+      }
+      expect(Object.getOwnPropertyNames(Object.prototype)).toEqual(protoBefore)
+      expect(Object.getPrototypeOf(Object.prototype)).toBeNull()
+      expect(({} as Record<string, unknown>)["m"]).toBeUndefined()
+    }
+  )
 
   it("toFormErrors collects root issues under _errors", () => {
     const Failing = z.object({ a: z.string() }).refine(() => false, "root-level problem")
@@ -111,8 +353,18 @@ describe("branded", () => {
     if (r.ok) {
       const brandedValue: Brand<string, "UserId"> = r.value
       expect(brandedValue).toBe("u-123")
-      // The brand key is type-level only: the unique symbol is absent at runtime.
-      expect(Object.prototype.hasOwnProperty.call(brandedValue, brand)).toBe(false)
+    }
+  })
+
+  it("the brand is type-only: no runtime key is added to branded objects", () => {
+    const parseUser = branded(z.object({ id: z.string() }), "User")
+    const r = parseUser({ id: "u-1" })
+    expect(r).toStrictEqual(ok({ id: "u-1" }))
+    if (r.ok) {
+      expect(Reflect.ownKeys(r.value)).toEqual(["id"])
+      // `brand` is importable only in type positions (a value import would be a runtime SyntaxError).
+      const keyed: { readonly [brand]: "User" } = r.value
+      expect(keyed).toBe(r.value)
     }
   })
 
