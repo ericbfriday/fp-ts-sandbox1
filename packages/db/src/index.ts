@@ -13,15 +13,25 @@
  * original thrown error rides on `cause`, which stays server-side and every sanitizer drops
  * (reach it for logging via the mapped error's own `cause`).
  *
+ * Fixed vocabulary (ADR-0005): `Conflict`, `NotFound` and `DbUnavailable` are core's
+ * factories, so core's `is()` guards narrow these errors soundly; only the integrity tags with
+ * no core equivalent (`ForeignKeyViolation`, `NotNullViolation`) are declared here.
+ *
+ * Connection failures map to `DbUnavailable` with no props (#88): host, port and DSN text stay
+ * on `cause`, and core `/wire` sends the tag + 503 only (#87).
+ *
  * Every mapper returns the mapped tagged error, or `null` when the input is not a
  * recognized DB error — the caller decides (typically `orElseAsync` → map or rethrow as
  * defect). For a fuller Drizzle integration see `@unthrown/drizzle` (report pointer).
  */
-import { type ErrorFactory, type TaggedError, taggedError } from "@friday-friday/core"
-
-export const Conflict: ErrorFactory<"Conflict", { readonly field?: string; readonly constraint?: string }> =
-  taggedError("Conflict")<{ readonly field?: string; readonly constraint?: string }>()
-export type Conflict = ReturnType<typeof Conflict>
+import {
+  Conflict,
+  DbUnavailable,
+  type ErrorFactory,
+  NotFound,
+  type TaggedError,
+  taggedError
+} from "@friday-friday/core"
 
 /** Where an integrity violation happened, as far as the driver says (schema names, never row values). */
 export interface ConstraintLocation {
@@ -34,17 +44,12 @@ export const ForeignKeyViolation: ErrorFactory<"ForeignKeyViolation", Constraint
 )<ConstraintLocation>()
 export type ForeignKeyViolation = ReturnType<typeof ForeignKeyViolation>
 
-export const NotFound: ErrorFactory<"NotFound", { readonly reason?: string }> = taggedError("NotFound")<{
-  readonly reason?: string
-}>()
-export type NotFound = ReturnType<typeof NotFound>
-
 export const NotNullViolation: ErrorFactory<"NotNullViolation", ConstraintLocation> = taggedError(
   "NotNullViolation"
 )<ConstraintLocation>()
 export type NotNullViolation = ReturnType<typeof NotNullViolation>
 
-export type MappedDbError = Conflict | ForeignKeyViolation | NotNullViolation | NotFound
+export type MappedDbError = Conflict | ForeignKeyViolation | NotNullViolation | NotFound | DbUnavailable
 
 /** An object-like node of an error chain, probed structurally (vendor classes never imported). */
 type Probe = Readonly<Record<string, unknown>>
@@ -61,17 +66,24 @@ const asProbe = (u: unknown): Probe | null =>
 const MAX_CAUSE_DEPTH = 5
 
 /**
- * Walk `e`, `e.cause`, `e.cause.cause`… and return the first node whose string `code` the
- * mapper recognises, with that code. The hop bound is also what makes it cycle-safe: a
- * self-referencing chain is visited at most `MAX_CAUSE_DEPTH + 1` times, then gives `null`.
+ * Walk `e`, `e.cause`, `e.cause.cause`… and return the first node whose string code (read from
+ * the `keys` props, in order) the mapper recognises, with that code. The hop bound is also what
+ * makes it cycle-safe: a self-referencing chain is visited at most `MAX_CAUSE_DEPTH + 1` times,
+ * then gives `null`.
  */
-const findCoded = (e: unknown, known: ReadonlySet<string>): { readonly node: Probe; readonly code: string } | null => {
+const findCoded = (
+  e: unknown,
+  known: ReadonlySet<string>,
+  keys: ReadonlyArray<string>
+): { readonly node: Probe; readonly code: string } | null => {
   let current: unknown = e
   for (let depth = 0; depth <= MAX_CAUSE_DEPTH; depth++) {
     const node = asProbe(current)
     if (node === null) return null
-    const code = node["code"]
-    if (typeof code === "string" && known.has(code)) return { node, code }
+    for (const key of keys) {
+      const code = node[key]
+      if (typeof code === "string" && known.has(code)) return { node, code }
+    }
     current = node["cause"]
   }
   return null
@@ -93,21 +105,50 @@ const pgLocationOf = (node: Probe): ConstraintLocation => {
   return { ...(constraint !== undefined ? { constraint } : {}), ...(column !== undefined ? { column } : {}) }
 }
 
-const PG_CODES: ReadonlySet<string> = new Set(["23505", "23503", "23502"])
+/**
+ * Codes that mean "the database can't be reached" (#88), for `DbUnavailable`:
+ * - SQLSTATE class 08 (connection_exception) except `08P01` protocol_violation, which PG sends
+ *   for client bugs such as a Bind with the wrong parameter count (captured): retrying can't help,
+ *   so it stays a defect. `U`: the other class-08 codes were not provoked (libpq and proxies
+ *   raise them; pg and postgres-js surface socket codes instead).
+ * - `57P01` admin_shutdown, `57P02` crash_shutdown, `57P03` cannot_connect_now.
+ * - Node socket codes `ECONNREFUSED`, `ENOTFOUND`, `ETIMEDOUT`: pg and postgres-js throw the
+ *   socket error itself (captured), so `mapPgError` reads them too.
+ */
+const PG_UNAVAILABLE: ReadonlySet<string> = new Set([
+  "08000",
+  "08001",
+  "08003",
+  "08004",
+  "08006",
+  "08007",
+  "57P01",
+  "57P02",
+  "57P03",
+  "ECONNREFUSED",
+  "ENOTFOUND",
+  "ETIMEDOUT"
+])
+
+const PG_CODES: ReadonlySet<string> = new Set(["23505", "23503", "23502", ...PG_UNAVAILABLE])
 
 /**
  * Map a PostgreSQL error by SQLSTATE: `23505` (unique_violation) → `Conflict`, `23503`
  * (foreign_key_violation) → `ForeignKeyViolation`, `23502` (not_null_violation) →
- * `NotNullViolation`, each with the constraint/column the driver names. Reads pg
- * (`DatabaseError`) and postgres-js (`PostgresError`) shapes, directly or wrapped on `cause`
- * (drizzle-orm's `DrizzleQueryError`). `U`: Neon's serverless driver is a pg fork and is
- * assumed to share pg's shape; not run. Returns `null` for anything else — callers rethrow
- * as defect.
+ * `NotNullViolation`, each with the constraint/column the driver names; connection failures
+ * (class 08 but `08P01`, `57P01`–`57P03`, `ECONNREFUSED`/`ENOTFOUND`/`ETIMEDOUT`) → core's
+ * `DbUnavailable`. Reads pg (`DatabaseError`) and postgres-js (`PostgresError`) shapes and Node
+ * socket errors, directly or wrapped on `cause` (drizzle-orm's `DrizzleQueryError`). Codeless
+ * driver errors ("Connection terminated unexpectedly", pg's "timeout expired", postgres-js's
+ * `CONNECTION_CLOSED`/`CONNECT_TIMEOUT`) are not read. `U`: Neon's serverless driver is a pg
+ * fork and is assumed to share pg's shape; not run. Returns `null` for anything else —
+ * callers rethrow as defect.
  */
-export function mapPgError(e: unknown): Conflict | ForeignKeyViolation | NotNullViolation | null {
-  const found = findCoded(e, PG_CODES)
+export function mapPgError(e: unknown): Conflict | ForeignKeyViolation | NotNullViolation | DbUnavailable | null {
+  const found = findCoded(e, PG_CODES, ["code"])
   if (found === null) return null
   const { node, code } = found
+  if (PG_UNAVAILABLE.has(code)) return DbUnavailable({ cause: e })
   const location = pgLocationOf(node)
   // A unique violation names its index, not a column: PG reports the key only in `detail`.
   if (code === "23505") {
@@ -140,18 +181,23 @@ const prismaLocationOf = (node: Probe): { readonly constraint?: string; readonly
   return { ...(constraint !== undefined ? { constraint } : {}), ...(field !== undefined ? { field } : {}) }
 }
 
-const PRISMA_CODES: ReadonlySet<string> = new Set(["P2002", "P2003", "P2025"])
+const PRISMA_CODES: ReadonlySet<string> = new Set(["P2002", "P2003", "P2025", "P1001", "P1002"])
 
 /**
- * Map a Prisma `PrismaClientKnownRequestError` by P-code: `P2002` (unique) → `Conflict`
- * (field and/or constraint), `P2003` (foreign key) → `ForeignKeyViolation`, `P2025`
- * (record not found) → `NotFound`. Codes and `meta` verified against Prisma 6.19 (Rust
- * engine) and 7.10 (`@prisma/adapter-pg`) on PostgreSQL 16. Returns `null` otherwise.
+ * Map a Prisma error by P-code: `P2002` (unique) → `Conflict` (field and/or constraint),
+ * `P2003` (foreign key) → `ForeignKeyViolation`, `P2025` (record not found) → `NotFound`,
+ * `P1001` (can't reach server) / `P1002` (reached, timed out) → `DbUnavailable`. The code is
+ * `code` on `PrismaClientKnownRequestError` and `errorCode` on `PrismaClientInitializationError`.
+ * Verified against Prisma 6.19 (Rust engine) and 7.10 (`@prisma/adapter-pg`) on PostgreSQL 16,
+ * except P1002 (`U`, not provoked). Prisma 6 leaves `errorCode` undefined when the first query
+ * connects lazily (captured), so that error maps to `null`; call `$connect()` to get P1001.
+ * Returns `null` otherwise.
  */
-export function mapPrismaError(e: unknown): Conflict | ForeignKeyViolation | NotFound | null {
-  const found = findCoded(e, PRISMA_CODES)
+export function mapPrismaError(e: unknown): Conflict | ForeignKeyViolation | NotFound | DbUnavailable | null {
+  const found = findCoded(e, PRISMA_CODES, ["code", "errorCode"])
   if (found === null) return null
   const { node, code } = found
+  if (code === "P1001" || code === "P1002") return DbUnavailable({ cause: e })
   if (code === "P2002") return Conflict({ ...prismaLocationOf(node), cause: e })
   if (code === "P2003") {
     const { constraint, field } = prismaLocationOf(node)
@@ -161,7 +207,7 @@ export function mapPrismaError(e: unknown): Conflict | ForeignKeyViolation | Not
       cause: e
     })
   }
-  return NotFound({ reason: "record not found", cause: e })
+  return NotFound({ cause: e })
 }
 
 /** Convenience: try Prisma then PG — projects can carry both code shapes in one codebase. */

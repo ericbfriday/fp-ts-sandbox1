@@ -5,13 +5,20 @@ import {
   authCall,
   type AuthError,
   beforeDbHook,
+  Forbidden,
   type Forbidden as ForbiddenT,
   fromAuthTuple,
   requireRole,
   requireSession,
-  type SessionLike
+  type SessionLike,
+  Unauthenticated
 } from "@friday-friday/better-auth"
-import type { AsyncResult, Result } from "@friday-friday/core"
+import {
+  type AsyncResult,
+  Forbidden as CoreForbidden,
+  type Result,
+  Unauthenticated as CoreUnauthenticated
+} from "@friday-friday/core"
 import { describe, expectTypeOf, it } from "vitest"
 
 describe("authCall", () => {
@@ -51,5 +58,40 @@ describe("beforeDbHook", () => {
     )
     const out = await hook("x")
     expectTypeOf(out).toEqualTypeOf<false | { readonly data: string } | void>()
+  })
+})
+
+describe("fixed vocabulary (ADR-0005): extension factories of core's tags", () => {
+  type Props<F extends (props: never) => unknown> = Parameters<F>[0]
+
+  it("Forbidden's props are a superset of core's, every one optional", () => {
+    expectTypeOf<Props<typeof CoreForbidden>>().toExtend<Props<typeof Forbidden>>()
+    expectTypeOf<{}>().toExtend<Props<typeof Forbidden>>()
+    expectTypeOf<Props<typeof Forbidden>["code"]>().toEqualTypeOf<string | undefined>()
+  })
+
+  it("Unauthenticated's props are a superset of core's, every one optional", () => {
+    expectTypeOf<Props<typeof CoreUnauthenticated>>().toExtend<Props<typeof Unauthenticated>>()
+    expectTypeOf<{}>().toExtend<Props<typeof Unauthenticated>>()
+    expectTypeOf<Props<typeof Unauthenticated>["code"]>().toEqualTypeOf<string | undefined>()
+  })
+
+  it("same tags as core", () => {
+    expectTypeOf(Forbidden.tag).toEqualTypeOf(CoreForbidden.tag)
+    expectTypeOf(Unauthenticated.tag).toEqualTypeOf(CoreUnauthenticated.tag)
+  })
+
+  it("core's Forbidden.is and better-auth's agree on required", () => {
+    const viaCore = (u: unknown) => (CoreForbidden.is(u) ? u.required : null)
+    const viaAuth = (u: unknown) => (Forbidden.is(u) ? u.required : null)
+    expectTypeOf(viaAuth).returns.toEqualTypeOf<ReturnType<typeof viaCore>>()
+    expectTypeOf(viaCore).returns.toEqualTypeOf<string | undefined | null>()
+  })
+
+  it("better-auth's errors are core's errors (assignable both ways where props are optional)", () => {
+    expectTypeOf<ForbiddenT>().toExtend<CoreForbidden>()
+    expectTypeOf<CoreForbidden>().toExtend<ForbiddenT>()
+    expectTypeOf<Unauthenticated>().toExtend<CoreUnauthenticated>()
+    expectTypeOf<CoreUnauthenticated>().toExtend<Unauthenticated>()
   })
 })
