@@ -18,6 +18,25 @@
  *   `target`; the constraint is at `meta.driverAdapterError.cause.constraint`, which is
  *   `{ index }` when PG names the constraint (captured) or `{ fields }` otherwise (read
  *   from adapter-pg's `convertDriverError` source, not provoked).
+ *
+ * Connection failures (#88), captured 2026-11-19 on Node 24.22 against the same PostgreSQL
+ * 16.15, from the same driver versions plus `@prisma/adapter-pg` 7.10.1 and a generated
+ * Prisma 6.19.3 client:
+ * - Node `net`: a refused connect is a plain `Error` with own `errno`, `code`, `syscall`,
+ *   `address`, `port` (in that order); a failed DNS lookup has `hostname` instead of
+ *   `address`/`port`. pg and drizzle-orm throw it as is (drizzle on `cause`); postgres-js
+ *   throws the same object with its own `query`/`parameters`/`args`/`types` added.
+ * - 57P01 (`pg_terminate_backend`, `pg_ctl -m fast stop`) and 57P03 (connecting during
+ *   `pg_ctl -m smart stop`, or during crash recovery) arrive as FATAL ErrorResponses: pg
+ *   `DatabaseError` / postgres-js `PostgresError`, same props as the integrity errors.
+ * - Prisma 7 (adapter-pg): ECONNREFUSED and ENOTFOUND become `PrismaClientKnownRequestError`
+ *   P1001, with the host and port only under `meta.driverAdapterError.cause`.
+ * - Prisma 6 (Rust engine): an unreachable server is `PrismaClientInitializationError`;
+ *   `errorCode` is "P1001" from `$connect()`, but `undefined` when the first query connects
+ *   lazily (captured both).
+ *
+ * Shapes marked `U` below are hand-built from the vendor's docs or source and were not
+ * provoked: Node's ETIMEDOUT, class-08 SQLSTATEs other than 08P01, 57P02 and Prisma P1002.
  */
 
 /** Rebuilt pg-protocol `DatabaseError`: `name` is the protocol message name ("error"). */
@@ -46,6 +65,18 @@ class DrizzleQueryError extends Error {
     super(`Failed query: ${query}\nparams: ${params.join(",")}`, { cause })
     this.query = query
     this.params = params
+  }
+}
+
+/** Rebuilt Prisma `PrismaClientInitializationError`: the P-code is `errorCode`, not `code`. */
+class PrismaClientInitializationError extends Error {
+  readonly clientVersion: string
+  readonly errorCode: string | undefined
+  constructor(message: string, clientVersion: string, errorCode: string | undefined) {
+    super(message)
+    this.name = "PrismaClientInitializationError"
+    this.clientVersion = clientVersion
+    this.errorCode = errorCode
   }
 }
 
@@ -246,4 +277,162 @@ export const prisma7NotFound = (): Error =>
   new PrismaClientKnownRequestError(
     "\nInvalid `prisma.users.update()` invocation:\n\n\nAn operation failed because it depends on one or more records that were required but not found. No record was found for an update.",
     { code: "P2025", meta: { modelName: "users", operation: "an update" }, clientVersion: "7.10.1" }
+  )
+
+// --- connection failures (#88) --------------------------------------------------------
+
+/** Built the way Node's `net` builds a socket error: an `Error` plus own `errno`/`code`/`syscall`/... */
+const socketError = (message: string, fields: Record<string, unknown>): Error =>
+  Object.assign(new Error(message), fields)
+
+/** Captured: `connect()` to a closed port (pg and drizzle throw this object unchanged). */
+export const socketRefused = (): Error =>
+  socketError("connect ECONNREFUSED 10.0.0.5:5432", {
+    errno: -111,
+    code: "ECONNREFUSED",
+    syscall: "connect",
+    address: "10.0.0.5",
+    port: 5432
+  })
+
+/** Captured: DNS lookup of an unknown host. */
+export const dnsNotFound = (): Error =>
+  socketError("getaddrinfo ENOTFOUND db.internal.example", {
+    errno: -3008,
+    code: "ENOTFOUND",
+    syscall: "getaddrinfo",
+    hostname: "db.internal.example"
+  })
+
+/** `U`: not provoked (needs dropped SYNs); errno -110 is Linux's ETIMEDOUT, layout as ECONNREFUSED. */
+export const socketTimedOut = (): Error =>
+  socketError("connect ETIMEDOUT 10.0.0.5:5432", {
+    errno: -110,
+    code: "ETIMEDOUT",
+    syscall: "connect",
+    address: "10.0.0.5",
+    port: 5432
+  })
+
+/** Captured: postgres-js rethrows the socket error with the pending query attached. */
+export const postgresJsRefused = (): Error =>
+  Object.assign(socketRefused(), {
+    query: "select * from users where email = $1",
+    parameters: ["a@example.com"],
+    args: [],
+    types: []
+  })
+
+/** Captured: `pg_terminate_backend` / `pg_ctl -m fast stop` while a query runs (pg). */
+export const pgAdminShutdown = (): Error =>
+  new DatabaseError("terminating connection due to administrator command", {
+    severity: "FATAL",
+    code: "57P01",
+    file: "postgres.c",
+    line: "3328",
+    routine: "ProcessInterrupts"
+  })
+
+/** Captured: the same 57P01 through postgres-js. */
+export const postgresJsAdminShutdown = (): Error =>
+  new PostgresError("terminating connection due to administrator command", {
+    severity_local: "FATAL",
+    severity: "FATAL",
+    code: "57P01",
+    file: "postgres.c",
+    line: "3328",
+    routine: "ProcessInterrupts",
+    query: "select pg_sleep(5)",
+    parameters: []
+  })
+
+/**
+ * `U`: PG 16 sent 57P02 (another backend crashed) as a WARNING NoticeResponse in the capture:
+ * pg threw "Connection terminated unexpectedly" (no code), postgres-js logged a notice and threw
+ * CONNECTION_CLOSED. Rebuilt as the ErrorResponse a driver would throw if one arrived.
+ */
+export const pgCrashShutdown = (): Error =>
+  new DatabaseError("terminating connection because of crash of another server process", {
+    severity: "FATAL",
+    code: "57P02",
+    detail: "The postmaster has commanded this server process to roll back the current transaction and exit.",
+    file: "postgres.c",
+    line: "2962",
+    routine: "quickdie"
+  })
+
+/** Captured: connecting while the server is in smart shutdown (pg). */
+export const pgCannotConnectNow = (): Error =>
+  new DatabaseError("the database system is shutting down", {
+    severity: "FATAL",
+    code: "57P03",
+    file: "postmaster.c",
+    line: "2375",
+    routine: "ProcessStartupPacket"
+  })
+
+/** Captured: connecting during crash recovery (postgres-js shape of the same 57P03). */
+export const postgresJsCannotConnectNow = (): Error =>
+  new PostgresError("the database system is in recovery mode", {
+    severity_local: "FATAL",
+    severity: "FATAL",
+    code: "57P03",
+    file: "postmaster.c",
+    line: "2380",
+    routine: "ProcessStartupPacket"
+  })
+
+/** `U`: class 08 SQLSTATEs other than 08P01 were not provoked; message text from PG's errcodes.txt. */
+export const pgConnectionException = (code: string): Error =>
+  new DatabaseError(`connection exception ${code}`, { severity: "FATAL", code })
+
+/** Captured: 08P01 from a Bind with the wrong parameter count, a client bug (stays unmapped). */
+export const pgProtocolViolation = (): Error =>
+  new DatabaseError("bind message supplies 2 parameters, but prepared statement \"\" requires 1", {
+    code: "08P01",
+    file: "postgres.c",
+    line: "1731",
+    routine: "exec_bind_message"
+  })
+
+/** Captured: Prisma 7 + adapter-pg, ECONNREFUSED on the first query. */
+export const prisma7Unreachable = (): Error =>
+  new PrismaClientKnownRequestError(
+    "\nInvalid `prisma.users.findMany()` invocation:\n\n\nCan't reach database server at 10.0.0.5:5432",
+    {
+      code: "P1001",
+      meta: {
+        modelName: "users",
+        driverAdapterError: {
+          name: "DriverAdapterError",
+          message: "DatabaseNotReachable",
+          cause: { kind: "DatabaseNotReachable", host: "10.0.0.5", port: 5432 }
+        }
+      },
+      clientVersion: "7.10.1"
+    }
+  )
+
+/** Captured: Prisma 6 `$connect()` to an unreachable server. */
+export const prisma6UnreachableOnConnect = (): Error =>
+  new PrismaClientInitializationError(
+    "Can't reach database server at `10.0.0.5:5432`\n\nPlease make sure your database server is running at `10.0.0.5:5432`.",
+    "6.19.3",
+    "P1001"
+  )
+
+/** Captured: Prisma 6 lazy connect on the first query, which leaves `errorCode` undefined. */
+export const prisma6UnreachableOnQuery = (): Error =>
+  new PrismaClientInitializationError(
+    "\nInvalid `prisma.users.findMany()` invocation:\n\n\nCan't reach database server at `10.0.0.5:5432`\n\nPlease make sure your database server is running at `10.0.0.5:5432`.",
+    "6.19.3",
+    undefined
+  )
+
+/** `U`: P1002 not provoked (a silent server gave P1001); message from Prisma's error reference. */
+export const prisma6ReachedButTimedOut = (): Error =>
+  new PrismaClientInitializationError(
+    "The database server at `10.0.0.5`:`5432` was reached but timed out. Please try again.",
+    "6.19.3",
+    "P1002"
   )

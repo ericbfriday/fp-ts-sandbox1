@@ -3,32 +3,43 @@
  * the real error shapes thrown by pg, postgres-js, drizzle-orm and Prisma 6/7, captured
  * against a live PostgreSQL and rebuilt vendor-free in `_fixtures.ts`.
  */
-import {
-  Conflict,
-  ForeignKeyViolation,
-  mapDbError,
-  mapPgError,
-  mapPrismaError,
-  NotFound,
-  NotNullViolation
-} from "@friday-friday/db"
+import { Conflict, DbUnavailable, NotFound } from "@friday-friday/core"
+import { toProblem } from "@friday-friday/core/wire"
+import * as db from "@friday-friday/db"
+import { ForeignKeyViolation, mapDbError, mapPgError, mapPrismaError, NotNullViolation } from "@friday-friday/db"
+import net from "node:net"
 import { describe, expect, it } from "vitest"
 import {
+  dnsNotFound,
   drizzleWrapped,
+  pgAdminShutdown,
+  pgCannotConnectNow,
+  pgConnectionException,
+  pgCrashShutdown,
   pgForeignKey,
   pgNotNull,
+  pgProtocolViolation,
   pgUndefinedTable,
   pgUnique,
+  postgresJsAdminShutdown,
+  postgresJsCannotConnectNow,
   postgresJsForeignKey,
   postgresJsNotNull,
+  postgresJsRefused,
   postgresJsUnique,
   prisma6ForeignKey,
   prisma6NotFound,
+  prisma6ReachedButTimedOut,
   prisma6Unique,
+  prisma6UnreachableOnConnect,
+  prisma6UnreachableOnQuery,
   prisma7ForeignKey,
   prisma7NotFound,
   prisma7Unique,
-  prisma7UniqueByFields
+  prisma7UniqueByFields,
+  prisma7Unreachable,
+  socketRefused,
+  socketTimedOut
 } from "./_fixtures.js"
 
 /**
@@ -53,7 +64,12 @@ describe("driver detail and row values stay server-side", () => {
     ["prisma 6 P2025", prisma6NotFound],
     ["prisma 7 P2002", prisma7Unique],
     ["prisma 7 P2003", prisma7ForeignKey],
-    ["prisma 7 P2025", prisma7NotFound]
+    ["prisma 7 P2025", prisma7NotFound],
+    ["ECONNREFUSED", socketRefused],
+    ["postgres-js ECONNREFUSED", postgresJsRefused],
+    ["pg 57P01", pgAdminShutdown],
+    ["prisma 7 P1001", prisma7Unreachable],
+    ["prisma 6 P1001", prisma6UnreachableOnConnect]
   ]
 
   it.each(inputs)("%s: no detail/message/query text outside cause; original reachable on cause", (_, make) => {
@@ -62,7 +78,8 @@ describe("driver detail and row values stay server-side", () => {
     expect(mapped).not.toBe(null)
     expect(mapped).toHaveProperty("cause", e)
     const wire = wireJson(mapped)
-    for (const leak of ["a@example.com", "(42)", "Failing row", "Key (", "insert into", "Invalid `prisma"]) {
+    const leaks = ["a@example.com", "(42)", "Failing row", "Key (", "insert into", "select ", "Invalid `prisma"]
+    for (const leak of [...leaks, "10.0.0.5", "5432", "ECONNREFUSED", "terminating", "Can't reach"]) {
       expect(wire).not.toContain(leak)
     }
     expect(mapped).not.toHaveProperty("detail")
@@ -156,9 +173,9 @@ describe("mapPrismaError (P-codes)", () => {
     expect(mapPrismaError(v7)).toEqual(ForeignKeyViolation({ constraint: "posts_user_id_fkey", cause: v7 }))
   })
 
-  it("P2025 -> NotFound (Prisma 6 and 7), original kept on cause", () => {
+  it("P2025 -> core's NotFound (Prisma 6 and 7), original kept on cause", () => {
     for (const e of [prisma6NotFound(), prisma7NotFound()]) {
-      expect(mapPrismaError(e)).toEqual(NotFound({ reason: "record not found", cause: e }))
+      expect(mapPrismaError(e)).toEqual(NotFound({ cause: e }))
     }
   })
 
@@ -177,5 +194,124 @@ describe("mapDbError (both vocabularies)", () => {
     const wrapped = drizzleWrapped(pgNotNull(), "insert into posts (id, user_id) values ($1, $2)", [2, 1])
     expect(mapDbError(wrapped)).toEqual(NotNullViolation({ column: "title", cause: wrapped }))
     expect(mapDbError(pgUndefinedTable())).toBe(null)
+  })
+})
+
+describe("connection failures -> core's DbUnavailable (#88, ADR-0005)", () => {
+  const pg: ReadonlyArray<readonly [string, () => Error]> = [
+    ["ECONNREFUSED (pg / node net)", socketRefused],
+    ["ENOTFOUND (pg / node dns)", dnsNotFound],
+    ["ETIMEDOUT (U)", socketTimedOut],
+    ["postgres-js ECONNREFUSED", postgresJsRefused],
+    ["drizzle(ECONNREFUSED)", () => drizzleWrapped(socketRefused(), "select 1", [])],
+    ["pg 57P01 admin_shutdown", pgAdminShutdown],
+    ["postgres-js 57P01 admin_shutdown", postgresJsAdminShutdown],
+    ["drizzle(pg 57P01)", () => drizzleWrapped(pgAdminShutdown(), "select pg_sleep(5)", [])],
+    ["pg 57P02 crash_shutdown (U)", pgCrashShutdown],
+    ["pg 57P03 cannot_connect_now", pgCannotConnectNow],
+    ["postgres-js 57P03 cannot_connect_now", postgresJsCannotConnectNow],
+    ...["08000", "08003", "08006", "08001", "08004", "08007"].map(
+      (code) => [`SQLSTATE ${code} (U)`, () => pgConnectionException(code)] as const
+    )
+  ]
+
+  it.each(pg)("mapPgError: %s -> DbUnavailable, original on cause", (_, make) => {
+    const e = make()
+    expect(mapPgError(e)).toEqual(DbUnavailable({ cause: e }))
+    expect(mapDbError(e)).toEqual(DbUnavailable({ cause: e }))
+  })
+
+  const prisma: ReadonlyArray<readonly [string, () => Error]> = [
+    ["Prisma 7 P1001 (adapter-pg, KnownRequestError.code)", prisma7Unreachable],
+    ["Prisma 6 P1001 ($connect, InitializationError.errorCode)", prisma6UnreachableOnConnect],
+    ["Prisma 6 P1002 (U)", prisma6ReachedButTimedOut]
+  ]
+
+  it.each(prisma)("mapPrismaError: %s -> DbUnavailable, original on cause", (_, make) => {
+    const e = make()
+    expect(mapPrismaError(e)).toEqual(DbUnavailable({ cause: e }))
+    expect(mapDbError(e)).toEqual(DbUnavailable({ cause: e }))
+  })
+
+  it("finds a socket code down the same <= 5-hop cause chain, not 6", () => {
+    const wrap = (inner: unknown, times: number): unknown =>
+      times === 0 ? inner : wrap(new Error("wrapped", { cause: inner }), times - 1)
+    const five = wrap(socketRefused(), 5)
+    expect(mapPgError(five)).toEqual(DbUnavailable({ cause: five }))
+    expect(mapPgError(wrap(socketRefused(), 6))).toBe(null)
+  })
+
+  it("maps the real error Node's net throws, single address and AggregateError (multi-address)", async () => {
+    // A port that was just listening and is now closed refuses deterministically on loopback.
+    const closed = await new Promise<number>((resolve) => {
+      const server = net.createServer().listen(0, "127.0.0.1", () => {
+        const address = server.address()
+        const port = typeof address === "object" && address !== null ? address.port : 0
+        server.close(() => resolve(port))
+      })
+    })
+    const connectError = (options: net.NetConnectOpts): Promise<unknown> =>
+      new Promise((resolve) => net.connect(options).on("error", resolve))
+    const single = await connectError({ host: "127.0.0.1", port: closed })
+    expect(single).toMatchObject({ code: "ECONNREFUSED", syscall: "connect", port: closed })
+    expect(mapPgError(single)).toEqual(DbUnavailable({ cause: single }))
+    // Happy eyeballs: two addresses, both fail; Node puts `code` on the AggregateError itself.
+    const multi = await connectError({
+      host: "db.example",
+      port: closed,
+      autoSelectFamily: true,
+      lookup: (_host, _options, callback) => {
+        const all = [{ address: "127.0.0.1", family: 4 }, { address: "::1", family: 6 }] // oxlint-disable-next-line no-unsafe-type-assertion -- net's LookupFunction overloads; all: true is set by autoSelectFamily
+        ;(callback as unknown as (e: null, a: typeof all) => void)(null, all)
+      }
+    })
+    expect(multi).toBeInstanceOf(AggregateError)
+    expect(mapPgError(multi)).toEqual(DbUnavailable({ cause: multi }))
+  })
+
+  it("leaves non-connection look-alikes unmapped (null -> the caller's defect lane)", () => {
+    // 08P01 is class 08 but, as captured, a client bug (wrong Bind parameter count): retrying won't help.
+    expect(mapPgError(pgProtocolViolation())).toBe(null)
+    // Prisma 6 lazy connect: captured with errorCode undefined, so no code to read.
+    expect(mapPrismaError(prisma6UnreachableOnQuery())).toBe(null)
+    // Socket codes that aren't connection failures to a database.
+    expect(mapPgError(Object.assign(new Error("write EPIPE"), { code: "EPIPE", syscall: "write" }))).toBe(null)
+    // P-codes are read from `errorCode` only by mapPrismaError; SQLSTATEs never from `errorCode`.
+    expect(mapPgError({ errorCode: "57P01" })).toBe(null)
+  })
+
+  it("through core /wire toProblem: a 503 problem body, tag only, no driver text or host (#87)", () => {
+    for (const e of [socketRefused(), dnsNotFound(), pgAdminShutdown(), prisma7Unreachable()]) {
+      const mapped = mapDbError(e)
+      if (mapped === null) throw new Error("expected a mapped error")
+      const body = toProblem(mapped)
+      expect(body).toMatchObject({ status: 503, tag: "DbUnavailable", title: "Db Unavailable" })
+      expect(Object.keys(body).sort()).toEqual(["status", "tag", "title", "type"])
+      for (const leak of ["10.0.0.5", "5432", "db.internal", "ECONN", "ENOTFOUND", "terminating", "Can't reach"]) {
+        expect(JSON.stringify(body)).not.toContain(leak)
+      }
+    }
+  })
+})
+
+describe("fixed vocabulary: db produces core's factories (ADR-0005)", () => {
+  it("exports no NotFound / Conflict / DbUnavailable factory of its own", () => {
+    expect(Object.keys(db)).not.toContain("NotFound")
+    expect(Object.keys(db)).not.toContain("Conflict")
+    expect(Object.keys(db)).not.toContain("DbUnavailable")
+  })
+
+  it("core's NotFound.is / Conflict.is narrow db's errors, and every narrowed prop matches the value", () => {
+    const notFound = mapDbError(prisma6NotFound())
+    expect(NotFound.is(notFound)).toBe(true)
+    if (NotFound.is(notFound)) {
+      // core's NotFound: resource?/id?, both genuinely absent; no stray db-only prop either.
+      expect(notFound.resource).toBe(undefined)
+      expect(notFound.id).toBe(undefined)
+      expect(Object.keys(notFound).sort()).toEqual(["_tag", "cause"])
+    }
+    const conflict = mapDbError(pgUnique())
+    expect(Conflict.is(conflict)).toBe(true)
+    if (Conflict.is(conflict)) expect(conflict.constraint).toBe("users_email_key")
   })
 })
