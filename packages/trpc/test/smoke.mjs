@@ -38,7 +38,7 @@ assert.deepEqual(mod.sanitize(NotFound({ id: "1", cause: new Error("db") })), { 
 assert.deepEqual(await mod.fromTRPC(Promise.resolve(1)), { ok: true, value: 1 })
 
 // The built formatter masks a defect (core /wire envelope bundled correctly, #38).
-const formatted = errorFormatter()({
+const formatted = mod.errorFormatter()({
   shape: { message: "postgres://admin:secret@db", data: {} },
   error: { code: "INTERNAL_SERVER_ERROR", cause: new Error("postgres://admin:secret@db") }
 })
