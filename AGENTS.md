@@ -4,7 +4,7 @@ Project brief: see **`IDEA.md`** (read it first). The authoritative design sourc
 
 ## Commands
 
-- `pnpm run check` — typecheck (`tsc --noEmit`, root project + each example's own tsconfig), TS 7 locally; CI also runs TS 6.0 / 7.1-beta via npm aliases
+- `pnpm run check` — typecheck (`tsc --noEmit`, root project + each example's own tsconfig) + the type-instantiation budget (`tooling/type-budget`), TS 7 locally; CI also runs TS 6.0 / 7.1-beta via npm aliases
 - `pnpm run lint` — oxlint (type-aware) + local ESLint rules (`packages/*/src` + `examples/*/src`, enforced) + dprint check
 - `pnpm run lint-fix` — oxlint --fix + dprint fmt
 - `pnpm test` — Vitest runtime + type tests; `pnpm test:types` for type-only
@@ -44,6 +44,7 @@ Every `packages/*` entry has a size budget (`.size-limit.json`) and a plain-Node
 - `tooling/eslint-plugin` — `@friday-friday/eslint-plugin`: the three custom rules, run on `packages/*/src` and `examples/*/src`
 - `tooling/codemods` — neverthrow-to-core codemod (plain script, not a workspace package)
 - `tooling/gates` — gate-coverage tests (plain test dir, not a workspace package)
+- `tooling/type-budget` — type-instantiation budget: core stress fixture, per-TS ceilings, `src/check.ts` (plain dir, not a workspace package)
 - `examples/next-app` — `@friday-friday/example-next-app`: profile form end-to-end on Result (issue #9); typechecked with its own tsconfig and built with `next build` in CI
 
 ## Agent skills

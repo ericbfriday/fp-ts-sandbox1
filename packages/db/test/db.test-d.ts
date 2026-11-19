@@ -16,9 +16,7 @@ import { describe, expectTypeOf, it } from "vitest"
 
 describe("mapper return types", () => {
   it("mapPgError: Conflict | ForeignKeyViolation | NotNullViolation | null", () => {
-    const r: Conflict | ForeignKeyViolation | NotNullViolation | null = mapPgError(undefined)
-    expectTypeOf(mapPgError).returns.toEqualTypeOf<Conflict | ForeignKeyViolation | NotNullViolation | null>()
-    expectTypeOf(r).not.toBeAny()
+    expectTypeOf(mapPgError(undefined)).toEqualTypeOf<Conflict | ForeignKeyViolation | NotNullViolation | null>()
   })
 
   it("mapPrismaError: Conflict | ForeignKeyViolation | NotFound | null", () => {

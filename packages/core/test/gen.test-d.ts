@@ -14,30 +14,24 @@ type NotFoundT = ReturnType<typeof NotFound>
 
 describe("gen types", () => {
   test("gen infers T and E from an annotated generator body", () => {
-    const r = gen(function*(): Generator<Err<NotFoundT>, string, unknown> {
+    expectTypeOf(gen(function*(): Generator<Err<NotFoundT>, string, unknown> {
       const a: number = yield* $(ok(1))
       const b: string = yield* $(err(NotFound({ id: "1" })))
       return `${a}${b}`
-    })
-    const checked: Result<string, NotFoundT> = r
-    expectTypeOf(checked).toEqualTypeOf<Result<string, NotFoundT>>()
+    })).toEqualTypeOf<Result<string, NotFoundT>>()
   })
 
   test("single-source bodies infer without annotation", () => {
-    const r = gen(function*() {
+    expectTypeOf(gen(function*() {
       const b: string = yield* $(err(NotFound({ id: "1" })))
       return b
-    })
-    const checked: Result<string, NotFoundT> = r
-    expectTypeOf(checked).toEqualTypeOf<Result<string, NotFoundT>>()
+    })).toEqualTypeOf<Result<string, NotFoundT>>()
   })
 
   test("genAsync infers T and E from the async generator body", () => {
-    const r = genAsync(async function*(): AsyncGenerator<Err<NotFoundT>, number, unknown> {
+    expectTypeOf(genAsync(async function*(): AsyncGenerator<Err<NotFoundT>, number, unknown> {
       const a: number = yield* $(await Promise.resolve(ok(1)))
       return a + 1
-    })
-    const checked: AsyncResult<number, NotFoundT> = r
-    expectTypeOf(checked).toEqualTypeOf<AsyncResult<number, NotFoundT>>()
+    })).toEqualTypeOf<AsyncResult<number, NotFoundT>>()
   })
 })

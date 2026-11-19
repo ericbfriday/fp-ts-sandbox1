@@ -32,6 +32,11 @@ import { Forbidden, NotFound } from "./_fixtures.js"
 
 declare const numOrStr: Result<number, string>
 declare const numOrTagged: Result<number, NotFound | Forbidden>
+// Declared, not assigned: `const a: Result<number, "a"> = err("a")` narrows `a` to `Err<"a">`,
+// so `all([a, b])` would infer `[never, never]` and an annotated const would hide it (#61).
+declare const numOrA: Result<number, "a">
+declare const strOrB: Result<string, "b">
+declare const maybe: string | null | undefined
 
 describe("constructors and guards", () => {
   test("ok / err infer precise types; E defaults to never", () => {
@@ -167,7 +172,6 @@ describe("dual overloads infer correctly", () => {
   })
 
   test("fromNullable strips null/undefined and types the error lazily", () => {
-    const maybe: string | null | undefined = "x"
     const onNone = (): NotFound => NotFound({ resource: "s", id: "1" })
     expectTypeOf(fromNullable(maybe, onNone)).toEqualTypeOf<Result<string, NotFound>>()
     expectTypeOf(pipe(maybe, fromNullable(onNone))).toEqualTypeOf<Result<string, NotFound>>()
@@ -236,17 +240,10 @@ describe("E widens only through |", () => {
 
 describe("all / partition", () => {
   test("all is tuple-aware and unions the errors", () => {
-    const a: Result<number, "a"> = err("a")
-    const b: Result<string, "b"> = err("b")
-    // The annotated assignments ARE the assertions: vitest --typecheck fails on any assignment
-    // type error, and they dodge expect-type's union-branding quirk with Result unions.
-    const tup: Result<[number, string], "a" | "b"> = all([a, b])
-    expectTypeOf(tup).toEqualTypeOf<Result<[number, string], "a" | "b">>()
-    const both: Result<[number, string], never> = all([ok(1), ok("s")])
-    expectTypeOf(both).toEqualTypeOf<Result<[number, string], never>>()
+    expectTypeOf(all([numOrA, strOrB])).toEqualTypeOf<Result<[number, string], "a" | "b">>()
+    expectTypeOf(all([ok(1), ok("s")])).toEqualTypeOf<Result<[number, string], never>>()
     const list: Array<Result<number, string>> = []
-    const arr: Result<Array<number>, string> = all(list)
-    expectTypeOf(arr).toEqualTypeOf<Result<Array<number>, string>>()
+    expectTypeOf(all(list)).toEqualTypeOf<Result<Array<number>, string>>()
   })
 
   test("partition", () => {

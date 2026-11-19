@@ -21,8 +21,10 @@ describe("fromTRPC declared-error contract", () => {
       Promise.resolve({ id: "1", name: "ada" })
     )
     const awaited = await r
-    // The annotated const IS the contract pin: the bridge resolves to exactly this Result.
-    const _pin: Result<{ id: string; name: string }, NotFoundE | ConflictE | TRPCTransportError> = awaited
+    // The bridge resolves to exactly this Result (asserted on the value, not via an annotated const).
+    expectTypeOf(awaited).toEqualTypeOf<
+      Result<{ id: string; name: string }, NotFoundE | ConflictE | TRPCTransportError>
+    >()
     if (!awaited.ok) {
       expectTypeOf(awaited.error._tag).toEqualTypeOf<"NotFound" | "Conflict" | "TRPCTransportError">()
     } else {

@@ -32,8 +32,7 @@ describe("schema types", () => {
 
   test("parseAsync mirrors parse", () => {
     const User = z.object({ id: z.string() })
-    const r: Promise<Result<{ id: string }, ValidationFailure>> = parseAsync(User, { id: "1" })
-    expectTypeOf(r).toEqualTypeOf<Promise<Result<{ id: string }, ValidationFailure>>>()
+    expectTypeOf(parseAsync(User, { id: "1" })).toEqualTypeOf<Promise<Result<{ id: string }, ValidationFailure>>>()
   })
 
   test("branded stamps the phantom brand type", () => {
@@ -47,10 +46,10 @@ describe("schema types", () => {
   })
 
   test("vendor output inference: valibot + arktype", () => {
-    const vr: Result<{ id: string }, ValidationFailure> = parse(v.object({ id: v.string() }), { id: "v" })
-    expectTypeOf(vr).toEqualTypeOf<Result<{ id: string }, ValidationFailure>>()
-    const ar: Result<{ id: string }, ValidationFailure> = parse(type({ id: "string" }), { id: "a" })
-    expectTypeOf(ar).toEqualTypeOf<Result<{ id: string }, ValidationFailure>>()
+    expectTypeOf(parse(v.object({ id: v.string() }), { id: "v" })).toEqualTypeOf<
+      Result<{ id: string }, ValidationFailure>
+    >()
+    expectTypeOf(parse(type({ id: "string" }), { id: "a" })).toEqualTypeOf<Result<{ id: string }, ValidationFailure>>()
   })
 
   test("ValidationFailure shape is stable", () => {
