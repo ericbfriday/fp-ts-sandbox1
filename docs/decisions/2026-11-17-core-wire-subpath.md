@@ -100,7 +100,7 @@ Types: `Json`, `WireError<Tag>`, `WireOptions`, `ProblemOptions`, `Problem`, `St
 
 - **Minimal codec** (`encode(e, status?)` / `decode(u)` / `defect`): the fewest entry points, but
   `encode` would return two different shapes (sanitized error vs problem body) depending on arity.
-  tRPC's `data.fl` needs the first, and next and hono need the second. Rejected because it hides
+  tRPC's `data.friday_friday` (named `data.fl` when this note was written; renamed in #38) needs the first, and next and hono need the second. Rejected because it hides
   the difference badly.
 - **Configurable factory** (`createWire({ typeBase, titles, statuses, collision, defectMessage })`):
   maximum flexibility, but every option is something RFC-0001 fixes normatively. Two adapters
