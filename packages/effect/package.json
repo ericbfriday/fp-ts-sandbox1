@@ -30,6 +30,7 @@
     "effect": "4.0.6"
   },
   "scripts": {
-    "build": "tsdown"
+    "build": "tsdown",
+    "smoke": "node test/smoke.mjs"
   }
 }

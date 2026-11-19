@@ -33,6 +33,7 @@
     "@standard-schema/spec": "^1.1.0"
   },
   "scripts": {
-    "build": "tsdown"
+    "build": "tsdown",
+    "smoke": "node test/smoke.mjs"
   }
 }
