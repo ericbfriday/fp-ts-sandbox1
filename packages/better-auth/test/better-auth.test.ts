@@ -12,7 +12,13 @@ import {
   requireSession,
   Unauthenticated
 } from "@friday-friday/better-auth"
-import { err, ok } from "@friday-friday/core"
+import {
+  err,
+  Forbidden as CoreForbidden,
+  ok,
+  type TaggedError,
+  Unauthenticated as CoreUnauthenticated
+} from "@friday-friday/core"
 import { betterAuth } from "better-auth"
 import { memoryAdapter } from "better-auth/adapters/memory"
 import { APIError } from "better-auth/api"
@@ -129,6 +135,54 @@ describe("fromAuthTuple (client lane)", () => {
     const r = fromAuthTuple({ data: null, error: null })
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.error._tag).toBe("Unauthenticated")
+  })
+})
+
+describe("fixed vocabulary (ADR-0005): core's guards recognise what better-auth produces", () => {
+  const errorOf = <E>(r: { ok: true } | { ok: false; error: E }): E | undefined => (r.ok ? undefined : r.error)
+  const session = (role: string) => ({ session: {}, user: { id: "u1", role } })
+
+  it.each(
+    [
+      [
+        "authCall 401",
+        async () => errorOf(await authCall(async () => Promise.reject(apiError("m", "UNAUTHORIZED", "X"))))
+      ],
+      ["fromAuthTuple 401", () => errorOf(fromAuthTuple({ data: null, error: { status: 401, code: "X" } }))],
+      ["fromAuthTuple null data", () => errorOf(fromAuthTuple({ data: null, error: null }))],
+      ["requireSession null", async () =>
+        errorOf(
+          await requireSession({ api: { getSession: async () => null } }, new Headers())
+        )]
+    ] as const
+  )("%s -> core's Unauthenticated.is", async (_, produce) => {
+    const e: TaggedError<string> | undefined = await produce()
+    expect(CoreUnauthenticated.is(e)).toBe(true)
+  })
+
+  it.each(
+    [
+      [
+        "authCall 403",
+        async () => errorOf(await authCall(async () => Promise.reject(apiError("m", "FORBIDDEN", "X"))))
+      ],
+      ["fromAuthTuple 403", () => errorOf(fromAuthTuple({ data: null, error: { status: 403 } }))],
+      ["requireRole", () => errorOf(requireRole("admin")(session("editor")))]
+    ] as const
+  )("%s -> core's Forbidden.is", async (_, produce) => {
+    const e: TaggedError<string> | undefined = await produce()
+    expect(CoreForbidden.is(e)).toBe(true)
+  })
+
+  it("core's Forbidden.is reads the role requireRole names", () => {
+    const e = errorOf(requireRole("admin")(session("editor")))
+    expect(CoreForbidden.is(e) ? e.required : "not narrowed").toBe("admin")
+  })
+
+  it("the factories share core's tags, so either side's guard accepts the other's errors", () => {
+    expect([Forbidden.tag, Unauthenticated.tag]).toEqual(["Forbidden", "Unauthenticated"])
+    expect(Forbidden.is(CoreForbidden({ required: "admin" }))).toBe(true)
+    expect(Unauthenticated.is(CoreUnauthenticated({}))).toBe(true)
   })
 })
 

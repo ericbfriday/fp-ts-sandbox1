@@ -11,32 +11,42 @@
  * Normalization: both lanes collapse to one `AuthError` vocabulary (RFC 0001 §2):
  * 401 → `Unauthenticated`, 403 → `Forbidden`, any other status → `AuthApiError` (with `status`).
  * Better Auth's machine-readable `code` is kept on all three.
+ *
+ * `Unauthenticated` and `Forbidden` are fixed tags owned by core (ADR-0005): the factories here
+ * extend core's with one optional `code`, keep core's props and types, and share core's tag,
+ * so core's `is()` guards recognise every error this adapter produces. `AuthApiError` is an
+ * adapter tag.
  */
 import {
   type AsyncResult,
   err,
   type ErrorFactory,
+  Forbidden as CoreForbidden,
   ok,
   type Result,
   type TaggedError,
-  taggedError
+  taggedError,
+  Unauthenticated as CoreUnauthenticated
 } from "@friday-friday/core"
 import { tryAsync } from "@friday-friday/core/async"
 import { APIError, isAPIError } from "better-auth/api"
 
-/** `code` carries Better Auth's machine-readable error code when the 401 came from Better Auth. */
-export const Unauthenticated: ErrorFactory<"Unauthenticated", { code?: string }> = taggedError("Unauthenticated")<
-  { code?: string }
->()
+/**
+ * Core's `Unauthenticated` (no props) plus an optional `code`: Better Auth's machine-readable
+ * error code when the 401 came from Better Auth.
+ */
+export const Unauthenticated: ErrorFactory<"Unauthenticated", { readonly code?: string }> = /*#__PURE__*/ taggedError(
+  CoreUnauthenticated.tag
+)<{ readonly code?: string }>()
 export type Unauthenticated = ReturnType<typeof Unauthenticated>
 
 /**
- * `required` names the missing role when `requireRole` rejects; a 403 from Better Auth names
- * no role, so it carries Better Auth's `code` instead.
+ * Core's `Forbidden` (`required?`) plus an optional `code`. `required` names the missing role
+ * when `requireRole` rejects; a 403 from Better Auth names no role, so it carries Better Auth's
+ * `code` instead.
  */
-export const Forbidden: ErrorFactory<"Forbidden", { required?: string; code?: string }> = taggedError("Forbidden")<
-  { required?: string; code?: string }
->()
+export const Forbidden: ErrorFactory<"Forbidden", { readonly required?: string; readonly code?: string }> =
+  /*#__PURE__*/ taggedError(CoreForbidden.tag)<{ readonly required?: string; readonly code?: string }>()
 export type Forbidden = ReturnType<typeof Forbidden>
 
 export interface AuthApiError extends TaggedError<"AuthApiError"> {

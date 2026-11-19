@@ -1,5 +1,6 @@
 // ADR-0002 gate for @friday-friday/better-auth: built ESM output loads and runs under plain Node 24.
 import assert from "node:assert/strict"
+import * as core from "@friday-friday/core"
 import * as mod from "../dist/index.js"
 
 assert.deepEqual(Object.keys(mod).sort(), [
@@ -18,5 +19,9 @@ const session = { user: { role: "user, admin" } }
 assert.deepEqual(mod.requireRole("admin")(session), { ok: true, value: session })
 assert.equal(mod.requireRole("owner")(session).error._tag, "Forbidden")
 assert.equal(mod.fromAuthTuple({ data: null, error: { status: 401 } }).error._tag, "Unauthenticated")
+
+// ADR-0005: the built factories share core's fixed tags, so core's guards recognise them.
+assert.equal(core.Forbidden.is(mod.requireRole("owner")(session).error), true)
+assert.equal(core.Unauthenticated.is(mod.fromAuthTuple({ data: null, error: null }).error), true)
 
 process.stdout.write("better-auth dist smoke: ok\n")
