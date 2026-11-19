@@ -30,6 +30,7 @@
     "better-auth": "^1.7.25"
   },
   "scripts": {
-    "build": "tsdown"
+    "build": "tsdown",
+    "smoke": "node test/smoke.mjs"
   }
 }

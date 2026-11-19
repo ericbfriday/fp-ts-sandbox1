@@ -4,7 +4,7 @@
 // tRPC minor release and break consumers' builds.
 import assert from "node:assert/strict"
 import { readFile } from "node:fs/promises"
-import { errorFormatter, fromTRPC, resultMiddleware, sanitize } from "../dist/index.js"
+import * as mod from "../dist/index.js"
 
 const dts = await readFile(new URL("../dist/index.d.ts", import.meta.url), "utf8")
 const specifiers = [...dts.matchAll(/\bfrom\s+["']([^"']+)["']|\bimport\(\s*["']([^"']+)["']\s*\)/g)]
@@ -18,9 +18,23 @@ assert.deepEqual(
 )
 assert.equal(dts.includes("unstable-core-do-not-import"), false)
 
-assert.equal(typeof resultMiddleware({}), "function")
-assert.equal(typeof errorFormatter, "function")
-assert.equal(typeof fromTRPC, "function")
-assert.equal(typeof sanitize, "function")
+// Every value export exists (#43).
+assert.deepEqual(Object.keys(mod).sort(), [
+  "TRPCTransportError",
+  "err",
+  "errorFormatter",
+  "fromTRPC",
+  "ok",
+  "resultMiddleware",
+  "resultProcedure",
+  "sanitize",
+  "taggedError"
+])
+for (const value of Object.values(mod)) assert.equal(typeof value, "function")
+
+assert.equal(typeof mod.resultMiddleware({}), "function")
+const NotFound = mod.taggedError("NotFound")()
+assert.deepEqual(mod.sanitize(NotFound({ id: "1", cause: new Error("db") })), { _tag: "NotFound", id: "1" })
+assert.deepEqual(await mod.fromTRPC(Promise.resolve(1)), { ok: true, value: 1 })
 
 process.stdout.write("trpc dist smoke: ok\n")

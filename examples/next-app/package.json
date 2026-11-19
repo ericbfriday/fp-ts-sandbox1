@@ -8,6 +8,9 @@
   "engines": {
     "node": ">=24"
   },
+  "scripts": {
+    "build": "next build"
+  },
   "dependencies": {
     "@friday-friday/core": "workspace:*",
     "@friday-friday/next": "workspace:*",
