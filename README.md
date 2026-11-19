@@ -25,7 +25,7 @@ Functional-light TypeScript suite: a plain-object `Result` core with thin, frame
 | [`@friday-friday/env`](packages/env)                                            | ✅ implemented | `parseEnv`: Standard Schema over `process.env`/`import.meta.env`; ValidationFailure field errors, no throw at import time                                                                                                            |
 | [`@friday-friday/effect`](packages/effect)                                      | ✅ implemented | Effect bridge: `fromExit` (Fail -> Err, Die/Interrupt -> Panic), `runResult` (failures as data), `toEffect`; stable modules only                                                                                                     |
 | [`tooling/codemods`](tooling/codemods) + [`docs/recipes`](docs/recipes/orpc.md) | ✅ implemented | neverthrow import rewriter (internal; flags method calls for REVIEW) + oRPC v2 pairing recipe (`llms.txt` shipped at the repo root)                                                                                                  |
-| [`tooling/eslint-plugin`](tooling/eslint-plugin)                                | ✅ implemented | must-use-result, no-try-around-redirect, no-instanceof-tagged-error (enforced repo-wide)                                                                                                                                             |
+| [`tooling/eslint-plugin`](tooling/eslint-plugin)                                | ✅ implemented | must-use-result, no-try-around-redirect, no-instanceof-tagged-error (enforced repo-wide; publish-ready, peers `eslint` + `typescript-eslint`)                                                                                        |
 
 ## Documentation map
 

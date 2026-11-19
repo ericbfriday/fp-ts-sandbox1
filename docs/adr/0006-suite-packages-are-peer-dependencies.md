@@ -16,4 +16,4 @@ Every package that imports another suite package lists it under `peerDependencie
 
 - An app lists `@friday-friday/core` (and `@friday-friday/schema` when an adapter needs it) itself. pnpm and npm 7+ install missing peers by default.
 - Code outside core must recognise a Panic with `isPanic`, never `instanceof Panic`. Tests may still use `instanceof` where they assert the class.
-- `tooling/eslint-plugin` and `tooling/codemods` are unaffected. The plugin keeps core as a dev-only `workspace:*` link and is never packed.
+- `tooling/eslint-plugin` and `tooling/codemods` are unaffected. The plugin keeps core as a dev-only `workspace:*` link: its rules match type NAMES, so its published artifact imports no suite package (#106 made it publish-ready; its peers are `eslint` and `typescript-eslint`).
