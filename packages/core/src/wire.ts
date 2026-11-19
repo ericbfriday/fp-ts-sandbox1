@@ -5,7 +5,7 @@
  * One deep module at the seam every adapter (next, hono, trpc, http) crosses. Its interface is
  * four functions and a constant; the rules sit behind it, so a fix lands here once:
  *
- * - `sanitize(e, o?)`          JSON-safe projection `{ _tag, message?, ...safeProps }` (tRPC `data.fl`)
+ * - `sanitize(e, o?)`          JSON-safe projection `{ _tag, message?, ...safeProps }` (tRPC `data.friday_friday`)
  * - `toProblem(e, s?, o?)`     RFC 9457 body; `s` = status | status map | RFC §6 defaults; a tag
  *                              with no status is masked as `InternalDefect` (`o.strict`: map only)
  * - `fromWire(body)`           problem body or sanitized error → tagged error (or `undefined`)
@@ -258,7 +258,7 @@ const tagOf = (b: Record<string, unknown>): string | undefined => {
 
 /**
  * Rebuild a tagged error from the wire. Accepts either shape this module emits:
- * - a sanitized error (`{ _tag, ...props }`, e.g. tRPC `data.fl`) — re-projected as is;
+ * - a sanitized error (`{ _tag, ...props }`, e.g. tRPC `data.friday_friday`) — re-projected as is;
  * - a problem body — `{ _tag: tag, message: detail, ...extension members, ...shadowed }`, with the
  *   transport members removed. With no `tag`, the inverse of the default status table applies
  *   (`404 → NotFound`, `403 → Forbidden`, `401 → Unauthenticated`, `409 → Conflict`,

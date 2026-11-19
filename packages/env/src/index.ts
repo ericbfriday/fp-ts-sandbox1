@@ -36,7 +36,7 @@
  *
  * **@t3-oss/env interop** (report: interop, don't compete): t3-env owns the *shape
  * definition* UX (client/server splitting, per-environment schema selection). Use
- * `parseEnv` inside a t3-env validator lambda when you want Result/fl field errors instead
+ * `parseEnv` inside a t3-env validator lambda when you want Result field errors instead
  * of t3-env's throw-on-first-error:
  * ```ts
  * server: { DATABASE_URL: z.string().url() },

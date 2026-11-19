@@ -260,7 +260,7 @@ describe("fromWire — parse-back (RFC-0001 §6 `tag` reconstruction key)", () =
     })
   })
 
-  it("accepts a sanitized error (tRPC data.fl) as well as a problem body", () => {
+  it("accepts a sanitized error (tRPC data.friday_friday) as well as a problem body", () => {
     const fl: unknown = JSON.parse(JSON.stringify(sanitize(Conflict({ field: "email", message: "taken" }))))
     expect(fromWire(fl)).toStrictEqual({ _tag: "Conflict", field: "email", message: "taken" })
   })
