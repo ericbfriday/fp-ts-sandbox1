@@ -9,7 +9,14 @@
  *
  * No mock: `redirect()` is the REAL next/navigation sentinel, recognised by its `digest`.
  */
-import { err, ok } from "@friday-friday/core"
+import {
+  Conflict,
+  err,
+  Forbidden as CoreForbidden,
+  NotFound,
+  ok,
+  Unauthenticated as CoreUnauthenticated
+} from "@friday-friday/core"
 import { toDefect } from "@friday-friday/core/wire"
 import { toValidationFailure } from "@friday-friday/schema"
 import { describe, expect, it } from "vitest"
@@ -19,7 +26,8 @@ import { describe, expect, it } from "vitest"
 import { GET } from "../src/app/api/profile/route"
 import { Forbidden, updateProfile } from "../src/app/profile/actions"
 import { formErrorsOf } from "../src/app/profile/form-errors"
-import { Conflict, getProfile, NotFound } from "../src/lib/profiles"
+import { getProfile } from "../src/lib/profiles"
+import { Unauthenticated } from "../src/lib/session"
 
 const formData = (overrides: Record<string, string> = {}): FormData => {
   const fd = new FormData()
@@ -101,7 +109,7 @@ describe("route handler: toResponse problem+json", () => {
     void title
     void status
     void detail
-    expect({ _tag: tag, ...safeProps }).toEqual(NotFound({ id: "ghost" }))
+    expect({ _tag: tag, ...safeProps }).toEqual(NotFound({ resource: "profile", id: "ghost" }))
   })
 
   it("getProfile itself is plain-data Result (JSON round-trip wire contract)", async () => {
@@ -136,7 +144,7 @@ describe("form errors (what profile-form renders)", () => {
   it("every non-validation error renders a human sentence, never [object Object]", () => {
     const states = [
       err(Forbidden({ action: "updateProfile" })),
-      err(NotFound({ id: "u_1" })),
+      err(NotFound({ resource: "profile", id: "u_1" })),
       err(Conflict({ field: "displayName" })),
       err(toDefect(new Error("db down")))
     ]
@@ -146,5 +154,23 @@ describe("form errors (what profile-form renders)", () => {
       expect(form).toMatch(/^[A-Z][^{}]+\.$/)
       expect(form).not.toContain("[object")
     }
+  })
+})
+
+describe("fixed vocabulary (ADR-0005, #91)", () => {
+  it("the store fails with core's NotFound, naming the resource", async () => {
+    const r = await getProfile("ghost")
+    expect(r).toEqual(err(NotFound({ resource: "profile", id: "ghost" })))
+  })
+
+  it("extensions of fixed tags add only optional props, so core's guards narrow them soundly", () => {
+    // Compiles only while every prop is optional (pnpm run check typechecks this file).
+    const forbidden: CoreForbidden = Forbidden({})
+    const unauthenticated: CoreUnauthenticated = Unauthenticated({})
+    expect(Forbidden.tag).toBe(CoreForbidden.tag)
+    expect(Unauthenticated.tag).toBe(CoreUnauthenticated.tag)
+    expect(CoreForbidden.is(Forbidden({ action: "updateProfile" }))).toBe(true)
+    expect(CoreUnauthenticated.is(Unauthenticated({ where: "updateProfile" }))).toBe(true)
+    expect([forbidden, unauthenticated].map((e) => e._tag)).toEqual(["Forbidden", "Unauthenticated"])
   })
 })

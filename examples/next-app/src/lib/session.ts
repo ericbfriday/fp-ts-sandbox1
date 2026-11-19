@@ -1,12 +1,13 @@
 /**
- * Fake session guard (a real app would read cookies via better-auth). Same AuthError
- * vocabulary as `@friday-friday/better-auth` so the pattern transfers 1:1.
+ * Fake session guard (a real app would read cookies via better-auth). Same fixed tag as
+ * `@friday-friday/better-auth` (core's `Unauthenticated`, ADR-0005) so the pattern transfers 1:1.
  */
 import { err, type ErrorFactory, type Result, taggedError } from "@friday-friday/core"
 
-export const Unauthenticated: ErrorFactory<"Unauthenticated", { readonly where: string }> = taggedError(
+/** Extension of core's `Unauthenticated` (ADR-0005): adds only an OPTIONAL `where?`. */
+export const Unauthenticated: ErrorFactory<"Unauthenticated", { readonly where?: string }> = taggedError(
   "Unauthenticated"
-)<{ readonly where: string }>()
+)<{ readonly where?: string }>()
 export type Unauthenticated = ReturnType<typeof Unauthenticated>
 
 export interface Session {
