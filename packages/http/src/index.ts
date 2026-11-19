@@ -4,15 +4,17 @@
  * `fetchResult(url, { schema, signal, timeoutMs, retries })` returns
  * `AsyncResult<T, HttpError | NetworkError | Timeout | ValidationFailure>`.
  *
- * Round-trip contract (lossless with `@friday-friday/next`'s `toResponse` and
- * `@friday-friday/hono`'s `problem`): a non-2xx response whose body is
- * `application/problem+json` (RFC 9457) carries the original error `_tag` in the
- * `tag` member; `HttpError` embeds the raw problem object and `reconstruct()`
- * rebuilds the plain tagged error from it — tagged errors are plain data, so the
- * rebuilt object deep-equals the one the server failed with.
+ * Round-trip contract: a non-2xx `application/problem+json` (RFC 9457) body is kept raw on
+ * `HttpError.problem`, and `reconstruct()` rebuilds the server's tagged error from it through
+ * core's wire parse-back (`@friday-friday/core/wire` `fromWire`, RFC-0001 §6), the same module
+ * every producer builds the body with, so the round-trip is lossless by construction.
+ *
+ * Abort semantics follow core (IDEA §4.3, `/async` module doc): a user abort rejects with `Panic`
+ * and is never retried; `Timeout` means the `timeoutMs` timer fired, nothing else.
  */
-import { type AsyncResult, err, type ErrorFactory, ok, type Result, taggedError } from "@friday-friday/core"
+import { type AsyncResult, err, type ErrorFactory, ok, type Result, taggedError, toPanic } from "@friday-friday/core"
 import { Timeout as timeoutFactory } from "@friday-friday/core/async"
+import { fromWire, type WireError } from "@friday-friday/core/wire"
 
 // `Timeout` in core/async is a merged value+interface name; derive the tagged-error TYPE from the
 // value so FetchError carries the Err payload shape, not the options interface.
@@ -44,75 +46,81 @@ export type HttpError = ReturnType<typeof HttpError>
 export type FetchError = HttpError | NetworkError | TimeoutError | ValidationFailure
 
 /**
- * Rebuild the server's tagged error from a problem+json body: plain data in,
- * plain data out (`{ _tag: tag, ...safeProps }`). Returns null when the body
- * carries no `tag` (foreign problem or non-problem body).
+ * Rebuild the server's tagged error from a problem+json body by delegating to core's wire
+ * parse-back (`fromWire`, RFC-0001 §6; decision note 2026-11-17-core-wire-subpath), so the
+ * round-trip with every producer (next `toResponse`, hono `problem`) is lossless: `_tag` from
+ * `tag`, `message` from `detail`, safe props, and props that collided with reserved members
+ * (carried in `shadowed`). A problem without `tag` falls back to core's status inverse
+ * (`404 → NotFound`, …). Returns `null` when the body can't be attributed to a tag.
  */
-export function reconstruct(
-  problem: ProblemBody | undefined
-): { readonly _tag: string } & Record<string, unknown> | null {
-  if (problem === undefined || typeof problem.tag !== "string") return null
-  // Transport metadata (`type`/`title`/`status`/`detail`/`tag`) is stripped; the rest are error props.
-  const safeProps: Record<string, unknown> = { ...problem }
-  delete safeProps["type"]
-  delete safeProps["title"]
-  delete safeProps["status"]
-  delete safeProps["detail"]
-  delete safeProps["tag"]
-  return { _tag: problem.tag, ...safeProps }
+export function reconstruct(problem: ProblemBody | undefined): WireError | null {
+  return fromWire(problem) ?? null
 }
 
-// Structural probe of an untrusted JSON body; the casts below are the boundary where the
-// wire shape is verified field-by-field before it is trusted.
-// oxlint-disable-next-line no-unsafe-type-assertion
-const asRecord = (body: unknown): Record<string, unknown> =>
-  // oxlint-disable-next-line no-unsafe-type-assertion -- boundary probe: fields verified immediately below
-  typeof body === "object" && body !== null && !Array.isArray(body) ? (body as Record<string, unknown>) : {}
-const isProblemBody = (body: unknown): body is ProblemBody => {
-  const b = asRecord(body)
-  return typeof b["type"] === "string" || typeof b["title"] === "string" || typeof b["tag"] === "string"
-}
+/** Structural probe of an untrusted JSON body (no cast: `Reflect.get` reads any object). */
+const isProblemBody = (body: unknown): body is ProblemBody =>
+  typeof body === "object" && body !== null &&
+  ["type", "title", "tag"].some((k) => typeof Reflect.get(body, k) === "string")
 
 export interface FetchOptions {
   /** Standard Schema validated against a 2xx JSON body (via `@friday-friday/schema`). */
   readonly schema?: unknown
-  /** Forwarded to `fetch`; combined with `timeoutMs` via `AbortSignal.any` where available. */
+  /**
+   * Forwarded to `fetch` (combined with `timeoutMs` via `AbortSignal.any`). A user abort is a
+   * defect, as everywhere in core (`tryAsync`, `/async` `timeout`): the promise rejects with
+   * `Panic(signal.reason)`, wherever the abort lands (before the request, in flight, while the
+   * body is read, during a retry backoff), and it is never retried.
+   */
   readonly signal?: AbortSignal
-  /** Whole-request budget; expiry surfaces as `Err(Timeout{ms})` (core's convention). */
+  /** Per-attempt budget; only when this timer fires is the failure `Err(Timeout{ms})` (core's convention). */
   readonly timeoutMs?: number
-  /** Retry attempts for transport failures (NetworkError/Timeout); NOT for 4xx/5xx responses. */
+  /** Retry attempts for transport failures (NetworkError/Timeout); NOT for 4xx/5xx responses or aborts. */
   readonly retries?: number
 }
 
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+/** Backoff; a user abort cuts it short with `Panic(abort reason)` (IDEA §4.3, core `/async`). */
+const sleep = (ms: number, signal: AbortSignal | undefined): Promise<void> =>
+  new Promise((resolve, reject) => {
+    const timer = setTimeout(resolve, ms)
+    signal?.addEventListener("abort", () => {
+      clearTimeout(timer)
+      reject(toPanic(signal.reason))
+    }, { once: true })
+  })
 
 /**
- * `fetch` as an AsyncResult. Transport errors → `Err(NetworkError)`; non-2xx →
- * `Err(HttpError)` with the parsed problem body (if any); 2xx → schema decode
- * (`Err(ValidationFailure)` on mismatch) then `Ok(json)`.
+ * `fetch` as an AsyncResult. Transport errors → `Err(NetworkError)`; the `timeoutMs` timer →
+ * `Err(Timeout{ms})`; non-2xx → `Err(HttpError)` with the parsed problem body (if any; rebuild
+ * the server's tagged error with `reconstruct`); 204/205 → `Ok(undefined)`; other 2xx → schema
+ * decode (`Err(ValidationFailure)` on mismatch) then `Ok(json)`, where an empty body is
+ * `undefined`. A user abort rejects with `Panic` (see `FetchOptions.signal`).
  */
 export function fetchResult<T>(url: string, opts?: FetchOptions): AsyncResult<T, FetchError> {
   return (async () => {
-    const attempts = (opts?.retries ?? 0) + 1
-    let last: Result<T, FetchError> | null = null
-    for (let attempt = 0; attempt < attempts; attempt++) {
+    for (let attempt = 0;; attempt++) {
       const r = await attempt_<T>(url, opts)
-      // Retry only transport-shaped failures; HTTP status failures are terminal.
-      const transport = !r.ok && (r.error._tag === "NetworkError" || r.error._tag === "Timeout")
-      if (r.ok || !transport) return r
-      last = r
-      if (attempt < attempts - 1) await sleep(50 * 2 ** attempt)
+      // Retry only transport-shaped failures; HTTP status failures are terminal, aborts throw.
+      if (r.ok || (r.error._tag !== "NetworkError" && r.error._tag !== "Timeout") || attempt >= (opts?.retries ?? 0)) {
+        return r
+      }
+      await sleep(50 * 2 ** attempt, opts?.signal)
     }
-    // oxlint-disable-next-line no-unsafe-type-assertion -- attempts >= 1 guarantees last is set
-    return last as Result<T, FetchError>
   })()
 }
 
+const reasonOf = (cause: unknown): string => cause instanceof Error ? cause.message : String(cause)
+
 const attempt_ = async <T>(url: string, opts: FetchOptions | undefined): Promise<Result<T, FetchError>> => {
-  let signal = opts?.signal
-  if (opts?.timeoutMs !== undefined) {
-    const budget = AbortSignal.timeout(opts.timeoutMs)
-    signal = signal === undefined ? budget : AbortSignal.any([signal, budget])
+  const user = opts?.signal
+  const ms = opts?.timeoutMs
+  const budget = ms === undefined ? undefined : AbortSignal.timeout(ms)
+  const signal = budget === undefined ? user : user === undefined ? budget : AbortSignal.any([user, budget])
+  // Which signal fired decides what a failed fetch/body read means: the user's → defect (thrown
+  // first, so a user abort is never reported as Timeout); the timer's → Timeout; neither → undefined.
+  // An already-aborted signal lands here too: `fetch` rejects before sending anything.
+  const aborted = (): Result<never, TimeoutError> | undefined => {
+    if (user?.aborted) throw toPanic(user.reason)
+    return budget?.aborted === true && ms !== undefined ? err(timeoutFactory({ ms })) : undefined
   }
   let res: Response
   try {
@@ -123,17 +131,22 @@ const attempt_ = async <T>(url: string, opts: FetchOptions | undefined): Promise
         : { signal, headers: { accept: "application/json" } }
     )
   } catch (cause) {
-    // Distinguish timeout-budget expiry from other transport failures.
-    // oxlint-disable-next-line no-unsafe-type-assertion -- signal is defined whenever timeoutMs is
-    if (opts?.timeoutMs !== undefined && (signal as AbortSignal).aborted) {
-      return err(timeoutFactory({ ms: opts.timeoutMs }))
-    }
-    return err(NetworkError({ reason: cause instanceof Error ? cause.message : String(cause) }))
+    return aborted() ?? err(NetworkError({ reason: reasonOf(cause) }))
+  }
+  // RFC 9110 §15.3.5/§15.3.6: 204 and 205 carry no content, so there is nothing to decode.
+  // oxlint-disable-next-line no-unsafe-type-assertion -- no content: T is the caller's contract (e.g. `fetchResult<void>`)
+  if (res.status === 204 || res.status === 205) return ok(undefined as T)
+  let text: string
+  try {
+    text = await res.text()
+  } catch (cause) {
+    return aborted() ??
+      (res.ok ? err(NetworkError({ reason: reasonOf(cause) })) : err(HttpError({ status: res.status })))
   }
   if (!res.ok) {
     let problem: ProblemBody | undefined
     try {
-      const body: unknown = await res.json()
+      const body: unknown = JSON.parse(text)
       if (isProblemBody(body)) problem = body
     } catch {
       // non-JSON body: HttpError without problem details
@@ -144,11 +157,10 @@ const attempt_ = async <T>(url: string, opts: FetchOptions | undefined): Promise
   }
   let json: unknown
   try {
-    json = await res.json()
+    // An empty body is `undefined`: Ok as is, or decoded by the schema like any other body.
+    json = text === "" ? undefined : JSON.parse(text)
   } catch (cause) {
-    return err(
-      NetworkError({ reason: cause instanceof Error ? `invalid JSON body: ${cause.message}` : "invalid JSON body" })
-    )
+    return err(NetworkError({ reason: `invalid JSON body: ${reasonOf(cause)}` }))
   }
   if (opts?.schema !== undefined) {
     // oxlint-disable-next-line no-unsafe-type-assertion -- schema is validated as StandardSchemaV1 at the boundary; keep the adapter generic
