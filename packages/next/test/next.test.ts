@@ -3,7 +3,8 @@
  *
  * `next/navigation` is mocked with sentinel semantics mirroring the real helpers:
  * `unstable_rethrow` rethrows recognized sentinels (digest-bearing control-flow errors);
- * `notFound`/`redirect`/`forbidden` throw their sentinels.
+ * `notFound`/`redirect`/`forbidden` throw their sentinels. The loaders are tested against the
+ * real module in loaders.test.ts.
  *
  * The sentinel fixtures use deliberate narrowing assertions (digest-bearing errors with known
  * shapes) \u2014 hence the file-scoped assertion disable.
@@ -24,7 +25,7 @@ const notFoundSentinel = (): Error & { digest: string } =>
 const redirectSentinel = (url: string): Error & { digest: string } =>
   Object.assign(new Error(`NEXT_REDIRECT;replace;${url}`), { digest: `NEXT_REDIRECT;replace;${url}` })
 
-import { action, nextRethrow, orNotFound, orRedirect, toResponse, tryAsync, trySync } from "@friday-friday/next"
+import { action, nextRethrow, toResponse, tryAsync, trySync } from "@friday-friday/next"
 import { unstable_rethrow } from "next/navigation"
 
 vi.mock("next/navigation", () => {
@@ -45,8 +46,6 @@ vi.mock("next/navigation", () => {
     })
   }
 })
-
-const Unauthenticated = taggedError("Unauthenticated")<{ reason: string }>()
 
 beforeEach(() => {
   vi.mocked(unstable_rethrow).mockClear()
@@ -104,18 +103,6 @@ describe("tryAsync / trySync (sentinels never swallowed)", () => {
       throw "boom"
     }, { catch: () => NotFound({ id: "2" }) })
     expect(mapped).toEqual(err(NotFound({ id: "2" })))
-  })
-})
-
-describe("loaders", () => {
-  it("orNotFound calls notFound() only for the NotFound tag", () => {
-    expect(() => orNotFound(err(NotFound({ id: "1" })))).toThrow(/NEXT_NOT_FOUND/)
-    expect(orNotFound(ok("fine"))).toEqual(ok("fine"))
-  })
-
-  it("orRedirect redirects only for the Unauthenticated tag", () => {
-    expect(() => orRedirect(err(Unauthenticated({ reason: "anon" })), "/login")).toThrow(/NEXT_REDIRECT/)
-    expect(orRedirect(ok("fine"), "/login")).toEqual(ok("fine"))
   })
 })
 
