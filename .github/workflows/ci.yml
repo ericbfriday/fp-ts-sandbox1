@@ -1,4 +1,6 @@
-# CI per ADR-0004: install (frozen) -> lint, typecheck matrix, test, size-limit.
+# CI per ADR-0004: install (frozen) -> lint (packages + examples), typecheck matrix (root +
+# examples/next-app incl. its tests), test, then build -> size-limit -> dist smokes (ADR-0002;
+# every package but next) -> `next build` of the example. `pnpm run ci` runs the same locally.
 # Publishing is intentionally absent: never publish to npm from CI without Eric.
 name: CI
 
@@ -90,3 +92,7 @@ jobs:
       - run: pnpm run size
       # ADR-0002 gate: the built dist output must run under plain Node 24.
       - run: pnpm run smoke
+      # Phase 1 exit criterion: the example app builds under Next (offline; resolves package dist).
+      - run: pnpm run build:examples
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
