@@ -2,7 +2,7 @@
   "name": "@friday-friday/trpc",
   "version": "0.0.0",
   "private": true,
-  "description": "tRPC v11 adapter: dual-channel Results via resultMiddleware + errorFormatter (fl member) + fromTRPC reconstruction (Design Report section 5.3)",
+  "description": "tRPC v11 adapter: dual-channel Results via resultMiddleware + errorFormatter (data.friday_friday member via core /wire) + fromTRPC reconstruction (Design Report section 5.3)",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
@@ -21,15 +21,17 @@
     "dist"
   ],
   "dependencies": {
-    "@friday-friday/core": "workspace:*"
+    "@friday-friday/core": "workspace:*",
+    "@friday-friday/schema": "workspace:*"
   },
   "peerDependencies": {
-    "@trpc/server": "^11",
-    "@trpc/client": "^11"
+    "@trpc/client": "^11",
+    "@trpc/server": "^11"
   },
   "devDependencies": {
     "@trpc/client": "^11.28.3",
     "@trpc/server": "^11.28.3",
+    "valibot": "^1.5.0",
     "zod": "^4.6.7"
   },
   "scripts": {

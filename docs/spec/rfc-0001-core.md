@@ -83,7 +83,7 @@ Pure, pipeable, **dual** (data-first/data-last via `arguments.length`), separate
 | Next.js Server Action | returned Result via `useActionState` (`{ ok: null }` idle state); sentinels rethrown, never swallowed |
 | Next.js Route Handler | `Response.json(value)` or `application/problem+json` via `toResponse` |
 | TanStack Query | thrown plain `E` in `queryFn` (`Ok(undefined)` → `null`) |
-| tRPC | `TRPCError` on the error channel, `data.fl = sanitize(e)` via `errorFormatter` |
+| tRPC | `TRPCError` on the error channel, `data.friday_friday = sanitize(e)` via `errorFormatter()` (validation: schema `ValidationFailure`; `INTERNAL_SERVER_ERROR`: the `InternalDefect` envelope) |
 | TanStack Start | returned as data (`Err(ValidationFailure)` with structured issues); only defects throw |
 | Better Auth | normalized `Result<T, AuthError>` from throw (`isAPIError`) and `{ data, error }` tuple |
 
@@ -104,3 +104,10 @@ Pure, pipeable, **dual** (data-first/data-last via `arguments.length`), separate
 ## 7. Naming
 
 Code uses `@friday-friday/*` (`@friday-friday/core`, `/schema`, `/next`, …). The report's `@fl/*` and "Plainfp" remain placeholders; run `npm view` before any publish.
+
+Names the suite puts on someone else's wire or telemetry use the `friday_friday` namespace (snake_case, so it is a valid key and attribute segment everywhere), never the report's `fl` placeholder:
+
+| Where | Name |
+|---|---|
+| tRPC error shape member (`errorFormatter`) | `data.friday_friday` |
+| OpenTelemetry attribute (`traced`) | `friday_friday.error.tag` |

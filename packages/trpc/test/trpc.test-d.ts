@@ -4,7 +4,8 @@
  * and the dual-channel procedure shapes.
  */
 import { type Result, taggedError } from "@friday-friday/core"
-import { type FlMeta, fromTRPC, resultMiddleware, type TRPCTransportError } from "@friday-friday/trpc"
+import type { WireError } from "@friday-friday/core/wire"
+import { errorFormatter, fromTRPC, resultMiddleware, type TRPCTransportError } from "@friday-friday/trpc"
 import { type AnyTRPCMiddlewareFunction, initTRPC, type TRPCError } from "@trpc/server"
 import { describe, expectTypeOf, it } from "vitest"
 
@@ -45,10 +46,18 @@ describe("fromTRPC declared-error contract", () => {
   })
 })
 
-describe("fl metadata shapes", () => {
-  it("FlMeta carries the tag + free props", () => {
-    const fl: FlMeta = { _tag: "NotFound", id: "x", tag: "NotFound" }
-    expectTypeOf(fl.tag).toEqualTypeOf<string | undefined>()
+describe("errorFormatter shape (data.friday_friday, RFC-0001 §7 naming)", () => {
+  it("adds friday_friday: WireError | null to tRPC's shape and keeps the shape's own members", () => {
+    const format = errorFormatter({ report: () => undefined })
+    type Shape = ReturnType<typeof format<{ message: string; code: number; data: { code: string } }>>
+    expectTypeOf<Shape["data"]["friday_friday"]>().toEqualTypeOf<WireError | null>()
+    expectTypeOf<Shape["data"]["code"]>().toEqualTypeOf<string>()
+    expectTypeOf<Shape["code"]>().toEqualTypeOf<number>()
+  })
+
+  it("plugs into initTRPC.create", () => {
+    const t = initTRPC.create({ errorFormatter: errorFormatter() })
+    expectTypeOf(t.router({})).not.toBeAny()
   })
 })
 
