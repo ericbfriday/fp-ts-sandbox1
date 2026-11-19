@@ -17,9 +17,6 @@
  * procedure, so the client-side error type is declared (via `fromTRPC<T, E>`), not inferred.
  * oRPC v2's per-procedure `.errors()` is genuinely better here.
  */
-import { type TRPC_ERROR_CODE_KEY, TRPCError } from "@trpc/server"
-// types-only import (peer policy: types-only deps allowed) - MiddlewareFunction is branded
-// internally, so the boundary cast below is unavoidable outside tRPC's own types.
 import {
   type AsyncResult,
   err,
@@ -29,7 +26,19 @@ import {
   type TaggedError,
   taggedError
 } from "@friday-friday/core"
-import type { AnyMiddlewareFunction } from "@trpc/server/unstable-core-do-not-import"
+// Stable root entry point only (#57): every tRPC type here comes from `@trpc/server` and exists
+// there on the oldest peer (11.0.0). Never import `@trpc/server/unstable-core-do-not-import`:
+// it lands in dist/index.d.ts and a tRPC minor release could break consumers' builds.
+// `AnyTRPCMiddlewareFunction` is the root name since 11.0.0. The middleware marker is branded
+// internally, so the boundary cast in `resultMiddleware` stays unavoidable outside tRPC's types.
+import { type AnyTRPCMiddlewareFunction, TRPCError } from "@trpc/server"
+
+/**
+ * tRPC error code union, derived from the stable root `TRPCError` class. `TRPC_ERROR_CODE_KEY`
+ * is only a root export in later 11.x releases (11.0.0 has it under unstable-core), so naming
+ * it would break the `^11` peer floor (#57).
+ */
+type TRPCErrorCode = TRPCError["code"]
 
 export const TRPCTransportError: ErrorFactory<
   "TRPCTransportError",
@@ -158,20 +167,20 @@ export type NextOut = NextOkOut | NextErrOut
  * output-type metadata stays the handler's declared return (the Result), which is the
  * report's documented "declared, not inferred" design limit anyway.
  */
-export function resultMiddleware(map: { readonly [tag: string]: TRPC_ERROR_CODE_KEY }): AnyMiddlewareFunction {
+export function resultMiddleware(map: { readonly [tag: string]: TRPCErrorCode }): AnyTRPCMiddlewareFunction {
   const mw = async ({ next }: { next: () => Promise<NextOut> }): Promise<NextOut> => {
     const out = await next()
     if (!out.ok) return out
     const r = asResult(out.data)
     if (r === null) return out
     if (!r.ok) {
-      const code = (map as Record<string, TRPC_ERROR_CODE_KEY>)[r.error._tag] ?? "INTERNAL_SERVER_ERROR"
+      const code = (map as Record<string, TRPCErrorCode>)[r.error._tag] ?? "INTERNAL_SERVER_ERROR"
       throw new TRPCError({ code, cause: r.error })
     }
     return { ok: true as const, marker: "middleware" as const, data: r.value }
   }
   // oxlint-disable-next-line no-unsafe-type-assertion -- tRPC brands the middleware marker; runtime contract proven in wire tests
-  return mw as unknown as AnyMiddlewareFunction
+  return mw as unknown as AnyTRPCMiddlewareFunction
 }
 
 /**

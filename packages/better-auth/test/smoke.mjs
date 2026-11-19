@@ -17,6 +17,6 @@ for (const value of Object.values(mod)) assert.equal(typeof value, "function")
 const session = { user: { role: "user, admin" } }
 assert.deepEqual(mod.requireRole("admin")(session), { ok: true, value: session })
 assert.equal(mod.requireRole("owner")(session).error._tag, "Forbidden")
-assert.equal(mod.fromAuthTuple({ data: null, error: { status: 401 } }).error.status, 401)
+assert.equal(mod.fromAuthTuple({ data: null, error: { status: 401 } }).error._tag, "Unauthenticated")
 
 process.stdout.write("better-auth dist smoke: ok\n")
