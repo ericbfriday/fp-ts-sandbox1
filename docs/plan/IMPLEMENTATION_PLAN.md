@@ -116,7 +116,7 @@ Exit criteria (from report §9): size budgets green, TS 6/7/7.1 matrix green, `e
 - **`@friday-friday/effect`** ✅ (PR #28, merged; #42 fix: fromExit — Fail -> Err, Die/Interrupt -> Panic via core `toPanic` (no double wrap); precedence Die > Interrupt > Fail is the bridge's own choice and NOT Effect's ordering — `Cause.squash` returns the first Fail ahead of a Die (pinned in a test); runResult — failures as data, signal forwarded via runPromiseExit, abort -> Panic(abort reason) like core /async; toEffect sync+async, a rejecting AsyncResult -> Effect.die (Effect.promise + flatMap; no ErrCarrier); only @stability-stable members of the `effect` root entry, gated by test/stability.test.ts; peer ^4.0.0, devDep exact 4.0.6 for the supply-chain window)
 - **`llms.txt`** ✅ (root; LLM-consumable suite summary)
 - **`docs/recipes/orpc.md`** ✅ (oRPC v2 pairing recipe: data-channel default, error-channel via sanitize/reconstruct, resultHandler reuse; first-class-adapter scope notes)
-- **`tooling/codemods/neverthrow-to-core.mjs`** ✅ (mechanical import rewrite + 1:1 identifier map; unmappable APIs flagged for review — 3 tests)
+- **`tooling/codemods/neverthrow-imports.mjs`** ✅ (#107, #44 decision 3: an honest import rewriter, internal only. Rewrites 1:1 imports (merged duplicates; `Result`/`AsyncResult`/`Ok`/`Err` type-only), keeps unmapped names imported from neverthrow, and puts a `// REVIEW(neverthrow):` comment above every method call, static helper, leftover use and `okAsync`/`errAsync` call site. Method chains are not rewritten. Exact-output fixture tests, plus a `tsc` run proving an imports-only migration typechecks against core. Replaces `neverthrow-to-core.mjs`, whose output didn't typecheck.)
 
 ## Guardrails (all phases)
 

@@ -36,7 +36,7 @@ export const notShipped: Readonly<Record<string, string>> = {
   "tooling/eslint-plugin":
     "exports ./src/index.ts with no build or `files`, and eslint/@typescript-eslint/utils are devDependencies; whether it ships is open, see docs/decisions/2026-11-19-tooling-not-shipped.md",
   "tooling/codemods":
-    "a plain script with no package.json, so nothing can pack it; whether it ships (after #44 item 3) is open, see docs/decisions/2026-11-19-tooling-not-shipped.md",
+    "a plain script with no package.json, so nothing can pack it; it stays internal (#44 decisions 3 and 8), see docs/decisions/2026-11-19-tooling-not-shipped.md",
   "tooling/gates": "repo-internal CI gates (plain dir, no package.json)",
   "tooling/type-budget": "repo-internal type-instantiation budget (plain dir, no package.json)"
 }
