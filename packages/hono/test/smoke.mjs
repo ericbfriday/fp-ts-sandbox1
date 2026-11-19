@@ -14,6 +14,7 @@ assert.equal(okRes.status, 200)
 assert.deepEqual(await okRes.json(), { id: 1 })
 const missing = await app.request("/missing")
 assert.equal(missing.status, 404)
+assert.equal(missing.headers.get("content-type"), "application/problem+json")
 assert.equal((await missing.json()).tag, "NotFound")
 
 process.stdout.write("hono dist smoke: ok\n")
