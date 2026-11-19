@@ -42,6 +42,38 @@
     "gzip": true
   },
   {
+    "name": "@friday-friday/next \u2014 react-server root",
+    "path": "packages/next/dist/index.js",
+    "import": "*",
+    "limit": "2 kB",
+    "gzip": true,
+    "ignore": [
+      "next",
+      "react"
+    ]
+  },
+  {
+    "name": "@friday-friday/next \u2014 default-condition server-only stub",
+    "path": "packages/next/dist/server-only-stub.js",
+    "limit": "200 B",
+    "gzip": true,
+    "ignore": [
+      "next",
+      "react"
+    ]
+  },
+  {
+    "name": "@friday-friday/next \u2014 /client subpath",
+    "path": "packages/next/dist/client.js",
+    "import": "*",
+    "limit": "2 kB",
+    "gzip": true,
+    "ignore": [
+      "next",
+      "react"
+    ]
+  },
+  {
     "name": "@friday-friday/better-auth",
     "path": "packages/better-auth/dist/index.js",
     "import": "*",
