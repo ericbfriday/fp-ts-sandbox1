@@ -43,6 +43,7 @@ Rules:
 - The factory owns `_tag` (#60): a `_tag` prop is a type error (`_tag?: never`, which also catches one spread in) and is overwritten at runtime, so `is()` and `matchTag` can't be fooled by a stray prop.
 - `matchTag` on a runtime tag with no own handler (e.g. rebuilt from the wire) is a defect: `Panic("matchTag: no handler for _tag <tag>")`.
 - `toThrowable(e)` produces a real `Error` (`name = _tag`, data attached, never a `cause`: React's dev serializer would send it to the browser, #53) for Error Boundaries / `catchError` paths. Only a throw in the browser keeps `data`; see docs/decisions/2026-11-19-next-client-thrown-only.md.
+- Value + type twin: every error is declared as `export const X: ErrorFactory<"X", P> = taggedError("X")<P>()` plus `export type X = ReturnType<typeof X>`, so one name is both the factory and the error type. Core follows it too: `/async` exports `Timeout` (factory and type); the `timeout()` signature is `TimeoutFn` (#64).
 - No Option type: `T | undefined` + `fromNullable(x, () => NotFound(...))`.
 
 ## 3. Defects and triage
@@ -61,7 +62,7 @@ function trySync<T, E>(fn: () => T, opts: Omit<TryOptions<E>, "signal">): Result
 
 Every lane (sync combinators, `/async`, `/gen`) converts through one exported, idempotent `toPanic(cause): Panic`: a foreign throw or rejection becomes `Panic` with the original as `cause`, and an existing `Panic` passes through as the same instance. Adapters and bridges reuse it after rethrowing their framework sentinels. A `Panic` has a short, bounded message that never prints the thrown value's data (a thrown config object must not leak its secrets into logs): a string as-is, other primitives via `String()`, an object by its string `_tag`/`message` only (`name` standing in for a missing message; a tagged error reads `Tag: message`, an `Error` its message), else `"Non-Error thrown"`; capped at 200 chars, the full value stays on `cause`. `toPanic` and the message are total: a value that throws when inspected (revoked Proxy, throwing getter) gives `"Unprintable thrown value"`.
 
-No global rethrow registry. Adapters export pre-bound variants (`@friday-friday/next`'s `tryAsync` calls `unstable_rethrow` first, walking `cause` to depth 5).
+No global rethrow registry. Adapters export pre-bound variants (`@friday-friday/next`'s `tryAsync` calls `unstable_rethrow` first, walking `cause` to depth 5). They export framework glue only, never re-exports of core's primitives (`ok`, `err`, `taggedError`, `toThrowable`) or of a vendor's namespaces (#44 decision 6, #64).
 
 ## 4. Combinators
 

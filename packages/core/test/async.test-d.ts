@@ -2,15 +2,7 @@
  * `/async` type tests (RFC-0001 §4).
  */
 import { type AsyncResult, err, ok, pipe, taggedError } from "@friday-friday/core"
-import {
-  andThenAsync,
-  mapAsync,
-  mapConcurrent,
-  retry,
-  timeout,
-  type TimeoutError,
-  tryAsync
-} from "@friday-friday/core/async"
+import { andThenAsync, mapAsync, mapConcurrent, retry, Timeout, timeout, tryAsync } from "@friday-friday/core/async"
 import { describe, expectTypeOf, test } from "vitest"
 
 describe("async types", () => {
@@ -32,9 +24,9 @@ describe("async types", () => {
     expectTypeOf(retry(attempt, { times: 3 })).toEqualTypeOf<AsyncResult<number, "nf">>()
   })
 
-  test("timeout unions E with TimeoutError", () => {
+  test("timeout unions E with Timeout", () => {
     const attempt = (): AsyncResult<number, "nf"> => Promise.resolve(err("nf"))
-    expectTypeOf(timeout(attempt, 100)).toEqualTypeOf<AsyncResult<number, "nf" | TimeoutError>>()
+    expectTypeOf(timeout(attempt, 100)).toEqualTypeOf<AsyncResult<number, "nf" | Timeout>>()
   })
 
   test("mapConcurrent returns the values array", () => {
@@ -49,5 +41,11 @@ describe("async types", () => {
       { catch: () => NotFound({ id: "1" }) }
     )
     expectTypeOf(r).toEqualTypeOf<AsyncResult<number, ReturnType<typeof NotFound>>>()
+  })
+
+  test("Timeout is a value + type twin: both name the error (RFC-0001 §2)", () => {
+    expectTypeOf(Timeout({ ms: 1 })).toEqualTypeOf<Timeout>()
+    expectTypeOf<Timeout["_tag"]>().toEqualTypeOf<"Timeout">()
+    expectTypeOf<Timeout["ms"]>().toEqualTypeOf<number>()
   })
 })

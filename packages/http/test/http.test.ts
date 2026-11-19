@@ -5,7 +5,7 @@
  * `toProblem`) and from core's golden bodies (#33), never from hand-copied fixtures (#30, #40).
  */
 import { ok, Panic, taggedError } from "@friday-friday/core"
-import { Timeout as timeoutFactory } from "@friday-friday/core/async"
+import { Timeout } from "@friday-friday/core/async"
 import { goldenProblems } from "@friday-friday/core/test/wire-golden"
 import { PROBLEM_CONTENT_TYPE, sanitize, toDefect, toProblem } from "@friday-friday/core/wire"
 import { fetchResult, reconstruct } from "@friday-friday/http"
@@ -218,17 +218,17 @@ describe("fetchResult", () => {
   it("timeoutMs budget -> Err(Timeout{ms})", async () => {
     const r = await fetchResult(`${base}/slow`, { timeoutMs: 60 })
     if (r.ok) throw new Error("expected Err")
-    expect(r.error).toEqual(timeoutFactory({ ms: 60 }))
+    expect(r.error).toEqual(Timeout({ ms: 60 }))
   })
 
   it("timeoutMs with a live user signal -> Err(Timeout{ms}) (only the timer fired)", async () => {
     const r = await fetchResult(`${base}/slow`, { timeoutMs: 60, signal: new AbortController().signal })
-    expect(r).toEqual({ ok: false, error: timeoutFactory({ ms: 60 }) })
+    expect(r).toEqual({ ok: false, error: Timeout({ ms: 60 }) })
   })
 
   it("timeoutMs expiring while the body is read -> Err(Timeout{ms})", async () => {
     const r = await fetchResult(`${base}/slow-body`, { timeoutMs: 100 })
-    expect(r).toEqual({ ok: false, error: timeoutFactory({ ms: 100 }) })
+    expect(r).toEqual({ ok: false, error: Timeout({ ms: 100 }) })
   })
 
   it("closed port -> Err(NetworkError); retries re-attempt then surface the transport error", async () => {

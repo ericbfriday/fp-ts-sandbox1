@@ -32,7 +32,7 @@
  * composition and c.json(undefined) (report trap 4) — the range admits rc installs but
  * rc behavior is NOT covered by testing; extend coverage before relying on it.
  */
-import { err, ok, type Result, type TaggedError } from "@friday-friday/core"
+import type { Result, TaggedError } from "@friday-friday/core"
 import { type Problem, PROBLEM_CONTENT_TYPE, toDefect, toProblem } from "@friday-friday/core/wire"
 import { parseAsync, type StandardSchemaV1 } from "@friday-friday/schema"
 import type { Context, Env, ErrorHandler, MiddlewareHandler, TypedResponse, ValidationTargets } from "hono"
@@ -143,6 +143,3 @@ export function onErrorHandler(opts?: OnErrorOptions): ErrorHandler {
     return send(c, toProblem(toDefect(thrown, opts?.report), 500))
   }
 }
-
-// Re-exported for ergonomic single-import handlers.
-export { err, ok }

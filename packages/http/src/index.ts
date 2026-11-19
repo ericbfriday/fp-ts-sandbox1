@@ -13,12 +13,8 @@
  * and is never retried; `Timeout` means the `timeoutMs` timer fired, nothing else.
  */
 import { type AsyncResult, err, type ErrorFactory, ok, type Result, taggedError, toPanic } from "@friday-friday/core"
-import { Timeout as timeoutFactory } from "@friday-friday/core/async"
+import { Timeout } from "@friday-friday/core/async"
 import { fromWire, type WireError } from "@friday-friday/core/wire"
-
-// `Timeout` in core/async is a merged value+interface name; derive the tagged-error TYPE from the
-// value so FetchError carries the Err payload shape, not the options interface.
-type TimeoutError = ReturnType<typeof timeoutFactory>
 import { parseAsync, type ValidationFailure } from "@friday-friday/schema"
 
 export const NetworkError: ErrorFactory<"NetworkError", { readonly reason: string }> = taggedError(
@@ -43,7 +39,7 @@ export const HttpError: ErrorFactory<"HttpError", { readonly status: number; rea
   )<{ readonly status: number; readonly problem?: ProblemBody }>()
 export type HttpError = ReturnType<typeof HttpError>
 
-export type FetchError = HttpError | NetworkError | TimeoutError | ValidationFailure
+export type FetchError = HttpError | NetworkError | Timeout | ValidationFailure
 
 /**
  * Rebuild the server's tagged error from a problem+json body by delegating to core's wire
@@ -118,9 +114,9 @@ const attempt_ = async <T>(url: string, opts: FetchOptions | undefined): Promise
   // Which signal fired decides what a failed fetch/body read means: the user's → defect (thrown
   // first, so a user abort is never reported as Timeout); the timer's → Timeout; neither → undefined.
   // An already-aborted signal lands here too: `fetch` rejects before sending anything.
-  const aborted = (): Result<never, TimeoutError> | undefined => {
+  const aborted = (): Result<never, Timeout> | undefined => {
     if (user?.aborted) throw toPanic(user.reason)
-    return budget?.aborted === true && ms !== undefined ? err(timeoutFactory({ ms })) : undefined
+    return budget?.aborted === true && ms !== undefined ? err(Timeout({ ms })) : undefined
   }
   let res: Response
   try {

@@ -25,10 +25,17 @@ const reactServer = process.argv[2] === "react-server"
 if (reactServer) {
   // The server graph: the root loads, and /client refuses to (client-only's react-server entry).
   const root = await import("../dist/index.js")
-  for (const name of ["action", "orNotFound", "orForbidden", "orRedirect", "toResponse", "tryAsync", "toThrowable"]) {
-    assert.equal(typeof root[name], "function", name)
-  }
-  assert.equal("orThrow" in root, false, "orThrow is client-only (#53)")
+  assert.deepEqual(Object.keys(root).sort(), [
+    "action",
+    "nextRethrow",
+    "orForbidden",
+    "orNotFound",
+    "orRedirect",
+    "toResponse",
+    "tryAsync",
+    "trySync"
+  ])
+  for (const value of Object.values(root)) assert.equal(typeof value, "function")
   await assert.rejects(import("../dist/client.js"), /cannot be imported from a Server Component/)
 } else {
   // 1. The guard survives the build: tsdown must keep the side-effect import (#53).

@@ -3,12 +3,12 @@ import assert from "node:assert/strict"
 import { Hono } from "hono"
 import * as mod from "../dist/index.js"
 
-assert.deepEqual(Object.keys(mod).sort(), ["err", "ok", "onErrorHandler", "problem", "respond", "sv"])
+assert.deepEqual(Object.keys(mod).sort(), ["onErrorHandler", "problem", "respond", "sv"])
 for (const value of Object.values(mod)) assert.equal(typeof value, "function")
 
 const app = new Hono()
-app.get("/ok", (c) => mod.respond(c, mod.ok({ id: 1 }), {}))
-app.get("/missing", (c) => mod.respond(c, mod.err({ _tag: "NotFound", id: "1" }), { NotFound: 404 }))
+app.get("/ok", (c) => mod.respond(c, { ok: true, value: { id: 1 } }, {}))
+app.get("/missing", (c) => mod.respond(c, { ok: false, error: { _tag: "NotFound", id: "1" } }, { NotFound: 404 }))
 const okRes = await app.request("/ok")
 assert.equal(okRes.status, 200)
 assert.deepEqual(await okRes.json(), { id: 1 })

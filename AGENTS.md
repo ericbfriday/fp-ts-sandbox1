@@ -32,8 +32,8 @@ Every `packages/*` entry has a size budget (`.size-limit.json`) and a plain-Node
 - `packages/schema` — `@friday-friday/schema`: Standard Schema to Result, `ValidationFailure`, field/form errors
 - `packages/next` — `@friday-friday/next` (+ `/client` subpath; `react-server`/`default` conditions): Server Actions, loaders, route handlers; `/client` boundary helpers for client-thrown errors only (`resultBoundary`, `orThrow`). Its smoke stubs `next/*` (next@16.4 has no `exports` map) and checks the `client-only` guard under `react-server`
 - `packages/hono` — `@friday-friday/hono`: `respond`/`problem`, `sv` validator, `onErrorHandler`
-- `packages/trpc` — `@friday-friday/trpc`: `errorFormatter`, `resultMiddleware`/`resultProcedure`, `fromTRPC`
-- `packages/tanstack-start` — `@friday-friday/tanstack-start`: `resultHandler`/`resultServerFn`, `loaderResult`, form errors
+- `packages/trpc` — `@friday-friday/trpc`: `errorFormatter`, `resultMiddleware`, `fromTRPC`
+- `packages/tanstack-start` — `@friday-friday/tanstack-start`: `resultHandler`, `loaderResult`, form errors
 - `packages/query` — `@friday-friday/query`: `resultQueryOptions`, `toQueryFn`, `retryUnless` (TanStack Query)
 - `packages/better-auth` — `@friday-friday/better-auth`: `requireSession`/`requireRole`, `authCall`, `fromAuthTuple`, `beforeDbHook`
 - `packages/http` — `@friday-friday/http`: `fetchResult`, `reconstruct`

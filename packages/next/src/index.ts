@@ -215,9 +215,3 @@ export function action<_S extends StandardSchemaV1, T, E extends TaggedError<str
     }
   }
 }
-
-/**
- * Re-export of core's `toThrowable` (no `cause` on the Error, #53). Thrown on the server, it
- * reaches error.tsx as a digest only: domain errors cross to the client as returned Results.
- */
-export { toThrowable } from "@friday-friday/core"

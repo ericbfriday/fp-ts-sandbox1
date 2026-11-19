@@ -14,7 +14,7 @@ import { z } from "zod"
 /* oxlint-disable no-unsafe-type-assertion, no-unnecessary-type-assertion -- wire probes: tRPC error shapes are structurally accessed in tests */
 import { err, ok, Panic, taggedError } from "@friday-friday/core"
 import type { ValidationFailure } from "@friday-friday/schema"
-import { errorFormatter, fromTRPC, resultMiddleware, resultProcedure, sanitize } from "@friday-friday/trpc"
+import { errorFormatter, fromTRPC, resultMiddleware, sanitize } from "@friday-friday/trpc"
 
 const NotFound = taggedError("NotFound")<{ id: string }>()
 const Conflict = taggedError("Conflict")<{ field: string }>()
@@ -41,11 +41,10 @@ const buildRouter = (opts: { isDev: boolean; report?: (cause: unknown) => void }
     rename: domain.input(z.object({ id: z.string() })).mutation(() => {
       return err(Conflict({ field: "name" }))
     }),
-    formFlow: resultProcedure({ channel: "data" })(
-      t.procedure.input(z.object({ name: z.string() })).mutation(({ input }) => {
-        return input.name.length < 2 ? err(Conflict({ field: "name" })) : ok({ renamed: input.name })
-      })
-    ),
+    // Data channel: a plain procedure (no resultMiddleware) returns the Result as its output.
+    formFlow: t.procedure.input(z.object({ name: z.string() })).mutation(({ input }) => {
+      return input.name.length < 2 ? err(Conflict({ field: "name" })) : ok({ renamed: input.name })
+    }),
     // Validator failures (zod + valibot): the schema projection, never the vendor issue objects.
     strict: t.procedure.input(z.object({ n: z.number() })).query(() => "ok"),
     signup: t.procedure
@@ -137,7 +136,7 @@ describe("error channel (resultMiddleware + errorFormatter)", () => {
   })
 })
 
-describe("data channel (resultProcedure)", () => {
+describe("data channel (a plain procedure, no resultMiddleware)", () => {
   it("the Result itself is the output (Err survives as data)", async () => {
     const asData = await client.formFlow.mutate({ name: "x" })
     expect(asData.ok).toBe(false)
