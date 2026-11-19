@@ -15,9 +15,10 @@ import { z } from "zod"
 import { type Profile, type ProfileError, saveProfile } from "../../lib/profiles"
 import { requireSession } from "../../lib/session"
 
-export const Forbidden: ErrorFactory<"Forbidden", { readonly action: string }> = taggedError("Forbidden")<{
-  readonly action: string
-}>()
+/** Extension of core's `Forbidden` (ADR-0005): keeps core's `required?` and adds only an OPTIONAL
+ * `action?`, so core's (or better-auth's) `Forbidden.is` still narrows it soundly. */
+export const Forbidden: ErrorFactory<"Forbidden", { readonly required?: string; readonly action?: string }> =
+  taggedError("Forbidden")<{ readonly required?: string; readonly action?: string }>()
 export type Forbidden = ReturnType<typeof Forbidden>
 
 export interface ProfileInputValues {

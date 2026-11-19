@@ -13,12 +13,15 @@
 import {
   type AsyncResult,
   err,
+  Forbidden,
   type InferErr,
   type InferOk,
+  NotFound,
   type Result,
   type Tagged,
   type TaggedError,
-  trySync as coreTrySync
+  trySync as coreTrySync,
+  Unauthenticated
 } from "@friday-friday/core"
 import { tryAsync as coreTryAsync } from "@friday-friday/core/async"
 import {
@@ -67,13 +70,22 @@ export function trySync<T, E>(fn: () => T, opts: NextCatch<E>): Result<T, E> {
 /**
  * The one tag→sentinel table: each loader is named by its key, and its entry says which `_tag`
  * it handles and which Next sentinel that tag raises. The loaders below never name a tag; their
- * types read it from here, so adding or renaming a mapping is a one-line change.
+ * types read it from here, so adding or renaming a mapping is a one-line change. Tags come from
+ * core's fixed-vocabulary factories (ADR-0005), never string literals, so they cannot drift.
  */
-const sentinels = {
-  orNotFound: { tag: "NotFound", raise: (_to: string): never => notFound() },
-  orForbidden: { tag: "Forbidden", raise: (_to: string): never => forbidden() },
-  orRedirect: { tag: "Unauthenticated", raise: (to: string): never => redirect(to) }
-} as const
+interface Sentinel<Tag extends string> {
+  readonly tag: Tag
+  readonly raise: (to: string) => never
+}
+const sentinels: {
+  readonly orNotFound: Sentinel<NotFound["_tag"]>
+  readonly orForbidden: Sentinel<Forbidden["_tag"]>
+  readonly orRedirect: Sentinel<Unauthenticated["_tag"]>
+} = {
+  orNotFound: { tag: NotFound.tag, raise: (_to: string): never => notFound() },
+  orForbidden: { tag: Forbidden.tag, raise: (_to: string): never => forbidden() },
+  orRedirect: { tag: Unauthenticated.tag, raise: (to: string): never => redirect(to) }
+}
 
 /** The Result a loader returns: `R`'s `T`, and `R`'s `E` without loader `L`'s tag. Inferring the
  * whole `R` (not `T`/`E` separately) keeps every Err member of a union argument in `E`. */
