@@ -64,7 +64,7 @@ All adapters import `core` (and `schema`) plus their own peers, and list core (a
 | `query` | `toQueryFn`, `resultQueryOptions`, `retryUnless` (`toMutationFn`: *deferred*) | `@tanstack/query-core ^5` |
 | `better-auth` | `authCall`, `fromAuthTuple`, `requireSession`, `requireRole`, `beforeDbHook` | `better-auth ^1.6 \|\| ^1.7` |
 | `hono` | `respond` (status-literal unions), `problem` (RFC 9457), `sv`, `onErrorHandler` | `hono ^4.10 \|\| ^5.0.0-0` |
-| `trpc` | `resultMiddleware`, `errorFormatter`, `fromTRPC` (data channel: a plain procedure without the middleware) | `@trpc/server ^11`, `@trpc/client ^11` |
+| `trpc` | `resultMiddleware`, `resultResolver` (with `.output()`, #108), `errorFormatter`, `fromTRPC` (data channel: a plain procedure without the middleware) | `@trpc/server ^11`, `@trpc/client ^11` |
 | `tanstack-start` | `resultHandler`, `loaderResult`, `toFormErrors` (from `schema`) | `@tanstack/router-core ^1.169` |
 | `http`, `db`, `env`, `effect`, `otel` | `fetchResult`, DB error mappers, `parseEnv`, Effect bridge, tracing | optional |
 | `eslint-plugin` (no Oxlint-native plugin: type-aware JS plugins unsupported, ADR-0003) | `must-use-result`, `no-try-around-redirect`, `no-instanceof-tagged-error` | lint host |

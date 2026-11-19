@@ -24,6 +24,7 @@ assert.deepEqual(Object.keys(mod).sort(), [
   "errorFormatter",
   "fromTRPC",
   "resultMiddleware",
+  "resultResolver",
   "sanitize"
 ])
 for (const value of Object.values(mod)) assert.equal(typeof value, "function")
