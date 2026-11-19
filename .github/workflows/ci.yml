@@ -3,7 +3,7 @@
 # every package but next) -> source-condition smoke (ADR-0002, #63; every package but next) ->
 # `next build` of the example; and, as its own job, the publish gate (#65: build -> pack every
 # package -> publint --strict + attw --profile esm-only on each tarball). `pnpm run ci` runs the
-# same gates locally (typecheck on TS 7 only; the tRPC peer-floor job is CI-only).
+# same gates locally (typecheck on TS 7 only; the peer-floor matrix is CI-only).
 # Publishing is intentionally absent: never publish to npm from CI without Eric.
 name: CI
 
@@ -69,12 +69,35 @@ jobs:
       - run: pnpm run check
       - run: pnpm run test:types
 
-  trpc-floor:
-    # #57: @friday-friday/trpc's peer range is `^11`, so its types must hold on the oldest
-    # 11.x. Same throwaway-swap approach as the TypeScript matrix: install the frozen
-    # lockfile, then pin the tRPC devDependencies to the floor (never committed).
-    name: tRPC peer floor (11.0.0)
+  peer-floor:
+    # IDEA §4 / CONTRIBUTING: each framework peer range's lower bound is the oldest version CI
+    # runs. One row per adapter (#57 for trpc, generalized in #109): install the frozen lockfile,
+    # pin the package's devDependencies to the peer floor (a throwaway swap, never committed),
+    # then typecheck everything and run that package's runtime + type tests. `floor` holds
+    # `<peer>@<version>` for every peer (tooling/gates checks each version equals its range's
+    # lower bound) plus any test-only devDependency that must move with it.
+    name: peer floor (${{ matrix.pkg }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pkg: better-auth
+            floor: better-auth@1.6.0
+          - pkg: effect
+            floor: effect@4.0.2
+          - pkg: hono
+            floor: hono@4.10.0
+          - pkg: next
+            floor: next@16.3.0 react@19.2.0 react-dom@19.2.0
+          - pkg: otel
+            floor: "@opentelemetry/api@1.1.0"
+          - pkg: query
+            floor: "@tanstack/query-core@5.62.0 @tanstack/react-query@5.62.0"
+          - pkg: tanstack-start
+            floor: "@tanstack/router-core@1.169.0"
+          - pkg: trpc
+            floor: "@trpc/server@11.0.0 @trpc/client@11.0.0"
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
@@ -83,10 +106,9 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm add -D --filter @friday-friday/trpc @trpc/server@11.0.0 @trpc/client@11.0.0
+      - run: pnpm add -D --filter "@friday-friday/${{ matrix.pkg }}" ${{ matrix.floor }}
       - run: pnpm run check
-      # Runtime + type tests for the trpc package only.
-      - run: pnpm exec vitest run packages/trpc
+      - run: pnpm exec vitest run "packages/${{ matrix.pkg }}"
 
   test:
     name: test

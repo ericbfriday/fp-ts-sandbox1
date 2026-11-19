@@ -37,7 +37,7 @@
   "peerDependencies": {
     "@friday-friday/core": "workspace:^",
     "@friday-friday/schema": "workspace:^",
-    "hono": "^4.10 || ^5.0.0-0"
+    "hono": "^4.10"
   },
   "devDependencies": {
     "@friday-friday/core": "workspace:*",
