@@ -3,7 +3,7 @@
  * (Design Report §3.6 observability, §4 package table).
  *
  * `traced(name, fn)` runs `fn` inside a span. On `Err` the span status is set to
- * `ERROR` with attribute `fl.error.tag = <_tag>` and NO exception is recorded:
+ * `ERROR` with attribute `friday_friday.error.tag = <_tag>` and NO exception is recorded:
  * expected errors and bugs separate cleanly in dashboards. Defects (thrown, e.g.
  * `Panic`) are recorded as exceptions and rethrown.
  *
@@ -13,8 +13,12 @@
 import type { AsyncResult, Result, TaggedError } from "@friday-friday/core"
 import { type Attributes, type Span, type SpanOptions, SpanStatusCode, trace, type Tracer } from "@opentelemetry/api"
 
-/** Attribute key carrying the tagged-error `_tag` of an `Err` result. */
-export const ERROR_TAG_ATTR = "fl.error.tag"
+/**
+ * Attribute key carrying the tagged-error `_tag` of an `Err` result.
+ * Scoped to `friday_friday` per RFC-0001 §7 (the Design Report §3.6 wrote the `fl.` placeholder).
+ * OTel naming: dot-delimited namespaces, snake_case words, custom keys prefixed by the app name.
+ */
+export const ERROR_TAG_ATTR = "friday_friday.error.tag"
 
 export interface TracedOptions {
   /** Span attributes applied at start (e.g. `{"http.route": "/users/:id"}`). */
@@ -26,7 +30,7 @@ export interface TracedOptions {
 /**
  * Run an AsyncResult-producing function inside a span.
  * - `Ok(v)` → span ends `UNSET`, value returned.
- * - `Err(e)` → span status `ERROR`, attribute `fl.error.tag = e._tag` (no exception record).
+ * - `Err(e)` → span status `ERROR`, attribute `friday_friday.error.tag = e._tag` (no exception record).
  * - thrown defect → recorded as an exception event, status `ERROR`, rethrown as-is.
  */
 /** Shared span semantics: Err marks (NO exception record), defects record + rethrow, span always ends. */

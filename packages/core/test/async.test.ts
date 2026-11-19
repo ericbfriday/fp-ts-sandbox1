@@ -217,6 +217,32 @@ describe("mapConcurrent", () => {
     await expect(allAsync([], { signal: AbortSignal.abort() })).rejects.toThrow(Panic)
   })
 
+  it("launches no new mapper after the first Panic; in-flight mappers run out (#60)", async () => {
+    for (const fail of ["sync throw", "async rejection"] as const) {
+      const launched: Array<number> = []
+      const settled: Array<number> = []
+      const promise = mapConcurrent(
+        [0, 1, 2, 3, 4, 5],
+        async (n) => {
+          launched.push(n)
+          if (n === 0) {
+            if (fail === "async rejection") await Promise.resolve()
+            throw new Error("boom")
+          }
+          await new Promise((res) => setTimeout(res, 10))
+          settled.push(n)
+          return ok(n)
+        },
+        { limit: 2 }
+      )
+      await expect(promise).rejects.toThrow(Panic)
+      // Give the in-flight mapper time to settle and any (buggy) further launches time to happen.
+      await new Promise((res) => setTimeout(res, 50))
+      expect({ fail, launched }).toEqual({ fail, launched: [0, 1] })
+      expect(settled).toEqual([1])
+    }
+  })
+
   it("non-finite limit falls back to 1", async () => {
     const r = await mapConcurrent([1, 2], async (n) => ok(n), { limit: Number.NaN })
     expect(r).toEqual(ok([1, 2]))

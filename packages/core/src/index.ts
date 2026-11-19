@@ -59,7 +59,8 @@ export interface TaggedError<Tag extends string> {
 }
 
 export interface ErrorFactory<Tag extends string, P extends object> {
-  (props: P & { message?: string; cause?: unknown }): TaggedError<Tag> & Readonly<P>
+  /** `_tag?: never`: the factory owns its tag, so a `_tag` prop (even one spread in) is a type error. */
+  (props: P & { message?: string; cause?: unknown; _tag?: never }): TaggedError<Tag> & Readonly<P>
   readonly tag: Tag
   /** Structural: `u._tag === tag`. Works across module copies, `JSON.parse` output and `structuredClone`. */
   is(u: unknown): u is TaggedError<Tag> & Readonly<P>
@@ -80,7 +81,13 @@ export interface ErrorFactory<Tag extends string, P extends object> {
 export function taggedError<const Tag extends string>(tag: Tag): <P extends object = {}>() => ErrorFactory<Tag, P> {
   return <P extends object = {}>(): ErrorFactory<Tag, P> =>
     Object.assign(
-      (props: P & { message?: string; cause?: unknown }): TaggedError<Tag> & Readonly<P> => ({ _tag: tag, ...props }),
+      (props: P & { message?: string; cause?: unknown }): TaggedError<Tag> & Readonly<P> => {
+        // The factory owns `_tag` (#60): a `_tag` in props (spread in, or off-the-wire data) is
+        // overwritten. Assigned after the spread so `_tag` stays the first key in JSON output.
+        const e = { _tag: tag, ...props }
+        e._tag = tag
+        return e
+      },
       {
         tag,
         is: (u: unknown): u is TaggedError<Tag> & Readonly<P> =>
@@ -279,9 +286,15 @@ export const matchTag: {
   >(
     r: Result<T, E>
   ) => ReturnType<H[keyof H]>
-} = /*#__PURE__*/ dual((r: Result<unknown, Tagged>, h: TagHandlers<unknown, Tagged>) =>
-  r.ok ? call(h.ok, r.value) : call(h[r.error._tag]!, r.error)
-)
+} = /*#__PURE__*/ dual((r: Result<unknown, Tagged>, h: TagHandlers<unknown, Tagged>) => {
+  if (r.ok) return call(h.ok, r.value)
+  const tag = r.error._tag
+  // A tag with no handler (rebuilt from the wire, or outside the type's E) is a defect (#60).
+  // Own handlers only, never `ok`: an inherited `constructor`/`toString` or the `ok` handler must
+  // not be dispatched to by a stray tag.
+  if (tag === "ok" || !Object.hasOwn(h, tag)) throw new Panic(`matchTag: no handler for _tag ${tag}`)
+  return call(h[tag]!, r.error)
+})
 
 /** No Option type: lift `T | null | undefined` into a Result, building the error lazily. */
 export const fromNullable: {

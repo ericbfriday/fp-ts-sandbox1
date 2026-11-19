@@ -7,9 +7,10 @@
  *   error.message). resultHandler validates INSIDE the handler with @friday-friday/schema:
  *   a failure is returned as Err(ValidationFailure) DATA with structured issues; domain
  *   errors are also data; only defects throw.
- * - **Sentinels must not be wrapped.** loaderResult throws Router notFound() / redirect()
- *   sentinels for mapped tags - user try/catch around loaders must let them through (they
- *   are control flow, not errors).
+ * - **Sentinels must not be wrapped.** loaderResult rejects with Router notFound() / redirect()
+ *   sentinels for mapped tags, and resultHandler rethrows any sentinel its handler throws
+ *   (detected with router-core's own isRedirect / isNotFound) BEFORE defect conversion -
+ *   they are control flow, not errors (IDEA 4.3, RFC-0001 3; same rule as next's action()).
  * - **Form:** pass Standard Schemas straight to validators; map a server
  *   Err(ValidationFailure) into form.setErrorMap with toFormErrors. Check _tag
  *   structurally - never instanceof ServerValidateError. (Track Form v2 alpha's
@@ -23,9 +24,9 @@
  * Direct server-fn calls skip validators (router #7507) - resultHandler validating inside
  * means unit tests exercise validation too.
  */
-import { type AsyncResult, err, Panic, type Result, type TaggedError } from "@friday-friday/core"
+import { type AsyncResult, err, type Result, type TaggedError, toPanic } from "@friday-friday/core"
 import { parseAsync, type StandardSchemaV1, toFormErrors, type ValidationFailure } from "@friday-friday/schema"
-import { notFound, redirect } from "@tanstack/router-core"
+import { isNotFound, isRedirect, notFound, redirect } from "@tanstack/router-core"
 
 /** Re-exported so server fns and forms share one vocabulary. */
 export { toFormErrors } from "@friday-friday/schema"
@@ -38,7 +39,8 @@ export type StandardSchemaInfer<S extends StandardSchemaV1> = StandardSchemaV1.I
  * Server-fn handler wrapper (the #6428 workaround): validates data INSIDE the handler.
  * - validation failure -> Err(ValidationFailure) with structured issues (DATA, not thrown)
  * - handler Ok -> Ok(value) as data; handler Err(e) -> Err(e) as data
- * - handler defects (throws) propagate - only defects throw
+ * - Router sentinels (redirect() / notFound()) thrown by the handler propagate as the SAME value
+ * - any other throw rejects as Panic via core's toPanic (an existing Panic is not re-wrapped)
  */
 export function resultHandler<S extends StandardSchemaV1, T, E extends TaggedError<string>>(
   schema: S,
@@ -50,9 +52,18 @@ export function resultHandler<S extends StandardSchemaV1, T, E extends TaggedErr
     try {
       return await handler(r.value)
     } catch (cause) {
-      // Only defects throw - and they throw as Panic (the repo defect convention).
-      throw cause instanceof Panic ? cause : new Panic(cause)
+      // Router control flow first, then the one defect conversion (core's toPanic).
+      throw isRouterSentinel(cause) ? cause : toPanic(cause)
     }
+  }
+}
+
+/** router-core's own guards, made total: a value whose property read throws is no sentinel. */
+const isRouterSentinel = (u: unknown): boolean => {
+  try {
+    return isRedirect(u) || isNotFound(u)
+  } catch {
+    return false
   }
 }
 
@@ -69,24 +80,26 @@ export interface LoaderResultOptions {
 }
 
 /**
- * Loader bridge: unwrap a Result for a TanStack Router loader.
- * - Ok(v) -> v (the loader data)
- * - mapped tags -> Router sentinels THROWN (notFound() / redirect({ to })) - these are
+ * Loader bridge: unwrap a Result for a TanStack Router loader. Always returns a promise and
+ * never throws synchronously - every Err arm is a rejection.
+ * - Ok(v) -> resolves to v (the loader data)
+ * - mapped tags -> rejects with Router sentinels (notFound() / redirect({ to })) - these are
  *   Router control flow and must not be wrapped in user try/catch
- * - other Err(e) -> thrown as Panic whose cause carries the tagged error, so
- *   errorComponent can decode it losslessly (Panic.cause is plain data).
+ * - other Err(e) -> rejects with Panic whose cause carries the tagged error, so
+ *   errorComponent can decode it losslessly (Panic.cause is plain data); the message reads
+ *   `Tag` or `Tag: message`.
  */
-export function loaderResult<T, E extends TaggedError<string>>(
+export async function loaderResult<T, E extends TaggedError<string>>(
   r: Result<T, E>,
   opts?: LoaderResultOptions
 ): Promise<T> {
-  if (r.ok) return Promise.resolve(r.value)
+  if (r.ok) return r.value
   const notFoundTag = opts?.notFoundTag ?? "NotFound"
   const redirectTag = opts?.redirectTag ?? "Unauthenticated"
   const to = opts?.redirectTo ?? "/login"
   if (r.error._tag === notFoundTag) throw notFound()
   if (r.error._tag === redirectTag) throw redirect({ to })
-  throw new Panic(r.error)
+  throw toPanic(r.error)
 }
 
 // Form helper passthrough (documented alias so call sites read as adapter usage).

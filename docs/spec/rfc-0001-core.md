@@ -23,7 +23,7 @@ Errors are **plain data** with a literal `_tag`, built by a factory with a struc
 ```ts
 export interface TaggedError<Tag extends string> { readonly _tag: Tag; readonly message?: string }
 export interface ErrorFactory<Tag extends string, P extends object> {
-  (props: P & { message?: string; cause?: unknown }): TaggedError<Tag> & Readonly<P>;
+  (props: P & { message?: string; cause?: unknown; _tag?: never }): TaggedError<Tag> & Readonly<P>;
   readonly tag: Tag;
   is(u: unknown): u is TaggedError<Tag> & Readonly<P>;
 }
@@ -40,6 +40,8 @@ Convention-fixed vocabulary:
 
 Rules:
 - `cause` stays server-side; stripped (or replaced by a digest) before any boundary.
+- The factory owns `_tag` (#60): a `_tag` prop is a type error (`_tag?: never`, which also catches one spread in) and is overwritten at runtime, so `is()` and `matchTag` can't be fooled by a stray prop.
+- `matchTag` on a runtime tag with no own handler (e.g. rebuilt from the wire) is a defect: `Panic("matchTag: no handler for _tag <tag>")`.
 - `toThrowable(e)` produces a real `Error` (`name = _tag`, data attached) for Error Boundaries / `catchError` paths.
 - No Option type: `T | undefined` + `fromNullable(x, () => NotFound(...))`.
 

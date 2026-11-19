@@ -2,7 +2,7 @@
  * `@friday-friday/tanstack-start` runtime tests. Router sentinels come from the real
  * `@tanstack/router-core` devDep; validation runs through the real Standard Schema path.
  */
-import { notFound, redirect } from "@tanstack/router-core"
+import { isNotFound, isRedirect, notFound, redirect } from "@tanstack/router-core"
 import { describe, expect, it } from "vitest"
 
 /* oxlint-disable no-unsafe-type-assertion, no-floating-promises -- wire probes: router sentinels are structurally accessed; intentional throw-probes are documented */
@@ -53,8 +53,79 @@ describe("resultHandler (#6428 workaround)", () => {
     await expect(h({ data: { title: "Hello", body: "b" } })).rejects.toMatchObject({ name: "Panic" })
   })
 
+  it("Panic thrown by the handler propagates as the SAME instance (no double-wrap)", async () => {
+    const panic = new Panic(new Error("inner"))
+    const h = resultHandler(PostSchema, async () => {
+      throw panic
+    })
+    await expect(h({ data: { title: "Hello", body: "b" } })).rejects.toBe(panic)
+  })
+
+  it("a non-Error throw becomes Panic with a readable message, original on cause", async () => {
+    const thrown = { _tag: "Boom", message: "pool exhausted" }
+    const h = resultHandler(PostSchema, async () => {
+      throw thrown
+    })
+    const e: unknown = await h({ data: { title: "Hello", body: "b" } }).catch((x: unknown) => x)
+    expect(e).toBeInstanceOf(Panic)
+    expect((e as Panic).message).toBe("Boom: pool exhausted")
+    expect((e as Panic).cause).toBe(thrown)
+  })
+
+  it("a revoked Proxy thrown by the handler still becomes Panic (sentinel check is total)", async () => {
+    const { proxy, revoke } = Proxy.revocable({}, {})
+    revoke()
+    const h = resultHandler(PostSchema, async () => {
+      throw proxy
+    })
+    await expect(h({ data: { title: "Hello", body: "b" } })).rejects.toBeInstanceOf(Panic)
+  })
+
   it("resultServerFn is the positional alias", () => {
     expect(resultServerFn).toBe(resultHandler)
+  })
+})
+
+describe("resultHandler lets real router-core sentinels through unwrapped", () => {
+  const valid = { data: { title: "Hello", body: "b" } }
+
+  it("redirect() thrown in an async handler rejects with the SAME redirect", async () => {
+    const sentinel = redirect({ to: "/posts" })
+    const h = resultHandler(PostSchema, async () => {
+      throw sentinel
+    })
+    const e: unknown = await h(valid).catch((x: unknown) => x)
+    expect(e).toBe(sentinel)
+    expect(isRedirect(e)).toBe(true)
+    expect(e).not.toBeInstanceOf(Panic)
+  })
+
+  it("redirect({ throw: true }) inside the handler propagates unwrapped", async () => {
+    const h = resultHandler(PostSchema, async () => {
+      redirect({ to: "/login", throw: true }) // router-core throws the Response itself
+      return ok("unreachable")
+    })
+    const e: unknown = await h(valid).catch((x: unknown) => x)
+    expect(isRedirect(e)).toBe(true)
+    expect(e).not.toBeInstanceOf(Panic)
+  })
+
+  it("notFound() thrown in an async handler rejects with the SAME sentinel", async () => {
+    const sentinel = notFound()
+    const h = resultHandler(PostSchema, async () => {
+      throw sentinel
+    })
+    const e: unknown = await h(valid).catch((x: unknown) => x)
+    expect(e).toBe(sentinel)
+    expect(isNotFound(e)).toBe(true)
+  })
+
+  it("a sentinel thrown synchronously by a non-async handler propagates unwrapped", async () => {
+    const sentinel = notFound({ routeId: "/posts/$id" })
+    const h = resultHandler(PostSchema, () => {
+      throw sentinel
+    })
+    await expect(h(valid)).rejects.toBe(sentinel)
   })
 })
 
@@ -63,65 +134,56 @@ describe("loaderResult (sentinel mapping)", () => {
     await expect(loaderResult(ok({ id: "u_1" }))).resolves.toEqual({ id: "u_1" })
   })
 
-  it("NotFound tag -> Router notFound() sentinel THROWN", async () => {
-    expect(() => loaderResult(err(NotFound({ id: "x" })))).toThrow()
-    try {
-      loaderResult(err(NotFound({ id: "x" })))
-      throw new Error("expected throw")
-    } catch (e) {
-      // Router's own sentinel: distinguishable from domain errors by its marker.
-      expect(e).not.toBeInstanceOf(Panic)
-      expect((e as { isNotFound?: boolean }).isNotFound ?? false).toBe(true)
+  it("never throws synchronously: every Err arm is a rejected promise", () => {
+    for (const e of [NotFound({ id: "x" }), Unauthenticated({}), Forbidden({ required: "admin" })]) {
+      let p: Promise<unknown> | undefined
+      expect(() => {
+        p = loaderResult(err(e))
+      }).not.toThrow()
+      expect(p).toBeInstanceOf(Promise)
+      p?.catch(() => undefined)
     }
   })
 
-  it("Unauthenticated tag -> Router redirect() sentinel to /login", async () => {
-    try {
-      loaderResult(err(Unauthenticated({})))
-      throw new Error("expected throw")
-    } catch (e) {
-      // router-core's redirect sentinel: the thrown object carries the redirect marker.
-      const marker = (e as { isRedirect?: boolean })["isRedirect"]
-      expect(marker === true || typeof marker === "undefined").toBe(true)
-      void marker
-    }
-    // The real router-core redirect object carries the target.
-    let thrown: unknown
-    try {
-      loaderResult(err(Unauthenticated({})))
-    } catch (e) {
-      thrown = e
-    }
-    expect(redirect({ to: "/login" })).toEqual(thrown)
+  it("NotFound tag -> rejects with router-core's notFound() sentinel", async () => {
+    const e: unknown = await loaderResult(err(NotFound({ id: "x" }))).catch((x: unknown) => x)
+    expect(isNotFound(e)).toBe(true)
+    expect(e).not.toBeInstanceOf(Panic)
   })
 
-  it("other Err -> thrown Error whose cause is the tagged error (lossless)", async () => {
-    try {
-      loaderResult(err(Forbidden({ required: "admin" })))
-      throw new Error("expected throw")
-    } catch (e) {
-      expect(e).toBeInstanceOf(Panic)
-      expect((e as Panic).cause).toEqual(Forbidden({ required: "admin" }))
-    }
+  it("Unauthenticated tag -> rejects with router-core's redirect() to /login", async () => {
+    const e: unknown = await loaderResult(err(Unauthenticated({}))).catch((x: unknown) => x)
+    expect(isRedirect(e)).toBe(true)
+    expect(e).toEqual(redirect({ to: "/login" }))
   })
 
-  it("custom tag mapping (notFoundTag/redirectTag/redirectTo)", () => {
-    expect(() => loaderResult(err(NotFound({ id: "x" })), { notFoundTag: "Missing" })).toThrow()
-    // NotFound no longer mapped -> falls to the Error carrier with cause.
-    try {
-      loaderResult(err(NotFound({ id: "x" })), { notFoundTag: "Missing" })
-    } catch (e) {
-      expect(e).toBeInstanceOf(Panic)
-    }
-    try {
-      loaderResult(err(Unauthenticated({})), { redirectTo: "/signin" })
-    } catch (e) {
-      expect(redirect({ to: "/signin" })).toEqual(e)
-    }
+  it("other Err -> rejects with Panic whose cause is the tagged error (lossless)", async () => {
+    const e: unknown = await loaderResult(err(Forbidden({ required: "admin" }))).catch((x: unknown) => x)
+    expect(e).toBeInstanceOf(Panic)
+    expect((e as Panic).cause).toEqual(Forbidden({ required: "admin" }))
   })
 
-  it("the library sentinel throws match router-core's own (notFound())", () => {
-    expect(notFound).toBeTypeOf("function")
-    expect(redirect).toBeTypeOf("function")
+  it("Panic message is readable (tag, then message), never [object Object]", async () => {
+    const bare: unknown = await loaderResult(err(Forbidden({ required: "admin" }))).catch((x: unknown) => x)
+    expect((bare as Panic).message).toBe("Forbidden")
+    const withMessage: unknown = await loaderResult(err(Forbidden({ required: "admin", message: "admins only" })))
+      .catch((x: unknown) => x)
+    expect((withMessage as Panic).message).toBe("Forbidden: admins only")
+  })
+
+  it("custom tag mapping (notFoundTag/redirectTag/redirectTo)", async () => {
+    const custom: unknown = await loaderResult(err(Forbidden({ required: "admin" })), { notFoundTag: "Forbidden" })
+      .catch((x: unknown) => x)
+    expect(isNotFound(custom)).toBe(true)
+    // NotFound no longer mapped -> falls to the Panic carrier with cause.
+    const unmapped: unknown = await loaderResult(err(NotFound({ id: "x" })), { notFoundTag: "Missing" })
+      .catch((x: unknown) => x)
+    expect(unmapped).toBeInstanceOf(Panic)
+    const signin: unknown = await loaderResult(err(Unauthenticated({})), { redirectTo: "/signin" })
+      .catch((x: unknown) => x)
+    expect(signin).toEqual(redirect({ to: "/signin" }))
+    const byTag: unknown = await loaderResult(err(Forbidden({ required: "admin" })), { redirectTag: "Forbidden" })
+      .catch((x: unknown) => x)
+    expect(isRedirect(byTag)).toBe(true)
   })
 })

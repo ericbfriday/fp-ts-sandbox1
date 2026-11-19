@@ -14,7 +14,7 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "lint": "cd ../.. && eslint --config tooling/eslint-plugin/eslint.config.js --max-warnings 0 packages"
+    "lint": "cd ../.. && eslint --config tooling/eslint-plugin/eslint.config.js --max-warnings 0 packages examples"
   },
   "devDependencies": {
     "@typescript-eslint/utils": "~8.72.2",

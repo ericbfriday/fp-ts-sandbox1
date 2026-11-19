@@ -11,14 +11,15 @@
   },
   "scripts": {
     "build": "pnpm -r --filter \"./packages/*\" run build",
-    "check": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json && tsc -p examples/next-app/tsconfig.json",
     "lint": "oxlint -f unix && pnpm -r --filter \"./tooling/eslint-plugin\" run lint && dprint check",
     "lint-fix": "oxlint --fix && dprint fmt",
     "test": "vitest run",
     "test:types": "vitest run --typecheck.only",
     "size": "pnpm run build && size-limit",
     "smoke": "pnpm -r --filter \"./packages/*\" run smoke",
-    "ci": "pnpm run lint && pnpm run check && pnpm run test && pnpm run size && pnpm run smoke"
+    "build:examples": "pnpm -r --filter \"./examples/*\" run build",
+    "ci": "pnpm run lint && pnpm run check && pnpm run test && pnpm run size && pnpm run smoke && pnpm run build:examples"
   },
   "devDependencies": {
     "@size-limit/preset-small-lib": "^14.3.0",

@@ -21,7 +21,8 @@
     "dist"
   ],
   "dependencies": {
-    "@friday-friday/core": "workspace:*"
+    "@friday-friday/core": "workspace:*",
+    "@friday-friday/schema": "workspace:*"
   },
   "peerDependencies": {
     "hono": "^4.10 || ^5.0.0-0"
@@ -31,6 +32,7 @@
     "zod": "^4.6.7"
   },
   "scripts": {
-    "build": "tsdown"
+    "build": "tsdown",
+    "smoke": "node test/smoke.mjs"
   }
 }

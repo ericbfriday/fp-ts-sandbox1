@@ -295,6 +295,9 @@ importers:
       '@friday-friday/core':
         specifier: workspace:*
         version: link:../core
+      '@friday-friday/schema':
+        specifier: workspace:*
+        version: link:../schema
     devDependencies:
       hono:
         specifier: 4.13.18

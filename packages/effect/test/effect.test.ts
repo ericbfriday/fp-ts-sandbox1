@@ -27,6 +27,17 @@ describe("fromExit", () => {
     else throw new Error("expected Err")
   })
 
+  it("Die(Panic) -> the SAME Panic, never a Panic whose cause is a Panic (core toPanic)", () => {
+    const panic = new Panic(new Error("boom"))
+    let thrown: unknown
+    try {
+      fromExit(Exit.die(panic))
+    } catch (e) {
+      thrown = e
+    }
+    expect(thrown).toBe(panic)
+  })
+
   it("Die -> thrown Panic(defect)", () => {
     const exit = Exit.die(new Error("boom"))
     expect(() => fromExit(exit)).toThrow(Panic)
@@ -42,12 +53,16 @@ describe("fromExit", () => {
     expect(() => fromExit(exit)).toThrow(Panic)
   })
 
-  it("mixed Fail + Die -> Die wins (a bug anywhere means a bug)", () => {
-    const exit = Exit.failCause(Cause.fromReasons([
+  it("mixed Fail + Die -> Die wins (a bug anywhere means a bug), unlike Cause.squash", () => {
+    const bug = new Error("primary bug")
+    const cause = Cause.fromReasons([
       { _tag: "Fail", error: "secondary", annotations: new Map() },
-      { _tag: "Die", defect: new Error("primary bug"), annotations: new Map() }
-    ] as never))
-    expect(() => fromExit(exit)).toThrow(Panic)
+      { _tag: "Die", defect: bug, annotations: new Map() }
+    ] as never)
+    expect(() => fromExit(Exit.failCause(cause))).toThrow(Panic)
+    expect(() => fromExit(Exit.failCause(cause))).toThrow(expect.objectContaining({ cause: bug }))
+    // Pins the divergence the bridge documents: Effect's own squash prefers the first Fail.
+    expect(Cause.squash(cause)).toBe("secondary")
   })
 })
 
@@ -74,7 +89,25 @@ describe("runResult", () => {
     const eff = Effect.never
     const p = runResult(eff, { signal: controller.signal })
     controller.abort()
-    await expect(p).rejects.toThrow()
+    await expect(p).rejects.toThrow(Panic)
+  })
+
+  it("abort -> Panic carrying the abort reason, matching core /async's convention", async () => {
+    const controller = new AbortController()
+    const reason = new Error("user cancelled")
+    const p = runResult(Effect.never, { signal: controller.signal })
+    controller.abort(reason)
+    const thrown: unknown = await p.catch((e: unknown) => e)
+    expect(thrown).toBeInstanceOf(Panic)
+    expect((thrown as Panic).cause).toBe(reason)
+  })
+
+  it("already-aborted signal -> Panic(abort reason)", async () => {
+    const controller = new AbortController()
+    controller.abort("gone")
+    const thrown: unknown = await runResult(Effect.never, { signal: controller.signal }).catch((e: unknown) => e)
+    expect(thrown).toBeInstanceOf(Panic)
+    expect((thrown as Panic).cause).toBe("gone")
   })
 
   it("Effect.gen compositions work", async () => {
@@ -104,6 +137,29 @@ describe("toEffect", () => {
     expect(await Effect.runPromise(okEff)).toBe("v")
     const errEff = toEffect(Promise.resolve(err("bad-async")))
     await expect(Effect.runPromise(errEff)).rejects.toBe("bad-async")
+  })
+
+  it("rejecting AsyncResult (Panic) -> Effect.die, never a typed Fail", async () => {
+    const panic = new Panic(new Error("bug"))
+    const exit = await Effect.runPromise(Effect.exit(toEffect(Promise.reject(panic))))
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isSuccess(exit)) throw new Error("expected Failure")
+    expect(exit.cause.reasons.map((r) => r._tag)).toEqual(["Die"])
+    expect((exit.cause.reasons[0] as { defect: unknown }).defect).toBe(panic)
+  })
+
+  it("rejecting AsyncResult (foreign throw) -> Effect.die(original)", async () => {
+    const boom = new TypeError("boom")
+    const exit = await Effect.runPromise(Effect.exit(toEffect(Promise.reject(boom))))
+    if (Exit.isSuccess(exit)) throw new Error("expected Failure")
+    expect(exit.cause.reasons.map((r) => r._tag)).toEqual(["Die"])
+    expect((exit.cause.reasons[0] as { defect: unknown }).defect).toBe(boom)
+  })
+
+  it("round-trip of a defect: runResult(toEffect(rejected Panic)) rethrows the SAME Panic", async () => {
+    const panic = new Panic("bug")
+    const thrown: unknown = await runResult(toEffect(Promise.reject(panic))).catch((e: unknown) => e)
+    expect(thrown).toBe(panic)
   })
 
   it("round-trip: runResult(toEffect(ok)) === ok", async () => {

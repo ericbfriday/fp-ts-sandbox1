@@ -28,6 +28,7 @@
     "zod": "^4.6.7"
   },
   "scripts": {
-    "build": "tsdown"
+    "build": "tsdown",
+    "smoke": "node test/smoke.mjs"
   }
 }

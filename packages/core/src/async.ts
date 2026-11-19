@@ -170,8 +170,11 @@ export interface MapConcurrent {
 /**
  * Map `mapper` over `inputs` with at most `opts.limit` in flight; select the first `Err` in
  * INPUT order. Runs to completion (an early `Err` does not abort in-flight work) — documented
- * choice for v1. `opts.signal` is forwarded to the mapper (3rd arg); an already-aborted signal,
- * or aborting before a launch, is a defect (`Panic(abort reason)`).
+ * choice for v1. A defect is different: after the first `Panic` (a mapper throws or rejects, or
+ * the signal aborts before a launch) no new mapper is launched; mappers already in flight run out
+ * and the returned promise rejects with that `Panic`. `opts.signal` is forwarded to the mapper
+ * (3rd arg); an already-aborted signal, or aborting before a launch, is a defect
+ * (`Panic(abort reason)`).
  */
 export const mapConcurrent: MapConcurrent = /*#__PURE__*/ async <T, U, E>(
   inputs: ReadonlyArray<T>,
@@ -184,10 +187,16 @@ export const mapConcurrent: MapConcurrent = /*#__PURE__*/ async <T, U, E>(
   const results: Array<Result<U, E>> = new Array(inputs.length)
   let next = 0
   const worker = async (): Promise<void> => {
-    while (next < inputs.length) {
-      if (opts.signal?.aborted) throw toPanic(opts.signal.reason ?? "aborted")
-      const index = next++
-      results[index] = await callAsync(() => mapper(inputs[index]!, index, opts.signal))
+    try {
+      while (next < inputs.length) {
+        if (opts.signal?.aborted) throw toPanic(opts.signal.reason ?? "aborted")
+        const index = next++
+        results[index] = await callAsync(() => mapper(inputs[index]!, index, opts.signal))
+      }
+    } catch (panic) {
+      // A defect stops the run (#60): exhaust the shared cursor so no worker launches a new mapper.
+      next = inputs.length
+      throw panic
     }
   }
   await Promise.all(Array.from({ length: Math.min(limit, inputs.length) }, worker))
