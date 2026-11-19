@@ -28,7 +28,7 @@ examples/next-app      live proof of the Next.js adapter (issue #9)
 docs/            plan (living), spec (RFC-0001), adr/, decisions/, agents/, research
 ```
 
-Boundary rules: `core` imports nothing; `schema` imports only `core`; adapters import `core` (+ `schema`) and their framework peers, never each other.
+Boundary rules: `core` imports nothing; `schema` imports only `core`; adapters import `core` (+ `schema`) and their framework peers, never each other. Core and schema are peer dependencies, so an app has one copy of each; recognise a defect with `isPanic`, never `instanceof Panic`, because a second copy of core fails `instanceof` (ADR-0006).
 
 ## Commands
 
@@ -73,7 +73,7 @@ All via pnpm at the root (see also `README.md`):
 
 ## Adding a package
 
-1. `packages/<name>/package.json` — `@friday-friday/<name>`, `workspace:*` deps on core (+schema), framework vendors as **peers** with conservative ranges (lower bound = oldest CI-matrix version), vendors as devDeps for fixtures.
+1. `packages/<name>/package.json` — `@friday-friday/<name>`, core (+schema) as **peers** `workspace:^` plus devDeps `workspace:*`, never `dependencies` (ADR-0006; `tooling/gates` checks it), framework vendors as **peers** with conservative ranges (lower bound = oldest CI-matrix version), vendors as devDeps for fixtures.
 2. `tsconfig.json` extending `../../tsconfig.base.json`, `tsdown.config.ts` (see `packages/core`), `test/` suite, size-limit entry (≤ 2 kB adapters) in `.size-limit.json`.
 3. Wire docs: README table row + plan checkbox. Root `tsconfig.json`/vitest globs pick everything else up automatically.
 4. Peer caveat: some frameworks (next@16.4) ship empty `exports` maps, so their dist cannot import them under plain Node. The smoke stubs just those modules with an in-thread resolve hook (`module.registerHooks`; see `packages/next/test/smoke.mjs`) and keeps everything else real; cover runtime behavior in vitest + an example app.

@@ -241,11 +241,10 @@ importers:
         version: 4.6.7
 
   packages/better-auth:
-    dependencies:
+    devDependencies:
       '@friday-friday/core':
         specifier: workspace:*
         version: link:../core
-    devDependencies:
       better-auth:
         specifier: ^1.7.25
         version: 1.7.25(@opentelemetry/api@1.10.0)(next@16.4.6(@opentelemetry/api@1.10.0)(@types/node@24.19.2)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(vitest@5.1.0(@opentelemetry/api@1.10.0)(@types/node@24.19.2)(happy-dom@21.0.4)(vite@8.3.8(@types/node@24.19.2)))
@@ -253,30 +252,28 @@ importers:
   packages/core: {}
 
   packages/db:
-    dependencies:
+    devDependencies:
       '@friday-friday/core':
         specifier: workspace:*
         version: link:../core
 
   packages/effect:
-    dependencies:
+    devDependencies:
       '@friday-friday/core':
         specifier: workspace:*
         version: link:../core
-    devDependencies:
       effect:
         specifier: 4.0.6
         version: 4.0.6
 
   packages/env:
-    dependencies:
+    devDependencies:
       '@friday-friday/core':
         specifier: workspace:*
         version: link:../core
       '@friday-friday/schema':
         specifier: workspace:*
         version: link:../schema
-    devDependencies:
       '@standard-schema/spec':
         specifier: ^1.1.0
         version: 1.1.0
@@ -291,14 +288,13 @@ importers:
         version: 4.6.7
 
   packages/hono:
-    dependencies:
+    devDependencies:
       '@friday-friday/core':
         specifier: workspace:*
         version: link:../core
       '@friday-friday/schema':
         specifier: workspace:*
         version: link:../schema
-    devDependencies:
       hono:
         specifier: 4.13.18
         version: 4.13.18
@@ -307,30 +303,29 @@ importers:
         version: 4.6.7
 
   packages/http:
-    dependencies:
+    devDependencies:
       '@friday-friday/core':
         specifier: workspace:*
         version: link:../core
       '@friday-friday/schema':
         specifier: workspace:*
         version: link:../schema
-    devDependencies:
       zod:
         specifier: ^4.6.7
         version: 4.6.7
 
   packages/next:
     dependencies:
+      client-only:
+        specifier: ^0.0.1
+        version: 0.0.1
+    devDependencies:
       '@friday-friday/core':
         specifier: workspace:*
         version: link:../core
       '@friday-friday/schema':
         specifier: workspace:*
         version: link:../schema
-      client-only:
-        specifier: ^0.0.1
-        version: 0.0.1
-    devDependencies:
       '@standard-schema/spec':
         specifier: 1.1.0
         version: 1.1.0
@@ -357,21 +352,19 @@ importers:
         version: 4.6.7
 
   packages/otel:
-    dependencies:
+    devDependencies:
       '@friday-friday/core':
         specifier: workspace:*
         version: link:../core
-    devDependencies:
       '@opentelemetry/api':
         specifier: ^1.9.0
         version: 1.10.0
 
   packages/query:
-    dependencies:
+    devDependencies:
       '@friday-friday/core':
         specifier: workspace:*
         version: link:../core
-    devDependencies:
       '@tanstack/query-core':
         specifier: ^5.107.1
         version: 5.107.1
@@ -387,13 +380,13 @@ importers:
 
   packages/schema:
     dependencies:
-      '@friday-friday/core':
-        specifier: workspace:*
-        version: link:../core
       '@standard-schema/spec':
         specifier: ^1.1.0
         version: 1.1.0
     devDependencies:
+      '@friday-friday/core':
+        specifier: workspace:*
+        version: link:../core
       arktype:
         specifier: ^2.2.9
         version: 2.2.9
@@ -405,14 +398,13 @@ importers:
         version: 4.6.7
 
   packages/tanstack-start:
-    dependencies:
+    devDependencies:
       '@friday-friday/core':
         specifier: workspace:*
         version: link:../core
       '@friday-friday/schema':
         specifier: workspace:*
         version: link:../schema
-    devDependencies:
       '@standard-schema/spec':
         specifier: ^1.1.0
         version: 1.1.0
@@ -424,14 +416,13 @@ importers:
         version: 4.6.7
 
   packages/trpc:
-    dependencies:
+    devDependencies:
       '@friday-friday/core':
         specifier: workspace:*
         version: link:../core
       '@friday-friday/schema':
         specifier: workspace:*
         version: link:../schema
-    devDependencies:
       '@trpc/client':
         specifier: ^11.28.3
         version: 11.28.3(@trpc/server@11.28.3(@types/ws@8.18.2)(next@16.4.6(@opentelemetry/api@1.10.0)(@types/node@24.19.2)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@7.0.2))(typescript@7.0.2)

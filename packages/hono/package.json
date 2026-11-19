@@ -20,14 +20,14 @@
   "files": [
     "dist"
   ],
-  "dependencies": {
-    "@friday-friday/core": "workspace:*",
-    "@friday-friday/schema": "workspace:*"
-  },
   "peerDependencies": {
+    "@friday-friday/core": "workspace:^",
+    "@friday-friday/schema": "workspace:^",
     "hono": "^4.10 || ^5.0.0-0"
   },
   "devDependencies": {
+    "@friday-friday/core": "workspace:*",
+    "@friday-friday/schema": "workspace:*",
     "hono": "4.13.18",
     "zod": "^4.6.7"
   },
