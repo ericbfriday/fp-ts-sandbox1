@@ -24,6 +24,7 @@
     "@friday-friday/core": "workspace:*"
   },
   "scripts": {
-    "build": "tsdown"
+    "build": "tsdown",
+    "smoke": "node test/smoke.mjs"
   }
 }

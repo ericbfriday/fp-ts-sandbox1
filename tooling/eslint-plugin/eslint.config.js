@@ -5,8 +5,11 @@ import tseslint from "typescript-eslint"
 import friday from "./src/index.ts"
 
 export default [
+  // `next build` output in examples/ (gitignored, but ESLint does not read .gitignore).
+  { ignores: ["**/.next/**", "**/next-env.d.ts"] },
   {
-    files: ["packages/*/src/**/*.ts"],
+    // App code too: the redirect trap lives where apps call next/navigation (issue #43).
+    files: ["packages/*/src/**/*.ts", "examples/*/src/**/*.{ts,tsx}"],
     languageOptions: {
       parser: tseslint.parser,
       parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname }

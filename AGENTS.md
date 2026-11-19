@@ -4,11 +4,12 @@ Project brief: see **`IDEA.md`** (read it first). The authoritative design sourc
 
 ## Commands
 
-- `pnpm run check` — typecheck (`tsc --noEmit`), TS 7 locally; CI also runs TS 6.0 / 7.1-beta via npm aliases
-- `pnpm run lint` — oxlint (type-aware) + local ESLint rules (repo-wide, enforced) + dprint check
+- `pnpm run check` — typecheck (`tsc --noEmit`, root project + each example's own tsconfig), TS 7 locally; CI also runs TS 6.0 / 7.1-beta via npm aliases
+- `pnpm run lint` — oxlint (type-aware) + local ESLint rules (`packages/*/src` + `examples/*/src`, enforced) + dprint check
 - `pnpm run lint-fix` — oxlint --fix + dprint fmt
 - `pnpm test` — Vitest runtime + type tests; `pnpm test:types` for type-only
 - `pnpm run build` / `pnpm run size` / `pnpm run smoke` — build, size budgets, dist smokes
+- `pnpm run build:examples` — `next build` of each example (needs `pnpm run build` first: the app resolves package `dist`)
 - `pnpm run ci` — everything CI runs, locally
 
 ## Conventions
@@ -25,10 +26,25 @@ Project brief: see **`IDEA.md`** (read it first). The authoritative design sourc
 
 ## Package map (implemented)
 
-- `packages/core` — `@friday-friday/core` (+ `/async`, `/gen`, `/wire` subpaths)
-- `packages/schema` — `@friday-friday/schema`
-- `packages/next` — `@friday-friday/next` (react-server/default/client conditions)
-- `tooling/eslint-plugin` — `@friday-friday/eslint-plugin`
+Every `packages/*` entry has a size budget (`.size-limit.json`) and, except `next`, a plain-Node dist smoke (`test/smoke.mjs`); `tooling/gates` fails CI when a package or subpath misses either, or is missing here.
+
+- `packages/core` — `@friday-friday/core` (+ `/async`, `/gen`, `/wire` subpaths): Result, tagged errors, combinators, defect triage, wire envelope
+- `packages/schema` — `@friday-friday/schema`: Standard Schema to Result, `ValidationFailure`, field/form errors
+- `packages/next` — `@friday-friday/next` (+ `/client` subpath; `react-server`/`default` conditions): Server Actions, loaders, route handlers. No plain-Node smoke: next@16.4 ships an empty `exports` map
+- `packages/hono` — `@friday-friday/hono`: `respond`/`problem`, `sv` validator, `onErrorHandler`
+- `packages/trpc` — `@friday-friday/trpc`: `errorFormatter`, `resultMiddleware`/`resultProcedure`, `fromTRPC`
+- `packages/tanstack-start` — `@friday-friday/tanstack-start`: `resultHandler`/`resultServerFn`, `loaderResult`, form errors
+- `packages/query` — `@friday-friday/query`: `resultQueryOptions`, `toQueryFn`, `retryUnless` (TanStack Query)
+- `packages/better-auth` — `@friday-friday/better-auth`: `requireSession`/`requireRole`, `authCall`, `fromAuthTuple`, `beforeDbHook`
+- `packages/http` — `@friday-friday/http`: `fetchResult`, `reconstruct`
+- `packages/otel` — `@friday-friday/otel`: `traced`/`tracedSync` spans tagged with the error tag
+- `packages/db` — `@friday-friday/db`: Postgres/Prisma driver errors to tagged errors
+- `packages/env` — `@friday-friday/env`: `parseEnv` (redacted issues), `envRecord`
+- `packages/effect` — `@friday-friday/effect`: Result/Effect bridge (`toEffect`, `fromExit`, `runResult`)
+- `tooling/eslint-plugin` — `@friday-friday/eslint-plugin`: the three custom rules, run on `packages/*/src` and `examples/*/src`
+- `tooling/codemods` — neverthrow-to-core codemod (plain script, not a workspace package)
+- `tooling/gates` — gate-coverage tests (plain test dir, not a workspace package)
+- `examples/next-app` — `@friday-friday/example-next-app`: profile form end-to-end on Result (issue #9); typechecked with its own tsconfig and built with `next build` in CI
 
 ## Agent skills
 
