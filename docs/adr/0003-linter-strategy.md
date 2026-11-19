@@ -22,5 +22,6 @@ IDEA.md §2/§10.2: use "the same linter Effect uses"; evidence points to Oxlint
 ## Notes
 
 - `must-use-result` flags discarded `Result`/`AsyncResult` expressions (TS does not force consumption).
-- `no-try-around-redirect` flags `redirect()`/`notFound()` inside `try`-block/finalizer unless the catch handler calls `unstable_rethrow` first (the documented remedy; rethrowing the sentinel from a catch handler is the escape hatch).
-- `no-instanceof-tagged-error` flags `instanceof` against tagged-error factories (use the structural `.is()`).
+- `must-use-result` sees through optional calls (`svc?.save()`) and short-circuits (`flag && save()`); `void` is the explicit discard.
+- `no-try-around-redirect` flags sentinel calls (`redirect`/`permanentRedirect`/`notFound`/`forbidden`/`unauthorized` from `next/navigation`, and the suite's `orNotFound`/`orForbidden`/`orRedirect`; named, aliased or namespace imports) that run synchronously in a `try` block whose `catch` swallows. A catch is safe when a top-level statement, reached before anything that can leave the block, is `unstable_rethrow(e)` / `nextRethrow(e)` (the documented remedy) or `throw e` (the escape hatch). `try/finally`, the finalizer, the catch body and functions defined but not called in the try are not flagged (#54).
+- `no-instanceof-tagged-error` flags `instanceof` against tagged-error factories, whatever the right-hand side's shape (`NotFound`, `Errors.NotFound`, an alias); use the structural `.is()`.
