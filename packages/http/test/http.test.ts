@@ -4,16 +4,14 @@
  * NetworkError. Problem bodies come from the real producer (`@friday-friday/core/wire`'s
  * `toProblem`) and from core's golden bodies (#33), never from hand-copied fixtures (#30, #40).
  */
-import { ok, Panic, taggedError } from "@friday-friday/core"
-import { Timeout } from "@friday-friday/core/async"
+import { NetworkError, NotFound, ok, Panic, Timeout } from "@friday-friday/core"
 import { goldenProblems } from "@friday-friday/core/test/wire-golden"
 import { PROBLEM_CONTENT_TYPE, sanitize, toDefect, toProblem } from "@friday-friday/core/wire"
+import * as http from "@friday-friday/http"
 import { fetchResult, reconstruct } from "@friday-friday/http"
 import { createServer, type Server, type ServerResponse } from "node:http"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { z } from "zod"
-
-const NotFound = taggedError("NotFound")<{ id: string }>()
 
 /** Serve `body` as RFC 9457 problem+json with its own status, as every producer does. */
 const sendProblem = (res: ServerResponse, body: { readonly status: number }): void => {
@@ -50,6 +48,11 @@ beforeAll(async () => {
     const golden = /^\/golden\/(\d+)$/.exec(req.url ?? "")
     if (golden !== null) {
       sendProblem(res, goldenProblems[Number(golden[1])]!.body)
+      return
+    }
+    if (req.url === "/upstream-down") {
+      // A server whose own dependency failed: core's NetworkError, with a driver-text `reason`.
+      sendProblem(res, toProblem(NetworkError({ reason: "connect ECONNREFUSED 10.0.0.5:5432", message: "upstream" })))
       return
     }
     if (req.url === "/foreign-problem") {
@@ -179,6 +182,15 @@ describe("fetchResult", () => {
     expect(reconstruct(r.error.problem)).toEqual({ _tag: "NotFound", id: "missing", message: "no such user" })
   })
 
+  it("a server-built NetworkError crosses as tag + status only (ADR-0005): reconstruct has no reason", async () => {
+    const r = await fetchResult(`${base}/upstream-down`)
+    if (r.ok || r.error._tag !== "HttpError") throw new Error("expected HttpError")
+    expect(r.error.status).toBe(502)
+    const rebuilt = reconstruct(r.error.problem)
+    expect(rebuilt).toStrictEqual({ _tag: "NetworkError" })
+    expect(NetworkError.is(rebuilt)).toBe(true)
+  })
+
   it("problem+json without our tag -> HttpError with problem; reconstruct -> null", async () => {
     const r = await fetchResult(`${base}/foreign-problem`)
     if (r.ok) throw new Error("expected Err")
@@ -209,15 +221,18 @@ describe("fetchResult", () => {
     expect(r.error._tag).toBe("ValidationFailure")
   })
 
-  it("invalid 2xx JSON -> Err(NetworkError)", async () => {
+  it("invalid 2xx JSON -> Err(core NetworkError{reason})", async () => {
     const r = await fetchResult(`${base}/bad-json`)
     if (r.ok) throw new Error("expected Err")
-    expect(r.error._tag).toBe("NetworkError")
+    expect(NetworkError.is(r.error)).toBe(true)
+    if (!NetworkError.is(r.error)) throw new Error("expected NetworkError")
+    expect(r.error.reason).toMatch(/^invalid JSON body: /)
   })
 
-  it("timeoutMs budget -> Err(Timeout{ms})", async () => {
+  it("timeoutMs budget -> Err(core Timeout{ms})", async () => {
     const r = await fetchResult(`${base}/slow`, { timeoutMs: 60 })
     if (r.ok) throw new Error("expected Err")
+    expect(Timeout.is(r.error)).toBe(true)
     expect(r.error).toEqual(Timeout({ ms: 60 }))
   })
 
@@ -235,7 +250,13 @@ describe("fetchResult", () => {
     // Port 1 is reserved and reliably refused on Windows/CI.
     const r = await fetchResult("http://127.0.0.1:1/x", { retries: 1 })
     if (r.ok) throw new Error("expected Err")
-    expect(r.error._tag).toBe("NetworkError")
+    expect(NetworkError.is(r.error)).toBe(true)
+    if (!NetworkError.is(r.error)) throw new Error("expected NetworkError")
+    expect(typeof r.error.reason).toBe("string")
+  })
+
+  it("http declares no NetworkError of its own: callers import core's (#90, #64 no aliases)", () => {
+    expect(Object.keys(http)).not.toContain("NetworkError")
   })
 
   it("retries do NOT fire for HTTP status failures", async () => {

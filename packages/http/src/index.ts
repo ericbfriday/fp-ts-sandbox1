@@ -11,16 +11,26 @@
  *
  * Abort semantics follow core (IDEA §4.3, `/async` module doc): a user abort rejects with `Panic`
  * and is never retried; `Timeout` means the `timeoutMs` timer fired, nothing else.
+ *
+ * Vocabulary (ADR-0005, #90): `NetworkError{reason?}` and `Timeout{ms?}` are core's fixed
+ * infrastructure tags; import them from `@friday-friday/core` (http re-exports neither, #64).
+ * `fetchResult` always fills `reason` and `ms`, but a `NetworkError` rebuilt from a server's
+ * problem body has neither: core `/wire` sends infrastructure tags as tag + status only.
+ * `HttpError` is http's own adapter tag.
  */
-import { type AsyncResult, err, type ErrorFactory, ok, type Result, taggedError, toPanic } from "@friday-friday/core"
-import { Timeout } from "@friday-friday/core/async"
+import {
+  type AsyncResult,
+  err,
+  type ErrorFactory,
+  NetworkError,
+  ok,
+  type Result,
+  taggedError,
+  Timeout,
+  toPanic
+} from "@friday-friday/core"
 import { fromWire, type WireError } from "@friday-friday/core/wire"
 import { parseAsync, type ValidationFailure } from "@friday-friday/schema"
-
-export const NetworkError: ErrorFactory<"NetworkError", { readonly reason: string }> = taggedError(
-  "NetworkError"
-)<{ readonly reason: string }>()
-export type NetworkError = ReturnType<typeof NetworkError>
 
 /** RFC 9457 problem+json body, as received. `tag` is our extension carrying the server error `_tag`. */
 export interface ProblemBody {
@@ -39,6 +49,7 @@ export const HttpError: ErrorFactory<"HttpError", { readonly status: number; rea
   )<{ readonly status: number; readonly problem?: ProblemBody }>()
 export type HttpError = ReturnType<typeof HttpError>
 
+/** http's adapter tag plus core's infrastructure tags and schema's `ValidationFailure` (ADR-0005). */
 export type FetchError = HttpError | NetworkError | Timeout | ValidationFailure
 
 /**
