@@ -34,9 +34,25 @@ _Avoid_: exception, error class, error instance
 The callable `ErrorFactory<Tag, P>` that `taggedError(tag)<P>()` returns: it builds tagged errors of one tag and carries `.tag` and the structural `.is()` guard (RFC §2).
 _Avoid_: error constructor, error class
 
-**domain vocabulary**:
-The convention-fixed tag names every package agrees on: `NotFound`, `Conflict`, `Forbidden`, `Unauthenticated`, `ValidationFailure` (domain) and `NetworkError`, `Timeout`, `DbUnavailable` (infrastructure) (RFC §2; whether core owns them is #66).
-_Avoid_: error codes, error enum
+**fixed vocabulary**:
+The tags every package agrees on, the domain tags plus the infrastructure tags, each owned by one package (core; schema for `ValidationFailure`). A fixed tag guarantees only `_tag` and an optional `message`; any other prop on it is optional, whoever declares it (#66).
+_Avoid_: domain vocabulary (ambiguous with domain tag), error codes, error enum
+
+**domain tag**:
+A fixed tag for a failure that comes from business rules: `NotFound`, `Conflict`, `Forbidden`, `Unauthenticated`, `ValidationFailure`.
+_Avoid_: business error, user error
+
+**infrastructure tag**:
+A fixed tag for a failure that comes from the transport or a dependency: `NetworkError`, `Timeout`, `DbUnavailable`.
+_Avoid_: system error, technical error
+
+**app tag**:
+Any tag outside the fixed vocabulary that an app, not an adapter, defines for its own expected failures; its factory may require props because it is the only producer.
+_Avoid_: custom error, user-defined error
+
+**adapter tag**:
+A tag outside the fixed vocabulary that exactly one adapter defines and produces, meaningful only inside that adapter (`HttpError`, `AuthApiError`, `ForeignKeyViolation`, `NotNullViolation`).
+_Avoid_: library error, vendor error
 
 **ValidationFailure**:
 The tagged error for failed Standard Schema validation, `{ _tag: "ValidationFailure", issues: [{ message, path }] }`, produced by `@friday-friday/schema` and returned as data, never thrown.
