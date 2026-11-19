@@ -1,34 +1,34 @@
 [
   {
-    "name": "@friday-friday/core \u2014 { ok, err, map, andThen, pipe }",
+    "name": "@friday-friday/core — { ok, err, map, andThen, pipe }",
     "path": "packages/core/dist/index.js",
     "import": "{ ok, err, map, andThen, pipe }",
     "limit": "600 B",
     "gzip": true
   },
   {
-    "name": "@friday-friday/core \u2014 full",
+    "name": "@friday-friday/core — full",
     "path": "packages/core/dist/index.js",
     "import": "*",
     "limit": "3 kB",
     "gzip": true
   },
   {
-    "name": "@friday-friday/core \u2014 full /async subpath",
+    "name": "@friday-friday/core — full /async subpath",
     "path": "packages/core/dist/async.js",
     "import": "*",
     "limit": "3 kB",
     "gzip": true
   },
   {
-    "name": "@friday-friday/core \u2014 full /gen subpath",
+    "name": "@friday-friday/core — full /gen subpath",
     "path": "packages/core/dist/gen.js",
     "import": "*",
     "limit": "3 kB",
     "gzip": true
   },
   {
-    "name": "@friday-friday/core \u2014 full /wire subpath",
+    "name": "@friday-friday/core — full /wire subpath",
     "path": "packages/core/dist/wire.js",
     "import": "*",
     "limit": "1.5 kB",
@@ -39,38 +39,47 @@
     "path": "packages/schema/dist/index.js",
     "import": "*",
     "limit": "2 kB",
-    "gzip": true
+    "gzip": true,
+    "ignore": [
+      "@friday-friday/core"
+    ]
   },
   {
-    "name": "@friday-friday/next \u2014 react-server root",
+    "name": "@friday-friday/next — react-server root",
     "path": "packages/next/dist/index.js",
     "import": "*",
     "limit": "2 kB",
     "gzip": true,
     "ignore": [
       "next",
-      "react"
+      "react",
+      "@friday-friday/core",
+      "@friday-friday/schema"
     ]
   },
   {
-    "name": "@friday-friday/next \u2014 default-condition server-only stub",
+    "name": "@friday-friday/next — default-condition server-only stub",
     "path": "packages/next/dist/server-only-stub.js",
     "limit": "200 B",
     "gzip": true,
     "ignore": [
       "next",
-      "react"
+      "react",
+      "@friday-friday/core",
+      "@friday-friday/schema"
     ]
   },
   {
-    "name": "@friday-friday/next \u2014 /client subpath",
+    "name": "@friday-friday/next — /client subpath",
     "path": "packages/next/dist/client.js",
     "import": "*",
     "limit": "2 kB",
     "gzip": true,
     "ignore": [
       "next",
-      "react"
+      "react",
+      "@friday-friday/core",
+      "@friday-friday/schema"
     ]
   },
   {
@@ -80,7 +89,9 @@
     "limit": "2 kB",
     "gzip": true,
     "ignore": [
-      "better-auth"
+      "better-auth",
+      "@friday-friday/core",
+      "@friday-friday/schema"
     ]
   },
   {
@@ -88,7 +99,11 @@
     "path": "packages/http/dist/index.js",
     "import": "*",
     "limit": "2 kB",
-    "gzip": true
+    "gzip": true,
+    "ignore": [
+      "@friday-friday/core",
+      "@friday-friday/schema"
+    ]
   },
   {
     "name": "@friday-friday/otel",
@@ -97,7 +112,9 @@
     "limit": "2 kB",
     "gzip": true,
     "ignore": [
-      "@opentelemetry/api"
+      "@opentelemetry/api",
+      "@friday-friday/core",
+      "@friday-friday/schema"
     ]
   },
   {
@@ -107,7 +124,9 @@
     "limit": "2 kB",
     "gzip": true,
     "ignore": [
-      "hono"
+      "hono",
+      "@friday-friday/core",
+      "@friday-friday/schema"
     ]
   },
   {
@@ -118,7 +137,9 @@
     "gzip": true,
     "ignore": [
       "@trpc/server",
-      "@trpc/client"
+      "@trpc/client",
+      "@friday-friday/core",
+      "@friday-friday/schema"
     ]
   },
   {
@@ -128,7 +149,9 @@
     "limit": "2 kB",
     "gzip": true,
     "ignore": [
-      "@tanstack/router-core"
+      "@tanstack/router-core",
+      "@friday-friday/core",
+      "@friday-friday/schema"
     ]
   },
   {
@@ -136,14 +159,22 @@
     "path": "packages/db/dist/index.js",
     "import": "*",
     "limit": "1 kB",
-    "gzip": true
+    "gzip": true,
+    "ignore": [
+      "@friday-friday/core",
+      "@friday-friday/schema"
+    ]
   },
   {
     "name": "@friday-friday/env",
     "path": "packages/env/dist/index.js",
     "import": "*",
-    "limit": "1.1 kB",
-    "gzip": true
+    "limit": "1 kB",
+    "gzip": true,
+    "ignore": [
+      "@friday-friday/core",
+      "@friday-friday/schema"
+    ]
   },
   {
     "name": "@friday-friday/effect",
@@ -152,7 +183,9 @@
     "limit": "2 kB",
     "gzip": true,
     "ignore": [
-      "effect"
+      "effect",
+      "@friday-friday/core",
+      "@friday-friday/schema"
     ]
   },
   {
@@ -162,7 +195,9 @@
     "limit": "1 kB",
     "gzip": true,
     "ignore": [
-      "@tanstack/query-core"
+      "@tanstack/query-core",
+      "@friday-friday/core",
+      "@friday-friday/schema"
     ]
   }
 ]

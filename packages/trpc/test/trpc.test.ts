@@ -1,69 +1,105 @@
 /**
- * `@friday-friday/trpc` runtime tests — real tRPC v11 router served through the standalone
+ * `@friday-friday/trpc` runtime tests — real tRPC v11 routers served through the standalone
  * fetch adapter and called with a real `@trpc/client` httpBatchLink (fetch wired straight
- * into the handler, so the whole wire encoding is exercised without a socket).
+ * into the handler, so the whole wire encoding is exercised without a socket). Every wire
+ * assertion reads the raw response text the handler produced, not a client-side object.
  */
-import { createTRPCClient, httpBatchLink } from "@trpc/client"
-import { initTRPC } from "@trpc/server"
+import { createTRPCClient, httpBatchLink, type TRPCLink } from "@trpc/client"
+import { type AnyTRPCRouter, initTRPC, TRPCError } from "@trpc/server"
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch"
-import { beforeAll, describe, expect, it } from "vitest"
+import * as v from "valibot"
+import { describe, expect, it } from "vitest"
 import { z } from "zod"
 
 /* oxlint-disable no-unsafe-type-assertion, no-unnecessary-type-assertion -- wire probes: tRPC error shapes are structurally accessed in tests */
-import { err, ok, taggedError } from "@friday-friday/core"
+import { err, ok, Panic, taggedError } from "@friday-friday/core"
+import type { ValidationFailure } from "@friday-friday/schema"
 import { errorFormatter, fromTRPC, resultMiddleware, resultProcedure, sanitize } from "@friday-friday/trpc"
 
 const NotFound = taggedError("NotFound")<{ id: string }>()
 const Conflict = taggedError("Conflict")<{ field: string }>()
+const DbUnavailable = taggedError("DbUnavailable")<{ host: string }>()
 
-const t = initTRPC.create({ errorFormatter })
-const domain = t.procedure.use(resultMiddleware({ NotFound: "NOT_FOUND", Conflict: "CONFLICT" }))
+/** The secret every defect test throws; it must never appear in a production wire body. */
+const SECRET = "connect ECONNREFUSED postgres://admin:hunter2@db"
+const DEFECT_TEXT = "Internal server error"
 
-const router = t.router({
-  getUser: domain.input(z.object({ id: z.string() })).query(({ input }) => {
-    if (input.id === "missing") return err(NotFound({ id: input.id }))
-    return ok({ id: input.id, name: "ada" })
-  }),
-  rename: domain.input(z.object({ id: z.string() })).mutation(() => {
-    return err(Conflict({ field: "name" }))
-  }),
-  formFlow: resultProcedure({ channel: "data" })(
-    t.procedure.input(z.object({ name: z.string() })).mutation(({ input }) => {
-      return input.name.length < 2 ? err(Conflict({ field: "name" })) : ok({ renamed: input.name })
-    })
-  ),
-  // Validator failure: zod's ~standard issues must surface as data.fl = ValidationFailure.
-  strict: t.procedure.input(z.object({ n: z.number() })).query(() => "ok")
-})
-
-type Router = typeof router
-
-let client: ReturnType<typeof createTRPCClient<Router>>
-beforeAll(() => {
-  client = createTRPCClient<Router>({
-    links: [
-      httpBatchLink({
-        url: "http://localhost/trpc",
-        fetch: async (input, init) => {
-          // Route the client's request straight into the standalone handler (wire truth
-          // without a socket).
-          const req = new Request(
-            input as string,
-            // oxlint-disable-next-line no-unsafe-type-assertion -- tRPC's RequestInitEsque is structurally RequestInit for our usage
-            init as RequestInit | undefined
-          )
-          return fetchRequestHandler({
-            endpoint: "/trpc",
-            router,
-            // oxlint-disable-next-line no-unsafe-type-assertion -- adapter's createContext signature is (opts) => ctx
-            createContext: () => ({}),
-            req
-          }) as Promise<Response>
-        }
-      })
-    ]
+const buildRouter = (opts: { isDev: boolean; report?: (cause: unknown) => void }) => {
+  const t = initTRPC.create({
+    isDev: opts.isDev,
+    errorFormatter: errorFormatter(opts.report === undefined ? {} : { report: opts.report })
   })
-})
+  const domain = t.procedure.use(
+    resultMiddleware({ NotFound: "NOT_FOUND", Conflict: "CONFLICT" })
+  )
+  return t.router({
+    getUser: domain.input(z.object({ id: z.string() })).query(({ input }) => {
+      if (input.id === "missing") return err(NotFound({ id: input.id, message: "no such user" }))
+      if (input.id === "db") return err(DbUnavailable({ host: "db.internal:5432", message: SECRET }))
+      return ok({ id: input.id, name: "ada" })
+    }),
+    rename: domain.input(z.object({ id: z.string() })).mutation(() => {
+      return err(Conflict({ field: "name" }))
+    }),
+    formFlow: resultProcedure({ channel: "data" })(
+      t.procedure.input(z.object({ name: z.string() })).mutation(({ input }) => {
+        return input.name.length < 2 ? err(Conflict({ field: "name" })) : ok({ renamed: input.name })
+      })
+    ),
+    // Validator failures (zod + valibot): the schema projection, never the vendor issue objects.
+    strict: t.procedure.input(z.object({ n: z.number() })).query(() => "ok"),
+    signup: t.procedure
+      .input(v.object({ email: v.pipe(v.string(), v.email()), password: v.string() }))
+      .mutation(() => "welcome"),
+    // Defects: a raw throw, and a throw already triaged to Panic (Panic copies cause.message).
+    crash: t.procedure.query(() => {
+      throw new Error(SECRET)
+    }),
+    panic: t.procedure.query(() => {
+      throw new Panic(new Error(SECRET))
+    }),
+    // A deliberate, non-defect TRPCError keeps its own message.
+    forbidden: t.procedure.query(() => {
+      throw new TRPCError({ code: "FORBIDDEN", message: "members only" })
+    })
+  })
+}
+
+type AppRouter = ReturnType<typeof buildRouter>
+
+/** A client wired straight into the fetch handler; `wire()` is the last raw response text. */
+const connect = (router: AnyTRPCRouter) => {
+  let last = ""
+  const link: TRPCLink<AppRouter> = httpBatchLink({
+    url: "http://localhost/trpc",
+    fetch: async (input, init) => {
+      const req = new Request(
+        input as string,
+        // oxlint-disable-next-line no-unsafe-type-assertion -- tRPC's RequestInitEsque is structurally RequestInit for our usage
+        init as RequestInit | undefined
+      )
+      const res = await fetchRequestHandler({ endpoint: "/trpc", router, createContext: () => ({}), req })
+      last = await res.clone().text()
+      return res
+    }
+  })
+  return { client: createTRPCClient<AppRouter>({ links: [link] }), wire: (): string => last }
+}
+
+/** Await a rejection and return the thrown value. */
+const rejection = async (p: PromiseLike<unknown>): Promise<unknown> => {
+  try {
+    await p
+  } catch (e) {
+    return e
+  }
+  throw new Error("expected rejection")
+}
+
+const dataOf = (e: unknown) => (e as { data?: { code?: string; friday_friday?: unknown; stack?: unknown } }).data
+
+const prod = connect(buildRouter({ isDev: false }))
+const { client } = prod
 
 describe("error channel (resultMiddleware + errorFormatter)", () => {
   it("Ok -> plain value over the wire", async () => {
@@ -73,44 +109,31 @@ describe("error channel (resultMiddleware + errorFormatter)", () => {
     expect(r).toEqual(ok({ id: "1", name: "ada" }))
   })
 
-  it("Err -> TRPCError with mapped code; data.fl carries the sanitized tagged error; fromTRPC reconstructs it", async () => {
-    let caught: unknown
-    try {
-      await client.getUser.query({ id: "missing" })
-      throw new Error("expected rejection")
-    } catch (e) {
-      caught = e
-    }
-    // tRPC's error shape carries code + our fl member.
-    const data = (caught as { data?: { code?: string; fl?: Record<string, unknown> } }).data
+  it("Err -> TRPCError with mapped code; data.friday_friday is core's sanitized error, message included", async () => {
+    const data = dataOf(await rejection(client.getUser.query({ id: "missing" })))
     expect(data?.code).toBe("NOT_FOUND")
-    const fl = data?.fl
-    expect(fl).toEqual({ _tag: "NotFound", id: "missing" })
+    expect(data?.friday_friday).toEqual({ _tag: "NotFound", message: "no such user", id: "missing" })
+  })
 
+  it("fromTRPC reconstructs via the wire module: message survives", async () => {
     const r = await fromTRPC<{ id: string; name: string }, ReturnType<typeof NotFound> | ReturnType<typeof Conflict>>(
       client.getUser.query({ id: "missing" })
     )
-    expect(r.ok).toBe(false)
-    if (!r.ok && r.error._tag === "NotFound") expect(r.error.id).toBe("missing")
-    else if (!r.ok) throw new Error(`expected NotFound, got ${r.error._tag}`)
+    expect(r).toEqual(err({ _tag: "NotFound", message: "no such user", id: "missing" }))
   })
 
   it("mutation errors take the same channel", async () => {
-    let caught: unknown
-    try {
-      await client.rename.mutate({ id: "1" })
-      throw new Error("expected rejection")
-    } catch (e) {
-      caught = e
-    }
-    const data = (caught as { data?: { code?: string; fl?: Record<string, unknown> } }).data
+    const data = dataOf(await rejection(client.rename.mutate({ id: "1" })))
     expect(data?.code).toBe("CONFLICT")
-    expect(data?.fl).toEqual({ _tag: "Conflict", field: "name" })
+    expect(data?.friday_friday).toEqual({ _tag: "Conflict", field: "name" })
 
     const r = await fromTRPC<never, ReturnType<typeof Conflict>>(client.rename.mutate({ id: "1" }))
-    expect(r.ok).toBe(false)
-    if (!r.ok && r.error._tag === "Conflict") expect(r.error.field).toBe("name")
-    else if (!r.ok) throw new Error(`expected Conflict, got ${r.error._tag}`)
+    expect(r).toEqual(err({ _tag: "Conflict", field: "name" }))
+  })
+
+  it("the formatter writes no member under the report's `fl` placeholder name", async () => {
+    const data = dataOf(await rejection(client.getUser.query({ id: "missing" })))
+    expect(data !== undefined && "fl" in data).toBe(false)
   })
 })
 
@@ -125,35 +148,110 @@ describe("data channel (resultProcedure)", () => {
   })
 })
 
-describe("validator failures format from ~standard issues (NOT instanceof ZodError)", () => {
-  it("data.fl is a ValidationFailure with issues", async () => {
-    let caught: unknown
-    try {
-      await client.strict.query({ n: "not-a-number" } as never)
-      throw new Error("expected rejection")
-    } catch (e) {
-      caught = e
-    }
-    const fl = (caught as { data?: { fl?: unknown } }).data?.fl
-    expect(fl).not.toBeNull()
-    expect((fl as { tag?: string }).tag).toBe("ValidationFailure")
-    expect(Array.isArray((fl as { issues?: unknown }).issues)).toBe(true)
+describe("validator failures: schema's projection (message + path only), NOT the vendor issues", () => {
+  it("valibot: a bad signup never echoes the submitted input (the password) back", async () => {
+    const data = dataOf(await rejection(client.signup.mutate({ email: "nope", password: "hunter2" })))
+    expect(data?.code).toBe("BAD_REQUEST")
+    expect(data?.friday_friday).toEqual({
+      _tag: "ValidationFailure",
+      issues: [{ message: "Invalid email: Received \"nope\"", path: ["email"] }]
+    })
+    expect(prod.wire()).not.toContain("hunter2")
+    expect(prod.wire()).not.toContain("\"input\"")
+  })
+
+  it("zod: same projection; fromTRPC rebuilds schema's ValidationFailure", async () => {
+    const data = dataOf(await rejection(client.strict.query({ n: "not-a-number" } as never)))
+    const fl = data?.friday_friday as { _tag?: string; issues?: ReadonlyArray<object> }
+    expect(fl._tag).toBe("ValidationFailure")
+    expect(fl.issues?.map((i) => Object.keys(i).toSorted())).toEqual([["message", "path"]])
+    expect(prod.wire()).not.toContain("\"input\"")
+
+    const r = await fromTRPC<string, ValidationFailure>(client.strict.query({ n: "x" } as never))
+    expect(r.ok).toBe(false)
+    if (!r.ok && r.error._tag === "ValidationFailure") expect(r.error.issues[0]?.path).toEqual(["n"])
+    else throw new Error("expected ValidationFailure")
   })
 })
 
-describe("sanitize", () => {
-  it("strips message + cause, keeps _tag + props", () => {
-    const e = NotFound({ id: "q" })
-    const s = sanitize(e)
-    expect(s).toEqual({ _tag: "NotFound", id: "q" })
-    expect("cause" in s).toBe(false)
+describe("defects (INTERNAL_SERVER_ERROR): fixed text in production, original to the reporter", () => {
+  it.each(["crash", "panic"] as const)("%s: production wire carries no defect text", async (proc) => {
+    const reported: Array<unknown> = []
+    const app = connect(buildRouter({ isDev: false, report: (c) => reported.push(c) }))
+    const e = await rejection(app.client[proc].query())
+    expect((e as Error).message).toBe(DEFECT_TEXT)
+    expect(dataOf(e)?.code).toBe("INTERNAL_SERVER_ERROR")
+    expect(dataOf(e)?.friday_friday).toEqual({ _tag: "InternalDefect", message: DEFECT_TEXT })
+    expect(app.wire()).not.toContain("hunter2")
+    expect(reported).toHaveLength(1)
+    expect((reported[0] as Error).message).toContain("hunter2")
+  })
+
+  it("an Err whose tag has no mapped code is a defect too: no props, no text on the wire", async () => {
+    const reported: Array<unknown> = []
+    const app = connect(buildRouter({ isDev: false, report: (c) => reported.push(c) }))
+    const e = await rejection(app.client.getUser.query({ id: "db" }))
+    expect((e as Error).message).toBe(DEFECT_TEXT)
+    expect(dataOf(e)?.friday_friday).toEqual({ _tag: "InternalDefect", message: DEFECT_TEXT })
+    expect(app.wire()).not.toContain("hunter2")
+    expect(app.wire()).not.toContain("db.internal")
+    expect(reported).toHaveLength(1)
+
+    const r = await fromTRPC<never, ReturnType<typeof NotFound>>(app.client.getUser.query({ id: "db" }))
+    expect(r).toEqual(err({ _tag: "TRPCTransportError", code: "INTERNAL_SERVER_ERROR", message: DEFECT_TEXT }))
+  })
+
+  it("development keeps tRPC's own message (isDev), still the envelope under data.friday_friday", async () => {
+    const dev = connect(buildRouter({ isDev: true }))
+    const e = await rejection(dev.client.crash.query())
+    expect((e as Error).message).toBe(SECRET)
+    expect(dataOf(e)?.friday_friday).toEqual({ _tag: "InternalDefect", message: DEFECT_TEXT })
+  })
+
+  it("a deliberate TRPCError (not a defect) keeps its message and carries no envelope", async () => {
+    const e = await rejection(client.forbidden.query())
+    expect((e as Error).message).toBe("members only")
+    expect(dataOf(e)?.friday_friday).toBeNull()
+  })
+
+  it("a throwing reporter never breaks the response", async () => {
+    const app = connect(buildRouter({
+      isDev: false,
+      report: () => {
+        throw new Error("reporter down")
+      }
+    }))
+    const e = await rejection(app.client.crash.query())
+    expect((e as Error).message).toBe(DEFECT_TEXT)
+  })
+})
+
+describe("sanitize (core wire projection)", () => {
+  it("keeps _tag, message and JSON-safe props; drops cause", () => {
+    const s = sanitize(NotFound({ id: "q", message: "gone", cause: new Error(SECRET) }))
+    expect(s).toEqual({ _tag: "NotFound", message: "gone", id: "q" })
+  })
+
+  it("never throws on a bigint or function prop; drops them", () => {
+    const odd = { _tag: "Conflict", field: "name", version: 10n, fn: () => 1 }
+    expect(sanitize(odd)).toEqual({ _tag: "Conflict", field: "name" })
+  })
+})
+
+describe("resultMiddleware", () => {
+  it("an inherited key such as `constructor` is not a mapped code (unmapped -> defect)", async () => {
+    const t = initTRPC.create({ isDev: false, errorFormatter: errorFormatter() })
+    const Weird = taggedError("constructor")()
+    const router = t.router({ q: t.procedure.use(resultMiddleware({})).query(() => err(Weird({}))) })
+    const app = connect(router)
+    const e = await rejection((app.client as unknown as { q: { query: () => Promise<unknown> } }).q.query())
+    expect(dataOf(e)?.code).toBe("INTERNAL_SERVER_ERROR")
   })
 })
 
 describe("fromTRPC fallback", () => {
   it("non-tRPC failures -> Err(TRPCTransportError)", async () => {
     const r = await fromTRPC<string>(Promise.reject(new Error("socket hangup")))
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error._tag).toBe("TRPCTransportError")
+    expect(r).toEqual(err({ _tag: "TRPCTransportError", message: "socket hangup" }))
   })
 })
