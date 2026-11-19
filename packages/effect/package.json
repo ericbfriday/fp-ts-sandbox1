@@ -20,13 +20,12 @@
   "files": [
     "dist"
   ],
-  "dependencies": {
-    "@friday-friday/core": "workspace:*"
-  },
   "peerDependencies": {
+    "@friday-friday/core": "workspace:^",
     "effect": "^4.0.0"
   },
   "devDependencies": {
+    "@friday-friday/core": "workspace:*",
     "effect": "4.0.6"
   },
   "scripts": {

@@ -21,14 +21,17 @@
     "dist"
   ],
   "dependencies": {
-    "@friday-friday/core": "workspace:*",
     "@standard-schema/spec": "^1.1.0"
+  },
+  "peerDependencies": {
+    "@friday-friday/core": "workspace:^"
   },
   "scripts": {
     "build": "tsdown",
     "smoke": "node test/smoke.mjs"
   },
   "devDependencies": {
+    "@friday-friday/core": "workspace:*",
     "arktype": "^2.2.9",
     "valibot": "^1.5.0",
     "zod": "^4.6.7"

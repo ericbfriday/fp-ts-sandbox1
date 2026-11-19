@@ -20,11 +20,13 @@
   "files": [
     "dist"
   ],
-  "dependencies": {
-    "@friday-friday/core": "workspace:*",
-    "@friday-friday/schema": "workspace:*"
+  "peerDependencies": {
+    "@friday-friday/core": "workspace:^",
+    "@friday-friday/schema": "workspace:^"
   },
   "devDependencies": {
+    "@friday-friday/core": "workspace:*",
+    "@friday-friday/schema": "workspace:*",
     "@standard-schema/spec": "^1.1.0",
     "arktype": "^2.2.9",
     "valibot": "^1.5.0",

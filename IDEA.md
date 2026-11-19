@@ -54,7 +54,7 @@ Known conflicts, resolved in favor of the Design Report:
 
 ## 5. Package map
 
-All adapters import `core` (and `schema`) plus their own peers. They never import each other, and they export framework glue only: callers import `ok`/`err`/`taggedError` from `core` and vendor namespaces (Effect's `Effect`/`Exit`/`Cause`) from the vendor (#44 decision 6, #64). Rows marked *deferred* were not built; the reason is in the plan's deferred-work register.
+All adapters import `core` (and `schema`) plus their own peers, and list core (and schema) as peer dependencies themselves, so an app has one copy (#44 decision 2, ADR-0006). They never import each other, and they export framework glue only: callers import `ok`/`err`/`taggedError` from `core` and vendor namespaces (Effect's `Effect`/`Exit`/`Cause`) from the vendor (#44 decision 6, #64). Rows marked *deferred* were not built; the reason is in the plan's deferred-work register.
 
 | Package | What it does | Peers |
 |---|---|---|

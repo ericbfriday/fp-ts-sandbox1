@@ -20,13 +20,12 @@
   "files": [
     "dist"
   ],
-  "dependencies": {
-    "@friday-friday/core": "workspace:*"
-  },
   "peerDependencies": {
+    "@friday-friday/core": "workspace:^",
     "@opentelemetry/api": "^1"
   },
   "devDependencies": {
+    "@friday-friday/core": "workspace:*",
     "@opentelemetry/api": "^1.9.0"
   },
   "scripts": {

@@ -27,15 +27,17 @@
     "dist"
   ],
   "dependencies": {
-    "@friday-friday/core": "workspace:*",
-    "@friday-friday/schema": "workspace:*",
     "client-only": "^0.0.1"
   },
   "peerDependencies": {
+    "@friday-friday/core": "workspace:^",
+    "@friday-friday/schema": "workspace:^",
     "next": ">=16.3 <18",
     "react": ">=19.2"
   },
   "devDependencies": {
+    "@friday-friday/core": "workspace:*",
+    "@friday-friday/schema": "workspace:*",
     "@standard-schema/spec": "1.1.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

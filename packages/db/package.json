@@ -20,7 +20,10 @@
   "files": [
     "dist"
   ],
-  "dependencies": {
+  "peerDependencies": {
+    "@friday-friday/core": "workspace:^"
+  },
+  "devDependencies": {
     "@friday-friday/core": "workspace:*"
   },
   "scripts": {

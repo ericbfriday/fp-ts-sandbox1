@@ -16,7 +16,9 @@ interface Manifest {
   readonly name: string
   readonly exports?: Record<string, string | Record<string, string>>
   readonly scripts?: Record<string, string>
+  readonly dependencies?: Record<string, string>
   readonly peerDependencies?: Record<string, string>
+  readonly devDependencies?: Record<string, string>
 }
 
 interface Workspace {
@@ -155,6 +157,40 @@ describe("example build (Phase 1 exit: the example app builds under Next)", () =
     ])
     expect(workflow).toContain("- run: pnpm run build:examples")
   })
+})
+
+describe("suite packages are peers (ADR-0006, #62)", () => {
+  // One copy of core (and schema) per app: every package that imports another suite package
+  // lists it under peerDependencies (`workspace:^`, rewritten to a real range on pack) and under
+  // devDependencies (`workspace:*`, for the workspace link), never under dependencies.
+  const imported = (p: Workspace): ReadonlyArray<string> => {
+    const src = join(root, p.dir, "src")
+    const files = readdirSync(src, { recursive: true, encoding: "utf8" }).filter((f) => f.endsWith(".ts"))
+    const names = files.flatMap((f) =>
+      [...readFileSync(join(src, f), "utf8").matchAll(/from "(@friday-friday\/[\w-]+)/g)].map((m) => m[1] ?? "")
+    )
+    return [...new Set(names)].filter((n) => n !== p.manifest.name).toSorted()
+  }
+  const suite = (deps: Record<string, string> | undefined): ReadonlyArray<string> =>
+    Object.keys(deps ?? {}).filter((d) => d.startsWith("@friday-friday/")).toSorted()
+
+  it.each(packages.map((p) => [p.manifest.name, p] as const))(
+    "%s lists no suite package under dependencies",
+    (_n, p) => {
+      expect(suite(p.manifest.dependencies)).toEqual([])
+    }
+  )
+
+  it.each(packages.map((p) => [p.manifest.name, p] as const))(
+    "%s peers exactly the suite packages it imports",
+    (_n, p) => {
+      expect(suite(p.manifest.peerDependencies)).toEqual(imported(p))
+      for (const name of imported(p)) {
+        expect(p.manifest.peerDependencies?.[name], name).toBe("workspace:^")
+        expect(p.manifest.devDependencies?.[name], name).toBe("workspace:*")
+      }
+    }
+  )
 })
 
 describe("AGENTS.md package map", () => {

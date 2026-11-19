@@ -32,7 +32,7 @@ Functional-light TypeScript suite: a plain-object `Result` core with thin, frame
 - `IDEA.md` — project brief and locked design decisions (§4)
 - `docs/plan/IMPLEMENTATION_PLAN.md` — **living plan**: verified evidence baseline, phase status, deferred/accepted-limitations register
 - `docs/spec/rfc-0001-core.md` — core spec (Result shape, error taxonomy, wire envelope, problem+json)
-- `docs/adr/` — architecture decisions (workspaces, tsdown, linter strategy, test/CI stack)
+- `docs/adr/` — architecture decisions (workspaces, tsdown, linter strategy, test/CI stack, fixed vocabulary, core/schema as peers)
 - `docs/decisions/` — dated amendment notes (e.g. /async signal handling)
 - `docs/agents/` — issue-tracker, triage-label and domain-doc conventions
 - `docs/` research reports — authoritative source material (Design Report wins conflicts)
