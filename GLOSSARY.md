@@ -65,7 +65,7 @@ A failure nobody planned for (a bug, or a throw that triage did not map); it is 
 _Avoid_: unexpected error, crash, fatal error
 
 **Panic**:
-The `Error` subclass a defect is thrown as, holding the original throw as `cause`; every lane produces it through the idempotent `toPanic(cause)` (RFC §3).
+The `Error` subclass a defect is thrown as, holding the original throw as `cause`; every lane produces it through the idempotent `toPanic(cause)` (RFC §3). It carries a registered-symbol brand, so `isPanic(u)` recognises a Panic from any copy of core where `instanceof` would not (ADR-0006).
 _Avoid_: fatal, bug error
 
 **InternalDefect**:

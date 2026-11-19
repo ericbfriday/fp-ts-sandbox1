@@ -224,13 +224,22 @@ export const toThrowable = <E extends TaggedError<string>>(e: E): Throwable<E> =
 // ---------------------------------------------------------------------------
 
 /**
+ * The Panic brand (#62, #44 decision 2): a registered symbol, so every copy of core (version skew
+ * can load two) shares it where `instanceof` would not (the IDEA §4.2 hazard for tagged errors).
+ */
+const PANIC: unique symbol = Symbol.for("@friday-friday/core/Panic")
+
+/**
  * A defect: a callback passed to a combinator threw. The original throw is `cause`.
  * Never appears in `E`; adapters sanitize it into `InternalDefect` at the edge.
+ * Recognise one with `isPanic`, not `instanceof`: a Panic from another copy of core fails `instanceof`.
  */
 export class Panic extends Error {
   override readonly name = "Panic" as const
   constructor(cause: unknown) {
     super(describeCause(cause), { cause })
+    // Non-enumerable (defineProperty's default), so the brand never spreads or serializes.
+    Object.defineProperty(this, PANIC, { value: true })
   }
 }
 
@@ -254,10 +263,14 @@ const describeCause = (cause: unknown): string => {
   }
 }
 
-/** `instanceof Panic`, total: a revoked Proxy throws from `instanceof`, and is no Panic. */
-const isPanic = (u: unknown): u is Panic => {
+/**
+ * Structural Panic guard: true for a `Panic` from ANY copy of core, by its registered-symbol brand
+ * (never by `instanceof` or `name`, so a lookalike or a `structuredClone`d Panic is not one).
+ * Total: a revoked Proxy or a throwing trap is no Panic.
+ */
+export const isPanic = (u: unknown): u is Panic => {
   try {
-    return u instanceof Panic
+    return typeof u === "object" && u !== null && PANIC in u && u[PANIC] === true
   } catch {
     return false
   }
@@ -268,7 +281,7 @@ const isPanic = (u: unknown): u is Panic => {
  * `Panic` with the original as `cause`; an existing `Panic` is returned as the SAME instance, so
  * nested combinators and adapters never double-wrap. Exported for adapters and bridges that
  * triage throws at their own seam (rethrow framework sentinels first, then `throw toPanic(cause)`).
- * Recognises `Panic` by `instanceof`: a Panic from a duplicate copy of core is wrapped once more.
+ * Recognises `Panic` by `isPanic`, so a Panic from a duplicate copy of core is not re-wrapped either.
  * Total: never throws, whatever was thrown (revoked Proxy, throwing getters, null prototype).
  */
 export const toPanic = (cause: unknown): Panic => isPanic(cause) ? cause : new Panic(cause)

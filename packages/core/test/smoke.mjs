@@ -1,5 +1,9 @@
 // ADR-0002 gate: the built ESM output must load and run under plain Node 24.
 import assert from "node:assert/strict"
+import { cpSync, mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { pathToFileURL } from "node:url"
 import {
   all,
   andThen,
@@ -8,6 +12,7 @@ import {
   err,
   Forbidden,
   fromNullable,
+  isPanic,
   isResult,
   map,
   matchTag,
@@ -45,6 +50,18 @@ assert.equal(toPanic(existing), existing)
 const { proxy, revoke } = Proxy.revocable({}, {})
 revoke()
 assert.equal(toPanic(proxy).message, "Unprintable thrown value") // total
+// #62: a second copy of the built dist (separate module instance, as version skew loads) shares
+// the registered-symbol brand, so isPanic and toPanic's idempotence hold where instanceof fails.
+const copyDir = mkdtempSync(join(tmpdir(), "friday-core-dist-copy-"))
+cpSync(new URL("../dist", import.meta.url), copyDir, { recursive: true })
+const other = await import(pathToFileURL(join(copyDir, "index.js")).href)
+const foreign = new other.Panic("x")
+assert.equal(foreign instanceof Panic, false)
+assert.equal(isPanic(foreign), true)
+assert.equal(other.isPanic(existing), true)
+assert.equal(toPanic(foreign), foreign)
+assert.equal(other.toPanic(existing), existing)
+rmSync(copyDir, { recursive: true, force: true })
 
 // Fixed vocabulary (ADR-0005): one factory per fixed tag, every prop optional.
 const fixed = [NotFound, Conflict, Forbidden, Unauthenticated, Timeout, NetworkError, DbUnavailable]
