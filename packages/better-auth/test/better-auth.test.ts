@@ -6,12 +6,15 @@ import {
   AuthApiError,
   authCall,
   beforeDbHook,
+  Forbidden,
   fromAuthTuple,
   requireRole,
   requireSession,
   Unauthenticated
 } from "@friday-friday/better-auth"
 import { err, ok } from "@friday-friday/core"
+import { betterAuth } from "better-auth"
+import { memoryAdapter } from "better-auth/adapters/memory"
 import { APIError } from "better-auth/api"
 import { describe, expect, it } from "vitest"
 
@@ -28,27 +31,69 @@ describe("authCall (server lane)", () => {
     expect(r).toEqual(ok("session-data"))
   })
 
-  it("maps a thrown APIError to Err(AuthApiError) with status + code", async () => {
+  it("maps a thrown 401 APIError to Err(Unauthenticated), keeping Better Auth's code", async () => {
     const r = await authCall(async () => {
       throw apiError("invalid credentials", "UNAUTHORIZED", "INVALID_CREDENTIALS")
     })
-    expect(r.ok).toBe(false)
-    if (!r.ok && r.error._tag === "AuthApiError") {
-      expect(r.error.status).toBe(401)
-      expect(r.error.code).toBe("INVALID_CREDENTIALS")
-    } else {
-      throw new Error("expected AuthApiError")
-    }
+    expect(r).toEqual(err(Unauthenticated({ code: "INVALID_CREDENTIALS" })))
   })
 
-  it("does NOT use instanceof (duplicate better-call copies would break it)", async () => {
-    // Throw a REAL APIError; even if instanceof worked differently across copies, isAPIError
-    // (structural) is what the adapter uses.
+  it("maps a thrown 403 APIError to Err(Forbidden), keeping Better Auth's code", async () => {
+    const r = await authCall(async () => {
+      throw apiError("not allowed", "FORBIDDEN", "USER_BANNED")
+    })
+    expect(r).toEqual(err(Forbidden({ code: "USER_BANNED" })))
+  })
+
+  it("maps any other APIError status to Err(AuthApiError) with status + code", async () => {
     const r = await authCall(async () => {
       throw apiError("rate limited", "TOO_MANY_REQUESTS", "RATE_LIMITED")
     })
-    if (!r.ok && r.error._tag === "AuthApiError") expect(r.error.status).toBe(429)
-    else throw new Error("expected AuthApiError")
+    expect(r).toEqual(err(AuthApiError({ status: 429, code: "RATE_LIMITED" })))
+  })
+
+  it("omits code when Better Auth's body has none", async () => {
+    const r = await authCall(async () => {
+      throw apiError("no session", "UNAUTHORIZED")
+    })
+    expect(r).toEqual(err(Unauthenticated({})))
+  })
+
+  describe("an APIError from a second module copy (not instanceof the installed APIError)", () => {
+    /**
+     * Mirrors better-call 1.4.5 `InternalAPIError` (`dist/error.mjs`): a separate class, as a
+     * duplicate `better-call` install would load, so `instanceof APIError` is false.
+     */
+    class SecondCopyAPIError extends Error {
+      readonly status: string | number
+      readonly statusCode: number
+      readonly body: { message?: string; code?: string } | undefined
+      readonly headers: Record<string, string> = {}
+      constructor(status: string | number, statusCode: number, body?: { message?: string; code?: string }) {
+        super(body?.message)
+        this.name = "APIError"
+        this.status = status
+        this.statusCode = statusCode
+        this.body = body
+      }
+    }
+
+    it("is a genuinely separate class", () => {
+      expect(new SecondCopyAPIError("UNAUTHORIZED", 401)).not.toBeInstanceOf(APIError)
+    })
+
+    it.each(
+      [
+        ["UNAUTHORIZED", 401, "SESSION_EXPIRED", Unauthenticated({ code: "SESSION_EXPIRED" })],
+        ["FORBIDDEN", 403, "USER_BANNED", Forbidden({ code: "USER_BANNED" })],
+        ["NOT_FOUND", 404, "USER_NOT_FOUND", AuthApiError({ status: 404, code: "USER_NOT_FOUND" })]
+      ] as const
+    )("%s (%i) is recognised and normalized", async (status, statusCode, code, expected) => {
+      const r = await authCall(async () => {
+        throw new SecondCopyAPIError(status, statusCode, { message: "m", code })
+      })
+      expect(r).toEqual(err(expected))
+    })
   })
 
   it("rethrows non-APIError defects", async () => {
@@ -65,12 +110,19 @@ describe("fromAuthTuple (client lane)", () => {
     expect(fromAuthTuple({ data: { id: "u1" }, error: null })).toEqual(ok({ id: "u1" }))
   })
 
-  it("error tuple -> Err(AuthApiError) with status + code", () => {
+  it("401 error tuple -> Err(Unauthenticated) with code", () => {
+    const r = fromAuthTuple({ data: null, error: { status: 401, code: "SESSION_EXPIRED", message: "no" } })
+    expect(r).toEqual(err(Unauthenticated({ code: "SESSION_EXPIRED" })))
+  })
+
+  it("403 error tuple -> Err(Forbidden) with code", () => {
     const r = fromAuthTuple({ data: null, error: { status: 403, code: "FORBIDDEN", message: "no" } })
-    if (r.ok) throw new Error("expected Err")
-    if (r.error._tag !== "AuthApiError") throw new Error("expected AuthApiError")
-    expect(r.error.status).toBe(403)
-    expect(r.error.code).toBe("FORBIDDEN")
+    expect(r).toEqual(err(Forbidden({ code: "FORBIDDEN" })))
+  })
+
+  it("other error tuple -> Err(AuthApiError) with status + code", () => {
+    const r = fromAuthTuple({ data: null, error: { status: 422, code: "INVALID_EMAIL", message: "no" } })
+    expect(r).toEqual(err(AuthApiError({ status: 422, code: "INVALID_EMAIL" })))
   })
 
   it("null data without error -> Unauthenticated", () => {
@@ -103,6 +155,14 @@ describe("requireSession / requireRole", () => {
     if (!r.ok) expect(r.error._tag).toBe("Unauthenticated")
   })
 
+  it("requireSession -> Unauthenticated when getSession throws a 401 APIError", async () => {
+    const throwing = {
+      api: { getSession: () => Promise.reject(apiError("expired", "UNAUTHORIZED", "SESSION_EXPIRED")) }
+    }
+    const r = await requireSession(throwing, headers)
+    expect(r).toEqual(err(Unauthenticated({ code: "SESSION_EXPIRED" })))
+  })
+
   it("requireSession -> session on success", async () => {
     const session = { session: { token: "t" }, user: { id: "u1", role: "admin" } }
     const r = await requireSession(auth(session), headers)
@@ -124,7 +184,7 @@ describe("requireSession / requireRole", () => {
 })
 
 describe("beforeDbHook (databaseHooks contract)", () => {
-  it("Ok -> { abort: false, data }", async () => {
+  it("Ok -> { data } (replace)", async () => {
     const hook = beforeDbHook<string, never>(async (data) => ok(data.toUpperCase()))
     expect(await hook("abc")).toEqual({ data: "ABC" })
   })
@@ -134,11 +194,58 @@ describe("beforeDbHook (databaseHooks contract)", () => {
     expect(await hook("abc")).toBe(false)
   })
 
-  it("throwOnReject: Err throws the tagged error instead", async () => {
+  it("throwOnReject: Err throws a real Better Auth APIError (400, code = the tag) so it is a 4xx, not a 500", async () => {
+    const hook = beforeDbHook<string, { readonly _tag: "Rejected"; readonly message: string }>(
+      async () => err({ _tag: "Rejected", message: "email domain not allowed" }),
+      { throwOnReject: true }
+    )
+    const thrown: unknown = await hook("abc").then(
+      () => undefined,
+      (e: unknown) => e
+    )
+    expect(thrown).toBeInstanceOf(APIError)
+    expect(thrown).toMatchObject({
+      name: "APIError",
+      status: "BAD_REQUEST",
+      statusCode: 400,
+      body: { code: "Rejected", message: "email domain not allowed" }
+    })
+  })
+
+  it("throwOnReject: a tagged error without a message still throws a 400 APIError", async () => {
     const hook = beforeDbHook<string, { readonly _tag: "Rejected" }>(
       async () => err({ _tag: "Rejected" }),
       { throwOnReject: true }
     )
-    await expect(hook("abc")).rejects.toEqual({ _tag: "Rejected" })
+    await expect(hook("abc")).rejects.toMatchObject({ name: "APIError", statusCode: 400, body: { code: "Rejected" } })
+  })
+
+  it("throwOnReject through a real betterAuth sign-up: the client gets 400 with the tag as code", async () => {
+    const auth = betterAuth({
+      // Test-only placeholder (in-memory instance, never deployed).
+      secret: "test-secret-test-secret-test-secret-0000",
+      baseURL: "http://localhost:3000",
+      database: memoryAdapter({ user: [], session: [], account: [], verification: [] }),
+      emailAndPassword: { enabled: true },
+      logger: { disabled: true },
+      databaseHooks: {
+        user: {
+          create: {
+            before: beforeDbHook(async () => err({ _tag: "Rejected", message: "email domain not allowed" }), {
+              throwOnReject: true
+            })
+          }
+        }
+      }
+    })
+    const res = await auth.handler(
+      new Request("http://localhost:3000/api/auth/sign-up/email", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: "http://localhost:3000" },
+        body: JSON.stringify({ email: "a@example.com", password: "password1234", name: "A" })
+      })
+    )
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ code: "Rejected", message: "email domain not allowed" })
   })
 })
