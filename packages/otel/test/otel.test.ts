@@ -9,7 +9,11 @@ import { type Span, type SpanOptions, SpanStatusCode, type Tracer } from "@opent
 import { describe, expect, it } from "vitest"
 
 /* oxlint-disable no-unsafe-type-assertion -- test double: every cast below shapes the OTel Tracer/Span interfaces deliberately */
-import { traced, tracedSync } from "@friday-friday/otel"
+import { ERROR_TAG_ATTR, traced, tracedSync } from "@friday-friday/otel"
+
+// RFC-0001 §7: names use the `@friday-friday` scope, not the report's `@fl/*` placeholder.
+// OTel attribute naming: dot namespaces, snake_case words, app-name prefix for custom keys.
+const TAG_KEY = "friday_friday.error.tag"
 
 const NotFound = taggedError("NotFound")<{ id: string }>()
 
@@ -68,6 +72,21 @@ const fakeTracer = {
   }
 } as Tracer
 
+describe("error tag attribute name", () => {
+  it("is scoped to friday_friday, not the report's fl placeholder", () => {
+    expect(ERROR_TAG_ATTR).toBe(TAG_KEY)
+    expect(ERROR_TAG_ATTR.startsWith("fl.")).toBe(false)
+  })
+
+  it("Err writes only the scoped key", async () => {
+    await traced("users.find", async () => ({ ok: false as const, error: NotFound({ id: "z" }) }), {
+      tracer: fakeTracer
+    })
+    const s = recorded.at(-1) as RecordedSpan
+    expect(Object.keys(s.attributes)).toEqual([TAG_KEY])
+  })
+})
+
 describe("traced (async)", () => {
   it("Ok -> span ends UNSET, value returned", async () => {
     const r = await traced("users.find", async () => ({ ok: true as const, value: 42 }), { tracer: fakeTracer })
@@ -76,10 +95,10 @@ describe("traced (async)", () => {
     expect(s.name).toBe("users.find")
     expect(s.status.code).toBe(SpanStatusCode.UNSET)
     expect(s.ended).toBe(true)
-    expect(Object.hasOwn(s.attributes, "fl.error.tag")).toBe(false)
+    expect(Object.hasOwn(s.attributes, TAG_KEY)).toBe(false)
   })
 
-  it("Err -> span status ERROR + fl.error.tag, NO exception event", async () => {
+  it("Err -> span status ERROR + friday_friday.error.tag, NO exception event", async () => {
     const r = await traced(
       "users.find",
       async () => ({ ok: false as const, error: NotFound({ id: "x" }) }),
@@ -88,7 +107,7 @@ describe("traced (async)", () => {
     expect(r.ok).toBe(false)
     const s = recorded.at(-1) as RecordedSpan
     expect(s.status.code).toBe(SpanStatusCode.ERROR)
-    expect(s.attributes["fl.error.tag"]).toBe("NotFound")
+    expect(s.attributes[TAG_KEY]).toBe("NotFound")
     expect(s.events).toHaveLength(0) // expected errors are NOT recorded as exceptions
   })
 
@@ -128,7 +147,7 @@ describe("tracedSync", () => {
     expect(r.ok).toBe(false)
     const s = recorded.at(-1) as RecordedSpan
     expect(s.status.code).toBe(SpanStatusCode.ERROR)
-    expect(s.attributes["fl.error.tag"]).toBe("NotFound")
+    expect(s.attributes[TAG_KEY]).toBe("NotFound")
     expect(s.ended).toBe(true)
   })
 

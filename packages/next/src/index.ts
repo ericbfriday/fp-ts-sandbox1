@@ -14,7 +14,10 @@ import {
   type AsyncResult,
   err,
   type ErrorFactory,
+  type InferErr,
+  type InferOk,
   type Result,
+  type Tagged,
   type TaggedError,
   taggedError,
   toThrowable,
@@ -57,22 +60,48 @@ export function trySync<T, E>(fn: () => T, opts: NextCatch<E>): Result<T, E> {
 // Loaders: turn tagged Errs into Next.js control flow (report §5.1 "RSC loaders")
 // ---------------------------------------------------------------------------
 
-/** Loader helper: calls `notFound()` for `_tag: "NotFound"`, otherwise returns the Result. */
-export function orNotFound<T>(r: Result<T, TaggedError<string>>): Result<T, TaggedError<string>> {
-  if (!r.ok && r.error._tag === "NotFound") notFound()
-  return r
+/**
+ * The one tag→sentinel table: each loader is named by its key, and its entry says which `_tag`
+ * it handles and which Next sentinel that tag raises. The loaders below never name a tag; their
+ * types read it from here, so adding or renaming a mapping is a one-line change.
+ */
+const sentinels = {
+  orNotFound: { tag: "NotFound", raise: (_to: string): never => notFound() },
+  orForbidden: { tag: "Forbidden", raise: (_to: string): never => forbidden() },
+  orRedirect: { tag: "Unauthenticated", raise: (to: string): never => redirect(to) }
+} as const
+
+/** The Result a loader returns: `R`'s `T`, and `R`'s `E` without loader `L`'s tag. Inferring the
+ * whole `R` (not `T`/`E` separately) keeps every Err member of a union argument in `E`. */
+type Unhandled<R, L extends keyof typeof sentinels> = Result<
+  InferOk<R>,
+  Exclude<InferErr<R>, { readonly _tag: (typeof sentinels)[L]["tag"] }>
+>
+
+const interrupt = <L extends keyof typeof sentinels, R extends Result<unknown, Tagged>>(
+  loader: L,
+  r: R,
+  to: string
+): Unhandled<R, L> => {
+  const { tag, raise } = sentinels[loader]
+  if (!r.ok && r.error._tag === tag) raise(to)
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- an Err carrying `tag` raised above (raise returns never); a runtime compare cannot narrow R through Exclude
+  return r as unknown as Unhandled<R, L>
 }
 
-/** Loader helper: calls `forbidden()` for `_tag: "Forbidden"` (behind experimental.authInterrupts). */
-export function orForbidden<T>(r: Result<T, TaggedError<string>>): Result<T, TaggedError<string>> {
-  if (!r.ok && r.error._tag === "Forbidden") forbidden()
-  return r
+/** Loader helper: calls `notFound()` for `_tag: "NotFound"`; otherwise returns the Result with `NotFound` removed from `E`. */
+export function orNotFound<R extends Result<unknown, Tagged>>(r: R): Unhandled<R, "orNotFound"> {
+  return interrupt("orNotFound", r, "")
 }
 
-/** Loader helper: redirects to `to` for `_tag: "Unauthenticated"`, otherwise returns the Result. */
-export function orRedirect<T>(r: Result<T, TaggedError<string>>, to: string): Result<T, TaggedError<string>> {
-  if (!r.ok && r.error._tag === "Unauthenticated") redirect(to)
-  return r
+/** Loader helper: calls `forbidden()` for `_tag: "Forbidden"` (behind experimental.authInterrupts); `Forbidden` leaves `E`. */
+export function orForbidden<R extends Result<unknown, Tagged>>(r: R): Unhandled<R, "orForbidden"> {
+  return interrupt("orForbidden", r, "")
+}
+
+/** Loader helper: redirects to `to` for `_tag: "Unauthenticated"`; `Unauthenticated` leaves `E`. */
+export function orRedirect<R extends Result<unknown, Tagged>>(r: R, to: string): Unhandled<R, "orRedirect"> {
+  return interrupt("orRedirect", r, to)
 }
 
 /** Throws the tagged error as a real Error for error.tsx / `catchError`. */

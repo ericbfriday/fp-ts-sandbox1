@@ -17,7 +17,7 @@ Functional-light TypeScript suite: a plain-object `Result` core with thin, frame
 | [`@friday-friday/query`](packages/query)                                        | ✅ implemented | TanStack Query adapter: `toQueryFn` (Err throws the tagged error so `query.error === E`), `retryUnless`, `resultQueryOptions`                             |
 | [`@friday-friday/better-auth`](packages/better-auth)                            | ✅ implemented | Better Auth adapter: `authCall`/`fromAuthTuple`/`requireSession`/`requireRole`/`beforeDbHook`; one `AuthError` vocabulary, structural `isAPIError` triage |
 | [`@friday-friday/http`](packages/http)                                          | ✅ implemented | HTTP client: `fetchResult` with Standard Schema decode, RFC 9457 problem+json parsing, lossless tagged-error reconstruction                               |
-| [`@friday-friday/otel`](packages/otel)                                          | ✅ implemented | OpenTelemetry spans: `traced`/`tracedSync` mark Err as ERROR with `fl.error.tag` (no exception records); defects recorded as exceptions                   |
+| [`@friday-friday/otel`](packages/otel)                                          | ✅ implemented | OpenTelemetry spans: `traced`/`tracedSync` mark Err as ERROR with `friday_friday.error.tag` (no exception records); defects recorded as exceptions        |
 | [`@friday-friday/hono`](packages/hono)                                          | ✅ implemented | Hono adapter: `respond` with status-literal unions (`hc` inference proven), RFC 9457 `problem()`, `sv` Standard-Schema validation, `onErrorHandler`       |
 | [`@friday-friday/trpc`](packages/trpc)                                          | ✅ implemented | tRPC v11 dual channel: `resultMiddleware` error-channel throws with mapped codes, `errorFormatter` `data.fl`, `resultProcedure` data channel, `fromTRPC`  |
 | [`@friday-friday/tanstack-start`](packages/tanstack-start)                      | ✅ implemented | TanStack Start/Router: `resultHandler` (in-handler validation, #6428 workaround), `loaderResult` (notFound/redirect sentinel mapping), `formErrorMap`     |
@@ -46,7 +46,7 @@ Functional-light TypeScript suite: a plain-object `Result` core with thin, frame
 - `pnpm build`: tsdown build of every `packages/*` (ESM + `.d.ts`, ADR-0002)
 - `pnpm size`: build, then size-limit budgets (ADR-0004)
 - `pnpm smoke`: run built `dist` output under plain Node (core + schema; the next adapter requires the Next.js runtime)
-- `pnpm ci`: run everything CI runs (lint, typecheck, test, size) locally before pushing
+- `pnpm run ci`: run every gate CI runs, locally, before pushing: lint, typecheck (TS 7 only; CI adds the 6.0 and 7.1-beta matrix), test, size, smoke. Spell it `pnpm run ci`: in pnpm 12 a bare `pnpm ci` is the built-in clean install and never runs this script
 
 ## Status
 
