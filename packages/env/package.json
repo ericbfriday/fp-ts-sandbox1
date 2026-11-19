@@ -2,7 +2,7 @@
   "name": "@friday-friday/env",
   "version": "0.0.0",
   "private": true,
-  "description": "Env parsing: parseEnv validates process.env / import.meta.env with redacted issue messages, empty-as-unset and a process-free default (Design Report section 5.9; documents @t3-oss/env interop)",
+  "description": "Env parsing: parseEnv validates process.env / import.meta.env with value-free issue messages, blank-as-unset and a process-free default (Design Report section 5.9; documents @t3-oss/env interop)",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,

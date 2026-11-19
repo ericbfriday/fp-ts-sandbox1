@@ -42,72 +42,88 @@ describe("parseEnv", () => {
   })
 })
 
-// Report section 5.9 + spec #30 story 26: vendors that echo input must not leak env values.
-describe("parseEnv redaction", () => {
+// Report section 5.9, spec #30 story 26, issue #56: vendors echo the value, or a copy derived by a
+// transform in the pipe, so parseEnv never passes vendor text through. Each issue is rebuilt from
+// the variable name and whether it was set.
+describe("parseEnv issue messages", () => {
   const SECRET = "sk_live_SUPERSECRET"
 
   it.each([
     ["valibot picklist", v.object({ MODE: v.picklist(["a", "b"]) })],
-    ["arktype literal union", type({ MODE: "'a' | 'b'" })]
-  ])("%s: issue messages never contain the raw value", (_name, schema) => {
+    ["arktype literal union", type({ MODE: "'a' | 'b'" })],
+    ["zod enum", z.object({ MODE: z.enum(["a", "b"]) })]
+  ])("%s: a set but invalid variable reads \"<NAME> is invalid\"", (_name, schema) => {
     const r = parseEnv(schema, { MODE: SECRET })
     if (r.ok) throw new Error("expected Err")
-    expect(r.error.issues).toHaveLength(1)
-    expect([...(r.error.issues[0]?.path ?? [])]).toEqual(["MODE"])
-    expect(JSON.stringify(r.error)).not.toContain(SECRET)
-    expect(r.error.issues[0]?.message).toContain("[redacted]")
+    expect(r.error.issues).toEqual([{ message: "MODE is invalid", path: ["MODE"] }])
   })
 
-  it("redacts a short value only where it stands alone, keeping the rest of the message", () => {
-    const Port = v.object({ PORT: v.pipe(v.string(), v.transform(Number), v.minValue(1024)) })
-    const r = parseEnv(Port, { PORT: "1" })
-    if (r.ok) throw new Error("expected Err")
-    expect(r.error.issues[0]?.message).toBe("Invalid value: Expected >=1024 but received [redacted]")
-  })
-
-  // Valibot echoes the raw string inside quotes; ArkType echoes it JSON-escaped.
+  // Issue #56: a transform in the pipe hands the vendor a derived copy of the secret.
   it.each([
-    ["valibot", v.object({ MODE: v.picklist(["a", "b"]) })],
-    ["arktype", type({ MODE: "'a' | 'b'" })]
-  ])("%s: redacts the echo of a value with quotes or backslashes", (_name, schema) => {
-    const value = String.raw`sk"live\SECRET`
-    const r = parseEnv(schema, { MODE: value })
+    ["trim + picklist", v.object({ MODE: v.pipe(v.string(), v.trim(), v.picklist(["a", "b"])) }), {
+      MODE: ` ${SECRET} `
+    }],
+    ["toUpperCase + picklist", v.object({ MODE: v.pipe(v.string(), v.toUpperCase(), v.picklist(["A", "B"])) }), {
+      MODE: SECRET
+    }],
+    [
+      "parseJson + nested picklist",
+      v.object({ CFG: v.pipe(v.string(), v.parseJson(), v.object({ key: v.picklist(["a"]) })) }),
+      { CFG: JSON.stringify({ key: SECRET }) }
+    ]
+  ])("%s: the failure never contains the secret in any case", (_name, schema, env) => {
+    const r = parseEnv(schema, env)
     if (r.ok) throw new Error("expected Err")
-    const message = r.error.issues[0]?.message ?? ""
-    expect(message).not.toContain("SECRET")
-    expect(message).toContain("[redacted]")
+    expect(JSON.stringify(r.error).toLowerCase()).not.toContain(SECRET.toLowerCase())
   })
 
-  it("root-level issues have every variable's value redacted", () => {
+  it("a missing variable reads \"<NAME> is missing\"", () => {
+    const r = parseEnv(z.object({ DATABASE_URL: z.string() }), {})
+    if (r.ok) throw new Error("expected Err")
+    expect(r.error.issues).toEqual([{ message: "DATABASE_URL is missing", path: ["DATABASE_URL"] }])
+  })
+
+  // A record key inside a JSON-valued variable is data (e.g. a token -> tenant map), so the path
+  // stops at the variable name.
+  it("a nested issue is reported against its variable, not a path into the value", () => {
+    const Tenants = v.object({ TENANTS: v.pipe(v.string(), v.parseJson(), v.record(v.string(), v.picklist(["a"]))) })
+    const r = parseEnv(Tenants, { TENANTS: JSON.stringify({ [SECRET]: "z" }) })
+    if (r.ok) throw new Error("expected Err")
+    expect(r.error.issues).toEqual([{ message: "TENANTS is invalid", path: ["TENANTS"] }])
+  })
+
+  it("a root-level issue reads \"env is invalid\", even when its own text echoes values", () => {
     const Pair = v.pipe(
       v.object({ A: v.string(), B: v.string() }),
       v.check((o) => o.A !== o.B, (issue) => `A and B must differ, got ${JSON.stringify(issue.input)}`)
     )
     const r = parseEnv(Pair, { A: "hunter2", B: "hunter2", OTHER: "s3cret-token" })
     if (r.ok) throw new Error("expected Err")
-    expect([...(r.error.issues[0]?.path ?? [])]).toEqual([])
-    expect(JSON.stringify(r.error)).not.toMatch(/hunter2|s3cret-token/)
+    expect(r.error.issues).toEqual([{ message: "env is invalid", path: [] }])
   })
 
   // Vite's import.meta.env carries booleans (DEV/PROD/SSR) the EnvLike type cannot express (U).
-  it("leaves non-string values alone instead of looping on them", () => {
+  it("tolerates non-string values in the record", () => {
     const Root = v.pipe(v.object({ A: v.string() }), v.check(() => false, "expected DEV to be true"))
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a runtime record wider than EnvLike
     const env = { A: "x", DEV: true } as unknown as EnvLike
     const r = parseEnv(Root, env)
     if (r.ok) throw new Error("expected Err")
-    expect(r.error.issues[0]?.message).toBe("expected DEV to be true")
+    expect(r.error.issues).toEqual([{ message: "env is invalid", path: [] }])
   })
 
-  it("does not redact the values of other variables in a field issue", () => {
-    const r = parseEnv(v.object({ MODE: v.picklist(["a", "b"]) }), { MODE: "c", UNRELATED: "Expected" })
+  it("reports each failing variable on its own", () => {
+    const r = parseEnv(v.object({ MODE: v.picklist(["a", "b"]), PORT: v.string() }), { MODE: "c", OTHER: "x" })
     if (r.ok) throw new Error("expected Err")
-    expect(r.error.issues[0]?.message).toBe("Invalid type: Expected (\"a\" | \"b\") but received \"[redacted]\"")
+    expect(r.error.issues).toEqual([
+      { message: "MODE is invalid", path: ["MODE"] },
+      { message: "PORT is missing", path: ["PORT"] }
+    ])
   })
 })
 
 // Spec #30 story 28: `FOO=` in a .env file arrives as "", which vendors treat as a value.
-describe("parseEnv empty strings", () => {
+describe("parseEnv blank values", () => {
   it("treats \"\" as unset: optional gives undefined, default applies, coerce no longer yields 0", () => {
     const Schema = z.object({
       LOG_LEVEL: z.string().optional(),
@@ -116,6 +132,16 @@ describe("parseEnv empty strings", () => {
     })
     const r = parseEnv(Schema, { LOG_LEVEL: "", PORT: "", PREFIX: "" })
     expect(r).toEqual({ ok: true, value: { LOG_LEVEL: undefined, PORT: 3000, PREFIX: "" } })
+  })
+
+  // Issue #56: `FOO= ` or `FOO="  "` is a typo, not a value; z.coerce.number() turns " " into 0.
+  it("treats a whitespace-only value as unset too", () => {
+    const Schema = z.object({ PORT: z.coerce.number().default(3000), NAME: z.string().optional() })
+    expect(parseEnv(Schema, { PORT: " ", NAME: "\t\n " })).toEqual({ ok: true, value: { PORT: 3000, NAME: undefined } })
+  })
+
+  it("keeps surrounding whitespace on a value that has other characters", () => {
+    expect(parseEnv(z.object({ SEP: z.string() }), { SEP: " , " })).toEqual({ ok: true, value: { SEP: " , " } })
   })
 
   it("a required var set to \"\" fails as missing", () => {
