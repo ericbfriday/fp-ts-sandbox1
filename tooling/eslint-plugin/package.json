@@ -4,6 +4,11 @@
   "private": true,
   "description": "Local type-aware lint rules: must-use-result, no-try-around-redirect, no-instanceof-tagged-error (ADR-0003; rules land in #8)",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ericbfriday/fp-ts-sandbox1.git",
+    "directory": "tooling/eslint-plugin"
+  },
   "type": "module",
   "sideEffects": false,
   "engines": {

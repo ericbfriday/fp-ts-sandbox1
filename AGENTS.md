@@ -10,6 +10,7 @@ Project brief: see **`IDEA.md`** (read it first). The authoritative design sourc
 - `pnpm test` — Vitest runtime + type tests; `pnpm test:types` for type-only
 - `pnpm run build` / `pnpm run size` / `pnpm run smoke` — build, size budgets, dist smokes
 - `pnpm run smoke:source` — every package entry loads from `src` under plain Node 24 with `--conditions=@friday-friday/source` and matches dist's exports (ADR-0002; next excluded, no `exports` map; needs `pnpm run build`)
+- `pnpm run pack:check` — publish gate (#65): `pnpm pack` every `packages/*` package, then publint `--strict` + attw `--profile esm-only` on the tarball; the packed manifest must have no `@friday-friday/source` condition (each package's `publishConfig.exports` drops it) and a `repository.directory` (needs `pnpm run build`; never publishes)
 - `pnpm run build:examples` — `next build` of each example (needs `pnpm run build` first: the app resolves package `dist`)
 - `pnpm run ci` — everything CI runs, locally
 
@@ -43,9 +44,9 @@ Every `packages/*` entry has a size budget (`.size-limit.json`) and a plain-Node
 - `packages/db` — `@friday-friday/db`: Postgres/Prisma driver errors to tagged errors
 - `packages/env` — `@friday-friday/env`: `parseEnv` (redacted issues), `envRecord`
 - `packages/effect` — `@friday-friday/effect`: Result/Effect bridge (`toEffect`, `fromExit`, `runResult`)
-- `tooling/eslint-plugin` — `@friday-friday/eslint-plugin`: the three custom rules, run on `packages/*/src` and `examples/*/src`
-- `tooling/codemods` — neverthrow-to-core codemod (plain script, not a workspace package)
-- `tooling/gates` — gate-coverage tests + `src/source-smoke.ts` (`pnpm run smoke:source`, ADR-0002) (plain dir, not a workspace package)
+- `tooling/eslint-plugin` — `@friday-friday/eslint-plugin`: the three custom rules, run on `packages/*/src` and `examples/*/src`. `private`, not shipped: open decision in `docs/decisions/2026-11-19-tooling-not-shipped.md`
+- `tooling/codemods` — neverthrow-to-core codemod (plain script, not a workspace package; not shipped, same open decision)
+- `tooling/gates` — gate-coverage tests + `src/source-smoke.ts` (`pnpm run smoke:source`, ADR-0002) + `src/publish-gate.ts` (`pnpm run pack:check`, #65) (plain dir, not a workspace package)
 - `tooling/type-budget` — type-instantiation budget: core stress fixture, per-TS ceilings, `src/check.ts` (plain dir, not a workspace package)
 - `examples/next-app` — `@friday-friday/example-next-app`: profile form end-to-end on Result (issue #9); typechecked with its own tsconfig and built with `next build` in CI
 

@@ -1,8 +1,9 @@
 # CI per ADR-0004: install (frozen) -> lint (packages + examples), typecheck matrix (root +
 # examples/next-app incl. its tests), test, then build -> size-limit -> dist smokes (ADR-0002;
 # every package but next) -> source-condition smoke (ADR-0002, #63; every package but next) ->
-# `next build` of the example. `pnpm run ci` runs the same gates locally (typecheck on TS 7
-# only; the tRPC peer-floor job is CI-only).
+# `next build` of the example; and, as its own job, the publish gate (#65: build -> pack every
+# package -> publint --strict + attw --profile esm-only on each tarball). `pnpm run ci` runs the
+# same gates locally (typecheck on TS 7 only; the tRPC peer-floor job is CI-only).
 # Publishing is intentionally absent: never publish to npm from CI without Eric.
 name: CI
 
@@ -122,3 +123,21 @@ jobs:
       - run: pnpm run build:examples
         env:
           NEXT_TELEMETRY_DISABLED: "1"
+
+  publish-check:
+    # #65 / IDEA §8: pack every packages/* package (pnpm swaps in publishConfig.exports, so no
+    # `@friday-friday/source` condition ships) and lint the tarball, not the workspace. publint and
+    # attw are pinned root devDependencies, so nothing is fetched after the frozen install.
+    # This packs into a temp dir only; it never publishes.
+    name: publish gate (pack + publint + attw)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - run: pnpm run pack:check

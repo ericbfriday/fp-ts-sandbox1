@@ -4,6 +4,11 @@
   "private": true,
   "description": "TanStack Query adapter: Err becomes query.error (thrown plain E), Ok(undefined) -> null, signal forwarding, retryUnless (Design Report section 5.4)",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ericbfriday/fp-ts-sandbox1.git",
+    "directory": "packages/query"
+  },
   "type": "module",
   "sideEffects": false,
   "engines": {
@@ -16,6 +21,15 @@
       "default": "./dist/index.js"
     },
     "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./package.json": "./package.json"
+    }
   },
   "files": [
     "dist"

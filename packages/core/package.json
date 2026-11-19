@@ -4,6 +4,11 @@
   "private": true,
   "description": "Plain-object Result, tagged errors, dual combinators and boundary triage — sync surface plus /async (retry/timeout/concurrency) /gen (do-notation) and /wire (sanitize, RFC 9457 problem out/in, defect envelope) subpaths",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ericbfriday/fp-ts-sandbox1.git",
+    "directory": "packages/core"
+  },
   "type": "module",
   "sideEffects": false,
   "engines": {
@@ -34,6 +39,27 @@
       "@friday-friday/source": "./test/wire-golden.ts"
     },
     "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./async": {
+        "types": "./dist/async.d.ts",
+        "default": "./dist/async.js"
+      },
+      "./gen": {
+        "types": "./dist/gen.d.ts",
+        "default": "./dist/gen.js"
+      },
+      "./wire": {
+        "types": "./dist/wire.d.ts",
+        "default": "./dist/wire.js"
+      },
+      "./package.json": "./package.json"
+    }
   },
   "files": [
     "dist"
