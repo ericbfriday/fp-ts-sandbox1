@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest"
 
 /* oxlint-disable no-unsafe-type-assertion, no-floating-promises -- wire probes: router sentinels are structurally accessed; intentional throw-probes are documented */
 import { err, ok, Panic, taggedError } from "@friday-friday/core"
-import { loaderResult, resultHandler, resultServerFn } from "@friday-friday/tanstack-start"
+import { loaderResult, resultHandler } from "@friday-friday/tanstack-start"
 import { z } from "zod"
 
 const NotFound = taggedError("NotFound")<{ readonly id: string }>()
@@ -79,10 +79,6 @@ describe("resultHandler (#6428 workaround)", () => {
       throw proxy
     })
     await expect(h({ data: { title: "Hello", body: "b" } })).rejects.toBeInstanceOf(Panic)
-  })
-
-  it("resultServerFn is the positional alias", () => {
-    expect(resultServerFn).toBe(resultHandler)
   })
 })
 

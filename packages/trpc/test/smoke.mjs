@@ -21,20 +21,15 @@ assert.equal(dts.includes("unstable-core-do-not-import"), false)
 // Every value export exists (#43).
 assert.deepEqual(Object.keys(mod).sort(), [
   "TRPCTransportError",
-  "err",
   "errorFormatter",
   "fromTRPC",
-  "ok",
   "resultMiddleware",
-  "resultProcedure",
-  "sanitize",
-  "taggedError"
+  "sanitize"
 ])
 for (const value of Object.values(mod)) assert.equal(typeof value, "function")
 
 assert.equal(typeof mod.resultMiddleware({}), "function")
-const NotFound = mod.taggedError("NotFound")()
-assert.deepEqual(mod.sanitize(NotFound({ id: "1", cause: new Error("db") })), { _tag: "NotFound", id: "1" })
+assert.deepEqual(mod.sanitize({ _tag: "NotFound", id: "1", cause: new Error("db") }), { _tag: "NotFound", id: "1" })
 assert.deepEqual(await mod.fromTRPC(Promise.resolve(1)), { ok: true, value: 1 })
 
 // The built formatter masks a defect (core /wire envelope bundled correctly, #38).

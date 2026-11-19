@@ -48,7 +48,7 @@
     "name": "@friday-friday/next — react-server root",
     "path": "packages/next/dist/index.js",
     "import": "*",
-    "limit": "2 kB",
+    "limit": "1 kB",
     "gzip": true,
     "ignore": [
       "next",
@@ -121,7 +121,7 @@
     "name": "@friday-friday/hono",
     "path": "packages/hono/dist/index.js",
     "import": "*",
-    "limit": "2 kB",
+    "limit": "1 kB",
     "gzip": true,
     "ignore": [
       "hono",
@@ -133,7 +133,7 @@
     "name": "@friday-friday/trpc",
     "path": "packages/trpc/dist/index.js",
     "import": "*",
-    "limit": "2 kB",
+    "limit": "1 kB",
     "gzip": true,
     "ignore": [
       "@trpc/server",
@@ -146,7 +146,7 @@
     "name": "@friday-friday/tanstack-start",
     "path": "packages/tanstack-start/dist/index.js",
     "import": "*",
-    "limit": "2 kB",
+    "limit": "1 kB",
     "gzip": true,
     "ignore": [
       "@tanstack/router-core",
@@ -180,7 +180,7 @@
     "name": "@friday-friday/effect",
     "path": "packages/effect/dist/index.js",
     "import": "*",
-    "limit": "2 kB",
+    "limit": "1 kB",
     "gzip": true,
     "ignore": [
       "effect",

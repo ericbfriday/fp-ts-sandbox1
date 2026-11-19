@@ -15,11 +15,12 @@
  * Effect services stay behind server-side interpreters; this adapter only ever sees Results on
  * one side and `@stability stable` members of `effect`'s root entry on the other (IDEA §4.10;
  * `test/stability.test.ts` checks every member used against the installed effect's JSDoc).
+ *
+ * Bridge functions only (#44 decision 6, #64): import `Effect`/`Exit`/`Cause` from `effect` and
+ * Result primitives from `@friday-friday/core`.
  */
 import { type AsyncResult, err, ok, type Result, toPanic } from "@friday-friday/core"
 import { Cause, Effect, Exit } from "effect"
-
-export { Cause, Effect, Exit }
 
 /**
  * `Exit` → `Result`: `Fail(E)` → `Err(E)`; `Die`/`Interrupt` → thrown `Panic` (core `toPanic`).
