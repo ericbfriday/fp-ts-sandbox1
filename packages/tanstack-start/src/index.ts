@@ -25,7 +25,7 @@
  * means unit tests exercise validation too.
  */
 import { type AsyncResult, err, type Result, type TaggedError, toPanic } from "@friday-friday/core"
-import { parseAsync, type StandardSchemaV1, toFormErrors, type ValidationFailure } from "@friday-friday/schema"
+import { parseAsync, type StandardSchemaV1, type ValidationFailure } from "@friday-friday/schema"
 import { isNotFound, isRedirect, notFound, redirect } from "@tanstack/router-core"
 
 /** Re-exported so server fns and forms share one vocabulary. */
@@ -67,9 +67,6 @@ const isRouterSentinel = (u: unknown): boolean => {
   }
 }
 
-/** Positional alias kept for the report's resultServerFn(schema, handler) naming. */
-export const resultServerFn: typeof resultHandler = resultHandler
-
 export interface LoaderResultOptions {
   /** Tag mapped to Router notFound() sentinel. Default: "NotFound". */
   readonly notFoundTag?: string
@@ -101,6 +98,3 @@ export async function loaderResult<T, E extends TaggedError<string>>(
   if (r.error._tag === redirectTag) throw redirect({ to })
   throw toPanic(r.error)
 }
-
-// Form helper passthrough (documented alias so call sites read as adapter usage).
-export { toFormErrors as formErrorMap }

@@ -50,7 +50,7 @@ export interface SignalOptions {
 /** Infrastructure tag for a `timeout()` boundary (RFC-0001 §2 infrastructure errors).
  * Follows the RFC §2 usage pattern: explicit ErrorFactory annotation + ReturnType twin type. */
 export const Timeout: ErrorFactory<"Timeout", { ms: number }> = taggedError("Timeout")<{ ms: number }>()
-export type TimeoutError = ReturnType<typeof Timeout>
+export type Timeout = ReturnType<typeof Timeout>
 
 // ---------------------------------------------------------------------------
 // Async-aware duals of the sync combinators (pure: no cancellation of their own)
@@ -297,12 +297,13 @@ export interface TimeoutOptions {
   readonly signal?: AbortSignal
 }
 
-export interface Timeout {
+/** The signature of `timeout()`. Named `TimeoutFn` so `Timeout` stays the error's value + type twin. */
+export interface TimeoutFn {
   <T, E>(
     thunk: (signal?: AbortSignal) => AsyncResult<T, E>,
     ms: number,
     opts?: TimeoutOptions
-  ): AsyncResult<T, E | TimeoutError>
+  ): AsyncResult<T, E | Timeout>
 }
 
 /**
@@ -312,11 +313,11 @@ export interface Timeout {
  * defect (`Panic(abort reason)`), and an already-aborted one short-circuits without running the
  * thunk; an invalid `ms` is a `Panic`; thunk defects propagate as `Panic`.
  */
-export const timeout: Timeout = /*#__PURE__*/ async <T, E>(
+export const timeout: TimeoutFn = /*#__PURE__*/ async <T, E>(
   thunk: (signal?: AbortSignal) => AsyncResult<T, E>,
   ms: number,
   opts?: TimeoutOptions
-): Promise<Result<T, E | TimeoutError>> => {
+): Promise<Result<T, E | Timeout>> => {
   const signal = opts?.signal
   // Already aborted: short-circuit like allAsync/retry, never running the thunk.
   if (signal?.aborted) throw toPanic(signal.reason ?? "aborted")

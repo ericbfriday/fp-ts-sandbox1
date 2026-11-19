@@ -6,9 +6,13 @@
  *   `Err(e)` into `throw new TRPCError({ code: map[e._tag] ?? "INTERNAL_SERVER_ERROR", cause: e })`,
  *   and `errorFormatter()` writes the wire form into `data.friday_friday`. Errors flow through
  *   tRPC's links into TanStack Query's error state, so retry / `throwOnError` / Error Boundaries behave.
- * - **Data channel (opt-in):** `resultProcedure({ channel: "data" })` resolves the Result as
- *   plain output (tagged errors are plain data and survive JSON) — useful for
- *   `useActionState`-like form flows where a rejection is a legitimate outcome.
+ * - **Data channel (opt-in):** a plain procedure WITHOUT `resultMiddleware` resolves the Result
+ *   as its output (tagged errors are plain data and survive JSON) — useful for
+ *   `useActionState`-like form flows where a rejection is a legitimate outcome. No helper is
+ *   needed (#64 deleted the identity `resultProcedure`).
+ *
+ * Result primitives (`ok`, `err`, `taggedError`, `TaggedError`) come from `@friday-friday/core`;
+ * this package exports tRPC glue only (#44 decision 6, #64).
  *
  * tRPC glue only (#38, parent #30). The wire rules (JSON-safe sanitize, the `InternalDefect`
  * envelope, parse-back) live in `@friday-friday/core/wire` (RFC-0001 §5, IDEA §4.2–§4.3,
@@ -165,15 +169,6 @@ export function resultMiddleware(map: { readonly [tag: string]: TRPCErrorCode })
 }
 
 /**
- * Data-channel procedure factory: the Result itself is the output (tagged errors are plain
- * data and survive tRPC's JSON transformer) — for `useActionState`-like form flows.
- */
-export function resultProcedure(opts: { readonly channel: "data" }): <B>(builder: B) => B {
-  void opts
-  return <B>(builder: B): B => builder
-}
-
-/**
  * Client-side bridge: a tRPC call promise resolved as a Result. A `TRPCClientError` whose
  * `data.friday_friday` holds a wire error is rebuilt by core `fromWire` (`_tag`, `message` and
  * props survive; a `ValidationFailure` keeps its `{ message, path }` issues). The defect
@@ -209,5 +204,3 @@ export function fromTRPC<T, E extends TaggedError<string> = TRPCTransportError>(
     }
   })()
 }
-
-export { err, ok, type TaggedError, taggedError }

@@ -2,13 +2,7 @@
 import assert from "node:assert/strict"
 import * as mod from "../dist/index.js"
 
-assert.deepEqual(Object.keys(mod).sort(), [
-  "formErrorMap",
-  "loaderResult",
-  "resultHandler",
-  "resultServerFn",
-  "toFormErrors"
-])
+assert.deepEqual(Object.keys(mod).sort(), ["loaderResult", "resultHandler", "toFormErrors"])
 for (const value of Object.values(mod)) assert.equal(typeof value, "function")
 
 assert.equal(await mod.loaderResult({ ok: true, value: "data" }), "data")
