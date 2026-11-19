@@ -5,16 +5,26 @@
  * you pass: `import.meta.env` for Vite/Workers, a test fixture) and returns a
  * `Result<T, ValidationFailure>`. Behind that one function it absorbs the env traps:
  *
- * - **Secrets never reach issue messages.** Vendors such as Valibot and ArkType echo the
- *   received value (`... but received "sk_live_…"`). `parseEnv` replaces the value of the
- *   variable an issue is reported against with `[redacted]` (root-level issues, path `[]`,
- *   have every variable's value redacted), so a failure is safe to log or stringify.
+ * - **Issues carry no vendor text.** Vendors echo the received value (`... but received
+ *   "sk_live_…"`), and a transform in the pipe (`trim`, `toUpperCase`, `parseJson`) makes them
+ *   echo a *derived* copy that no value match can catch. So `parseEnv` drops the vendor's
+ *   issues and reports, once per vendor issue, `{ path: [NAME], message: "NAME is missing" }`
+ *   (unset) or `"NAME is invalid"` (set); a root-level issue (path `[]`, e.g. an object-level
+ *   `refine`) reads `"env is invalid"`. The path stops at the variable name, because segments
+ *   below it can be data (a `record` key inside a JSON-valued variable). Nothing in a failure
+ *   comes from a value, so it is safe to log or stringify. Trade-off: the vendor's *why*
+ *   (`expected >=1024`, a custom `refine` message) is lost; to see it, run the schema through
+ *   `parse` from `@friday-friday/schema` locally, and give cross-field checks a field path
+ *   (Zod `refine(..., { path: ["B"] })`) so the failure names a variable. Redacting normalised
+ *   copies of each value (#49 matched only the raw one) was rejected: transforms are open-ended
+ *   (base64, split, slice), so no list of forms is complete, and each form costs bytes.
  * - **The default source never throws.** Without a global `process` (edge runtimes,
  *   browsers) the default env is `{}`, never a `TypeError`.
- * - **`""` is unset.** Empty-string values are dropped before validation, so `FOO=` behaves
- *   like a missing `FOO`: `.optional()` gives `undefined`, `.default(x)` gives `x`, and
- *   `z.coerce.number()` can no longer turn `""` into `0`. For a variable that may
- *   legitimately be empty, use `.default("")`.
+ * - **Blank is unset.** Values that are `""` or whitespace only are dropped before validation,
+ *   so `FOO=` and `FOO=" "` behave like a missing `FOO`: `.optional()` gives `undefined`,
+ *   `.default(x)` gives `x`, and `z.coerce.number()` can no longer turn `""` or `" "` into `0`.
+ *   Other values are passed through untrimmed. For a variable that may legitimately be blank,
+ *   use `.default("")` (or `.default(" ")`).
  *
  * Every value arrives as a `string`, so schemas coerce numbers themselves
  * (`z.coerce.number()`). **Never coerce booleans** (`z.coerce.boolean()` is JS truthiness:
@@ -32,7 +42,7 @@
  * server: { DATABASE_URL: z.string().url() },
  * validation: (env) => {
  *   const r = parseEnv(EnvSchema, env)
- *   if (!r.ok) throw new Error(JSON.stringify(r.error.issues))  // messages are redacted
+ *   if (!r.ok) throw new Error(JSON.stringify(r.error.issues))  // names and "missing"/"invalid" only
  * }
  * ```
  * For everything else, `parseEnv(schema)` at module load is the whole story: the Result is
@@ -45,78 +55,38 @@ import { parse, type StandardSchemaV1, ValidationFailure } from "@friday-friday/
 /** Any string-keyed env-like record (`process.env`, `import.meta.env`, a test fixture). */
 export type EnvLike = Readonly<Record<string, string | undefined>>
 
-/** What replaces an env value inside an issue message. */
-const REDACTED = "[redacted]"
-
-/** A letter, digit or `_`: an occurrence touching one of these is part of a longer token. */
-const WORD_CHAR = /[\p{L}\p{N}_]/u
-
-const isWordChar = (ch: string | undefined): boolean => ch !== undefined && WORD_CHAR.test(ch)
-
 /**
- * Replace every standalone occurrence of `needle` in `text`. An occurrence glued to a letter,
- * digit or `_` is left alone, so redacting `"1"` keeps `>=1024` intact while still catching
- * `received 1` and `"1"`.
+ * A message built only from the variable name and whether it was set: never from vendor text,
+ * which can echo the value or a derived copy of it (trimmed, case-changed, parsed).
  */
-const redactToken = (text: string, needle: string): string => {
-  let out = ""
-  let from = 0
-  let at = text.indexOf(needle, from)
-  while (at !== -1) {
-    const end = at + needle.length
-    if (!isWordChar(text[at - 1]) && !isWordChar(text[end])) {
-      out += text.slice(from, at) + REDACTED
-      from = end
-    }
-    at = text.indexOf(needle, Math.max(end, at + 1))
-  }
-  return out + text.slice(from)
+const genericIssue = (
+  path: ReadonlyArray<string | number>,
+  env: EnvLike
+): { message: string; path: ReadonlyArray<string | number> } => {
+  const name = path[0]
+  if (name === undefined) return { message: "env is invalid", path: [] }
+  return { message: `${name} is ${env[name] === undefined ? "missing" : "invalid"}`, path: [name] }
 }
 
-/** The value as written raw and as a vendor would echo it inside a JSON-quoted string. */
-const echoForms = (value: string): ReadonlyArray<string> => {
-  const quoted = JSON.stringify(value).slice(1, -1)
-  return quoted === value ? [value] : [value, quoted]
-}
-
-/** Redact the env values an issue is about: its own variable, or every variable at the root. */
-const redactMessage = (message: string, path: ReadonlyArray<string | number>, env: EnvLike): string => {
-  const root = path[0]
-  const keys = root === undefined ? Object.keys(env) : [String(root)]
-  const values = keys
-    .map((key) => env[key])
-    // Only strings can be echoed verbatim; a non-string (Vite's boolean `DEV`, U) has no
-    // `length`, which would stall the scan in `redactToken`.
-    .filter((value): value is string => typeof value === "string" && value !== "")
-    .flatMap(echoForms)
-    // Longest first, so a value that contains another is redacted whole.
-    .toSorted((a, b) => b.length - a.length)
-  return values.reduce(redactToken, message)
-}
-
-/** A copy of `env` with `""` values dropped, so `FOO=` reads as an unset `FOO`. */
-const withoutEmptyStrings = (env: EnvLike): EnvLike =>
-  Object.fromEntries(Object.entries(env).filter(([, value]) => value !== ""))
+/** A copy of `env` without blank values (`""` or whitespace only), so `FOO= ` reads as unset. */
+const withoutBlanks = (env: EnvLike): EnvLike =>
+  Object.fromEntries(Object.entries(env).filter(([, value]) => typeof value !== "string" || value.trim() !== ""))
 
 /**
- * Validate the environment with a Standard Schema. Values arrive as `string` (empty strings
- * are dropped as unset); coerce numbers in the schema and parse booleans strictly (see the
- * module doc). Issue messages never echo the value of the variable they are reported against.
- * The default `env` is `process.env` where it exists and `{}` elsewhere.
+ * Validate the environment with a Standard Schema. Values arrive as `string` (blank values are
+ * dropped as unset); coerce numbers in the schema and parse booleans strictly (see the module
+ * doc). Each issue names only its variable and whether it was missing or invalid, never vendor
+ * text, so no part of a value can reach a failure. The default `env` is `process.env` where it
+ * exists and `{}` elsewhere.
  */
 export function parseEnv<S extends StandardSchemaV1>(
   schema: S,
   env?: EnvLike
 ): Result<StandardSchemaV1.InferOutput<S>, ValidationFailure> {
-  const source = withoutEmptyStrings(envRecord(env))
+  const source = withoutBlanks(envRecord(env))
   const result = parse(schema, source)
   if (result.ok) return result
-  return err(ValidationFailure({
-    issues: result.error.issues.map((issue) => ({
-      ...issue,
-      message: redactMessage(issue.message, issue.path, source)
-    }))
-  }))
+  return err(ValidationFailure({ issues: result.error.issues.map((issue) => genericIssue(issue.path, source)) }))
 }
 
 /** The provided record, else the live `process.env`, else `{}` (no `process` global). */

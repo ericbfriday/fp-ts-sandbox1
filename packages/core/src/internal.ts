@@ -2,14 +2,26 @@
  * Internal helpers shared by the core entry points. NOT part of the public API —
  * never re-exported from `index.ts` or `async.ts`.
  */
-import { Panic } from "./index.js"
+import { toPanic } from "./index.js"
 
 /** Run a user callback; anything it throws is rethrown as `Panic` (an existing `Panic` passes through). */
 export const call = <A, B>(f: (a: A) => B, a: A): B => {
   try {
     return f(a)
   } catch (e) {
-    throw e instanceof Panic ? e : new Panic(e)
+    throw toPanic(e)
+  }
+}
+
+/**
+ * The async twin of `call`: run `run` and await it; a sync throw OR a rejection comes out as
+ * `Panic` (an existing `Panic` passes through). Every `/async` lane awaits user code through this.
+ */
+export const callAsync = async <A>(run: () => A | PromiseLike<A>): Promise<A> => {
+  try {
+    return await run()
+  } catch (e) {
+    throw toPanic(e)
   }
 }
 
