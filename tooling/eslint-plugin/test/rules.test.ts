@@ -37,9 +37,21 @@ describe("must-use-result", () => {
     "declare function save(): Result<number, string>\n" +
     "declare const svc: { save(): Result<number, string> } | undefined\n" +
     "declare const flag: boolean\n"
+  // #105: un-awaited promises of a Result, spelled without the `AsyncResult` alias.
+  const loadHeader = "import type { Result } from '@friday-friday/core'\n" +
+    "declare function load(): Promise<Result<number, string>>\n" +
+    "declare function count(): Promise<number>\n" +
+    "declare const repo: { load(): Promise<Result<number, string>> } | undefined\n" +
+    "declare const thenable: PromiseLike<Result<number, string>>\n"
 
   ruleTester.run("must-use-result", pluginRules["must-use-result"]!, {
     valid: [
+      // #105: an explicit discard, an awaited-and-used value, a returned promise, and a promise of
+      // a non-Result (no-floating-promises' job, not this rule's) all stay valid.
+      { name: "void load()", code: loadHeader + "void load()" },
+      { name: "awaited and used", code: loadHeader + "async function f() { const r = await load(); return r.ok }" },
+      { name: "returned promise", code: loadHeader + "function f() { return load() }" },
+      { name: "Promise<number> is not a Result", code: loadHeader + "count()" },
       "import { ok } from '@friday-friday/core'; const r = ok(1); r.ok",
       "import { ok } from '@friday-friday/core'; const r = ok(1); if (r.ok) console.log(r.value)",
       "import { ok } from '@friday-friday/core'; export const r = ok(1)",
@@ -66,6 +78,23 @@ describe("must-use-result", () => {
       { name: "optional call svc?.save()", code: saveHeader + "svc?.save()", errors: [{ messageId: "mustUse" }] },
       // Short-circuit: the statement is a LogicalExpression typed `false | Result`.
       { name: "short-circuit flag && save()", code: saveHeader + "flag && save()", errors: [{ messageId: "mustUse" }] },
+      // #105: un-awaited Promise<Result> without the AsyncResult alias.
+      { name: "un-awaited Promise<Result>", code: loadHeader + "load()", errors: [{ messageId: "mustUse" }] },
+      {
+        name: "un-awaited async function returning a Result",
+        code: "import { ok } from '@friday-friday/core'\nasync function f() { return ok(1) }\nf()",
+        errors: [{ messageId: "mustUse" }]
+      },
+      {
+        name: "optional call repo?.load() typed Promise<Result> | undefined",
+        code: loadHeader + "repo?.load()",
+        errors: [{ messageId: "mustUse" }]
+      },
+      {
+        name: "PromiseLike<Result> in a short-circuit",
+        code: loadHeader + "declare const flag: boolean\nflag && thenable",
+        errors: [{ messageId: "mustUse" }]
+      },
       {
         name: "short-circuit svc === undefined || svc.save()",
         code: saveHeader + "svc === undefined || svc.save()",
