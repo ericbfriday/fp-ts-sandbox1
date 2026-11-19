@@ -18,7 +18,8 @@ import {
   Panic,
   type Result,
   type TaggedError,
-  taggedError
+  taggedError,
+  toPanic
 } from "@friday-friday/core"
 import type { StandardJSONSchemaV1, StandardSchemaV1 } from "@standard-schema/spec"
 
@@ -122,12 +123,6 @@ const toResult = <S extends StandardSchemaV1>(
   result: StandardSchemaV1.Result<StandardSchemaV1.InferOutput<S>>
 ): Result<StandardSchemaV1.InferOutput<S>, ValidationFailure> =>
   result.issues === undefined ? ok(result.value) : err(toValidationFailure(result.issues))
-
-// A vendor `validate` that throws is a defect (IDEA §4.3, RFC-0001 §3): rethrown as `Panic` with
-// the original as `cause`; an existing Panic passes through. Local until core exposes its one
-// idempotent "to Panic" conversion (#30 solution item 3).
-// TODO(#47): replace with core's exported to-Panic conversion once PR #47 merges.
-const toPanic = (cause: unknown): Panic => (cause instanceof Panic ? cause : new Panic(cause))
 
 /**
  * Synchronous parse. Throws `Panic` if the schema validates asynchronously — use `parseAsync`
