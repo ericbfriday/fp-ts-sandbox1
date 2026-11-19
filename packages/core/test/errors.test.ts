@@ -102,10 +102,16 @@ describe("toThrowable", () => {
     expect("cause" in t).toBe(false)
   })
 
-  it("forwards the tagged error's cause and tolerates a missing message", () => {
+  // #53, RFC-0001 §2: React's dev Flight serializer sends an Error's `cause` to the browser
+  // whenever `"cause" in error` (emitErrorChunk / serializeErrorValue in next 16.4.6's compiled
+  // react-server-dom-webpack), enumerable or not, so the thrown Error must not have one at all.
+  it("never puts the server-only cause on the thrown Error; it stays on data, and a missing message is tolerated", () => {
     const cause = new Error("db down")
-    const t = toThrowable(NotFound({ resource: "user", id: "1", cause }))
-    expect(t.cause).toBe(cause)
+    const e = NotFound({ resource: "user", id: "1", cause })
+    const t = toThrowable(e)
+    expect("cause" in t).toBe(false)
+    expect(t.data).toBe(e)
+    expect(t.data).toHaveProperty("cause", cause)
     expect(t.message).toBe("")
     expect(t.name).toBe("NotFound")
   })

@@ -11,7 +11,7 @@
  * (`constraint`, `column`, `field`) as props. Driver `detail` (e.g. `Key (email)=(a@b.c)`),
  * messages and query params hold row values, so they are never copied to a prop: the
  * original thrown error rides on `cause`, which stays server-side and every sanitizer drops
- * (reach it for logging via core's `toThrowable(e).cause`).
+ * (reach it for logging via the mapped error's own `cause`).
  *
  * Every mapper returns the mapped tagged error, or `null` when the input is not a
  * recognized DB error — the caller decides (typically `orElseAsync` → map or rethrow as

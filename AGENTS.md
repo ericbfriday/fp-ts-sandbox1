@@ -26,11 +26,11 @@ Project brief: see **`IDEA.md`** (read it first). The authoritative design sourc
 
 ## Package map (implemented)
 
-Every `packages/*` entry has a size budget (`.size-limit.json`) and, except `next`, a plain-Node dist smoke (`test/smoke.mjs`); `tooling/gates` fails CI when a package or subpath misses either, or is missing here.
+Every `packages/*` entry has a size budget (`.size-limit.json`) and a plain-Node dist smoke (`test/smoke.mjs`; next's stubs `next/*`, which has no `exports` map); `tooling/gates` fails CI when a package or subpath misses either, or is missing here.
 
 - `packages/core` — `@friday-friday/core` (+ `/async`, `/gen`, `/wire` subpaths): Result, tagged errors, combinators, defect triage, wire envelope
 - `packages/schema` — `@friday-friday/schema`: Standard Schema to Result, `ValidationFailure`, field/form errors
-- `packages/next` — `@friday-friday/next` (+ `/client` subpath; `react-server`/`default` conditions): Server Actions, loaders, route handlers. No plain-Node smoke: next@16.4 ships an empty `exports` map
+- `packages/next` — `@friday-friday/next` (+ `/client` subpath; `react-server`/`default` conditions): Server Actions, loaders, route handlers; `/client` boundary helpers for client-thrown errors only (`resultBoundary`, `orThrow`). Its smoke stubs `next/*` (next@16.4 has no `exports` map) and checks the `client-only` guard under `react-server`
 - `packages/hono` — `@friday-friday/hono`: `respond`/`problem`, `sv` validator, `onErrorHandler`
 - `packages/trpc` — `@friday-friday/trpc`: `errorFormatter`, `resultMiddleware`/`resultProcedure`, `fromTRPC`
 - `packages/tanstack-start` — `@friday-friday/tanstack-start`: `resultHandler`/`resultServerFn`, `loaderResult`, form errors

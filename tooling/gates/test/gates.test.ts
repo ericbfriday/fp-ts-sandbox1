@@ -43,26 +43,22 @@ const distTargets = (entry: string | Record<string, string>): ReadonlyArray<stri
 
 const packages = workspaces("packages")
 
-/**
- * Packages whose dist cannot load under plain Node 24. next@16.4 ships an empty
- * `exports` map, so `next/navigation` is unresolvable outside the Next runtime
- * (DEVELOPER.md "Peer caveat"); it is covered by vitest + examples/next-app.
- */
-const NO_PLAIN_NODE_SMOKE = new Set(["@friday-friday/next"])
-
 describe("dist smokes (ADR-0002 gate)", () => {
-  const smoked = packages.filter((p) => !NO_PLAIN_NODE_SMOKE.has(p.manifest.name))
-
-  it.each(smoked.map((p) => [p.manifest.name, p] as const))("%s has a smoke script", (_name, p) => {
+  // next@16.4 ships no `exports` map, so next's smoke stubs `next/*` and imports its dist
+  // dynamically (the root's default entry throws by design; react-server runs in a child, #53).
+  it.each(packages.map((p) => [p.manifest.name, p] as const))("%s has a smoke script", (_name, p) => {
     expect(p.manifest.scripts?.["smoke"]).toBe("node test/smoke.mjs")
     expect(existsSync(join(root, p.dir, "test", "smoke.mjs"))).toBe(true)
   })
 
-  it.each(smoked.map((p) => [p.manifest.name, p] as const))("%s smoke imports every export entry", (_name, p) => {
+  it.each(packages.map((p) => [p.manifest.name, p] as const))("%s smoke imports every export entry", (_name, p) => {
     const smoke = readFileSync(join(root, p.dir, "test", "smoke.mjs"), "utf8")
     const targets = Object.values(p.manifest.exports ?? {}).flatMap(distTargets)
     expect(targets.length).toBeGreaterThan(0)
-    for (const target of targets) expect(smoke).toContain(`from "../${target.slice(2)}"`)
+    for (const target of targets) {
+      const path = `"../${target.slice(2)}"`
+      expect(smoke.includes(`from ${path}`) || smoke.includes(`import(${path})`), target).toBe(true)
+    }
   })
 })
 

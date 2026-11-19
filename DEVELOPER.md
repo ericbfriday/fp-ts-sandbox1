@@ -76,4 +76,4 @@ All via pnpm at the root (see also `README.md`):
 1. `packages/<name>/package.json` — `@friday-friday/<name>`, `workspace:*` deps on core (+schema), framework vendors as **peers** with conservative ranges (lower bound = oldest CI-matrix version), vendors as devDeps for fixtures.
 2. `tsconfig.json` extending `../../tsconfig.base.json`, `tsdown.config.ts` (see `packages/core`), `test/` suite, size-limit entry (≤ 2 kB adapters) in `.size-limit.json`.
 3. Wire docs: README table row + plan checkbox. Root `tsconfig.json`/vitest globs pick everything else up automatically.
-4. Peer caveat: some frameworks (next@16.4) ship empty `exports` maps — plain-Node dist smokes are impossible for those; cover runtime behavior in vitest + an example app.
+4. Peer caveat: some frameworks (next@16.4) ship empty `exports` maps, so their dist cannot import them under plain Node. The smoke stubs just those modules with an in-thread resolve hook (`module.registerHooks`; see `packages/next/test/smoke.mjs`) and keeps everything else real; cover runtime behavior in vitest + an example app.

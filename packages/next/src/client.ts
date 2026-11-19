@@ -1,55 +1,64 @@
 /**
- * `@friday-friday/next/client` — client-only boundary helpers (Design Report §5.1 "Client").
+ * `@friday-friday/next/client` — boundary helpers for errors a CLIENT component throws
+ * (Design Report §5.1 "Client"; #53).
  *
- * `resultBoundary` wraps Next.js `catchError` (stable since 16.3): when a server component
- * throws a tagged error (via `orThrow`/`toThrowable`), production redacts the message to a
- * digest — but the TAGGED DATA travels with the thrown Error (`error.data`), so the boundary
- * can render structured, typed fallbacks without any server round-trip.
+ * Scope: only a throw that happens in the browser keeps its tagged data. An error thrown on the
+ * server (a Server Component, or `toThrowable` there) crosses React Flight, which sends the client
+ * only `{ digest }` in production and `{ name, message, stack, env }` in development: never
+ * `data` or any other prop (next 16.4.6's compiled react-server-dom-webpack, `emitErrorChunk`;
+ * pinned by test/flight.test.ts). So `tagged` is always `undefined` for server-thrown errors:
+ * server domain errors travel as returned Results (report §5.1), not thrown ones.
  *
- * Uses `createElement` (not JSX) so this stays a pure `.ts` module — the client surface has
- * zero markup of its own.
+ * `import "client-only"` makes importing this module under the `react-server` condition throw;
+ * `client-only` is a runtime dependency so the import survives the build (dist smoke).
+ *
+ * Uses `createElement` (not JSX) so this stays a pure `.ts` module.
  */
-import type { TaggedError } from "@friday-friday/core"
-// oxlint-disable-next-line import/no-unassigned-import -- side-effect guard: throws under SSR
+import { type Result, type TaggedError, toThrowable } from "@friday-friday/core"
+// oxlint-disable-next-line import/no-unassigned-import -- side-effect guard: throws under react-server
 import "client-only"
-import { catchError } from "next/error"
+import { catchError, type ErrorInfo } from "next/error"
 import { type ComponentType, createElement, type ReactNode } from "react"
 
-export interface BoundaryProps<E extends TaggedError<string>> {
-  /** The raw thrown Error (production redacts `message` to a `digest`). */
+export interface BoundaryProps {
+  /** What the boundary caught: any thrown value. */
   readonly error: unknown
-  /** The decoded tagged error from `toThrowable`'s `data` attachment, if present. */
-  readonly tagged: E | undefined
+  /**
+   * The tagged error, when the client-side throw is one (thrown as-is) or wraps one (`orThrow` /
+   * `toThrowable`'s `data`). Narrow it with a factory's `.is()`. Always `undefined` for errors
+   * thrown on the server.
+   */
+  readonly tagged: TaggedError<string> | undefined
 }
 
-type CatchErrorProps = { readonly error?: unknown }
+const isTagged = (u: unknown): u is TaggedError<string> =>
+  typeof u === "object" && u !== null && "_tag" in u && typeof u._tag === "string"
 
-/**
- * Decode the tagged error that `toThrowable` attached as `data`, defensively: the attached
- * `data` is untrusted wire data, structurally checked (`_tag` present) before the deliberate
- * narrowing assertion (same idiom as `All`; see ADR-0003).
- */
-const extractTagged = (error: unknown): TaggedError<string> | undefined => {
-  if (typeof error !== "object" || error === null || !("data" in error)) return undefined
-  const data: unknown = error.data
-  if (typeof data !== "object" || data === null || !("_tag" in data)) return undefined
-  // The structural `_tag` check guards the deliberate narrowing assertion below: the attached
-  // `data` is untrusted wire data, validated before the cast (same idiom as `All`; see ADR-0003).
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- checked above
-  return data as TaggedError<string>
+/** The tagged error a client-side throw is or carries (`toThrowable`'s `data`), structurally checked. */
+const decode = (error: unknown): TaggedError<string> | undefined => {
+  if (isTagged(error)) return error
+  if (typeof error === "object" && error !== null && "data" in error && isTagged(error.data)) return error.data
+  return undefined
 }
 
 /**
- * Wrap Next.js `catchError` so the tagged error attached by `toThrowable` (via server-side
- * `orThrow`) is decoded into `props.tagged` before rendering the fallback. Callers narrow the
- * base tagged error to their concrete `E` inside their own fallback implementation.
+ * Unwrap an `Ok`, or throw the `Err` as `toThrowable(e)` (no `cause`) for the nearest
+ * {@link resultBoundary}. For client components: on the server the throw would reach the
+ * browser as a digest only.
  */
-export function resultBoundary<E extends TaggedError<string>>(
-  Fallback: (props: BoundaryProps<E>) => ReactNode
+export function orThrow<T>(r: Result<T, TaggedError<string>>): T {
+  if (!r.ok) throw toThrowable(r.error)
+  return r.value
+}
+
+/**
+ * Wrap Next.js `catchError` (stable since 16.3; it rethrows Next's control-flow errors) so the
+ * fallback gets the caught value and its decoded tagged error, if a client component threw one.
+ */
+export function resultBoundary(
+  Fallback: (props: BoundaryProps) => ReactNode
 ): ComponentType<{ children?: ReactNode }> {
-  return catchError<CatchErrorProps>((props) => {
-    const tagged = extractTagged(props.error)
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- E narrowed by the caller's Fallback signature
-    return createElement(Fallback, { error: props.error, tagged: tagged as E })
-  })
+  return catchError((_props: {}, info: ErrorInfo) =>
+    createElement(Fallback, { error: info.error, tagged: decode(info.error) })
+  )
 }
