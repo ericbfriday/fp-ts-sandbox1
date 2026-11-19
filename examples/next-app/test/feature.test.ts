@@ -5,29 +5,21 @@
  * - valid save -> `redirect()` sentinel THROWN out of action() (survives the try/catch)
  * - route handler -> 200 json on Ok, 404 problem+json on Err (toResponse)
  *
- * next/navigation is mocked with sentinel-accurate fakes (same pattern as
- * packages/next/test/next.test.ts) since vitest runs outside the Next.js runtime.
+ * - form rendering -> field errors from schema's `toFieldErrors`, a human message otherwise
+ *
+ * No mock: `redirect()` is the REAL next/navigation sentinel, recognised by its `digest`.
  */
-import { describe, expect, it, vi } from "vitest"
+import { err, ok } from "@friday-friday/core"
+import { toDefect } from "@friday-friday/core/wire"
+import { toValidationFailure } from "@friday-friday/schema"
+import { describe, expect, it } from "vitest"
 
-/* oxlint-disable no-unsafe-type-assertion -- wire probes: tRPC/Next error shapes are structurally accessed in tests */
-
-vi.mock("next/navigation", () => ({
-  redirect: (url: string): never => {
-    throw new Error(`NEXT_REDIRECT;replace;${url};status;303`)
-  },
-  notFound: (): never => {
-    throw new Error("NEXT_NOT_FOUND")
-  },
-  unstable_rethrow: (e: unknown): void => {
-    const msg = e instanceof Error ? e.message : String(e)
-    if (msg.startsWith("NEXT_REDIRECT") || msg.startsWith("NEXT_NOT_FOUND")) throw e
-  }
-}))
+/* oxlint-disable no-unsafe-type-assertion -- wire probes: Next error shapes are structurally accessed in tests */
 
 import { GET } from "../src/app/api/profile/route"
-import { updateProfile } from "../src/app/profile/actions"
-import { getProfile, NotFound } from "../src/lib/profiles"
+import { Forbidden, updateProfile } from "../src/app/profile/actions"
+import { formErrorsOf } from "../src/app/profile/form-errors"
+import { Conflict, getProfile, NotFound } from "../src/lib/profiles"
 
 const formData = (overrides: Record<string, string> = {}): FormData => {
   const fd = new FormData()
@@ -36,9 +28,10 @@ const formData = (overrides: Record<string, string> = {}): FormData => {
   return fd
 }
 
+/** `redirect()`'s target, read from the REAL sentinel's digest (`NEXT_REDIRECT;<type>;<url>;<status>;`). */
 const redirectOf = (e: unknown): string | null => {
-  const m = e instanceof Error ? e.message.match(/^NEXT_REDIRECT;replace;([^;]+);/) : null
-  return m?.[1] ?? null
+  const d = typeof e === "object" && e !== null && "digest" in e ? e.digest : undefined
+  return typeof d === "string" && d.startsWith("NEXT_REDIRECT;") ? d.split(";").slice(2, -2).join(";") : null
 }
 
 describe("action: ValidationFailure field errors as data", () => {
@@ -62,11 +55,10 @@ describe("action: ValidationFailure field errors as data", () => {
 })
 
 describe("action: redirect after save (exit criterion)", () => {
-  it("valid save -> redirect sentinel THROWN (survives the try/catch)", async () => {
-    await expect(updateProfile({ ok: null }, formData())).rejects.toThrowError(/^NEXT_REDIRECT/)
-    await expect(updateProfile({ ok: null }, formData())).rejects.toMatchObject({
-      message: expect.stringContaining("/profile/saved?id=u_1")
-    })
+  it("valid save -> redirect sentinel THROWN (survives mapAsync's Panic wrap and the triage)", async () => {
+    await expect(updateProfile({ ok: null }, formData())).rejects.toSatisfy((e) =>
+      redirectOf(e) === "/profile/saved?id=u_1"
+    )
   })
 
   it("redirect target is the saved profile url", async () => {
@@ -117,5 +109,42 @@ describe("route handler: toResponse problem+json", () => {
     // The store may have been mutated by earlier action tests; the CONTRACT is that the
     // Result survives JSON.stringify/parse unchanged, whatever the values are.
     expect(JSON.parse(JSON.stringify(r))).toEqual(r)
+  })
+})
+
+describe("form errors (what profile-form renders)", () => {
+  it("idle and Ok states render nothing", () => {
+    expect(formErrorsOf({ ok: null })).toEqual({ fields: {} })
+    expect(formErrorsOf(ok({ id: "u_1", displayName: "Ada", bio: "" }))).toEqual({ fields: {} })
+  })
+
+  it("ValidationFailure -> schema's toFieldErrors buckets per field; root issues are form-level", () => {
+    const failure = toValidationFailure([
+      { message: "Display name needs at least 2 characters", path: ["displayName"] },
+      { message: "Bio must be 280 characters or fewer", path: ["bio"] },
+      { message: "Something about the whole form", path: [] }
+    ])
+    expect(formErrorsOf(err(failure))).toEqual({
+      form: "Something about the whole form",
+      fields: {
+        displayName: ["Display name needs at least 2 characters"],
+        bio: ["Bio must be 280 characters or fewer"]
+      }
+    })
+  })
+
+  it("every non-validation error renders a human sentence, never [object Object]", () => {
+    const states = [
+      err(Forbidden({ action: "updateProfile" })),
+      err(NotFound({ id: "u_1" })),
+      err(Conflict({ field: "displayName" })),
+      err(toDefect(new Error("db down")))
+    ]
+    for (const state of states) {
+      const { form, fields } = formErrorsOf(state)
+      expect(fields).toEqual({})
+      expect(form).toMatch(/^[A-Z][^{}]+\.$/)
+      expect(form).not.toContain("[object")
+    }
   })
 })

@@ -42,8 +42,8 @@ Everything consciously postponed or accepted, with where it lives. Nothing else 
 | `examples/next-app` (issue #9) | DONE — PR #25 merged | closed 2026-11-17 |
 | Type-instantiation budget fixtures (`tsc --extendedDiagnostics`) | ADR-0004, IDEA §8 | **Issue #61** (the "Phase 4 kickoff" target passed with no ticket). Needs per-TS-version baselines (6.0/7.0/7.1 counts differ; a single absolute budget would be flaky across the matrix); #61 decides per-version ceilings vs one 7.x job |
 | `no-instanceof-tagged-error`: MemberExpression RHS (e.g. `Errors.NotFound`) unflagged | PR #16 review (spec note) | v1 accepted; revisit on demand |
-| `toResponse` problem `title` = raw `_tag`, not a human title | PR #15 review (judgement) | v1 accepted; RFC §6 errata candidate |
-| Problem-body props are denylist (all JSON-safe minus `_tag`/`message`/`cause`), not RFC allowlist wording | PR #15 review (judgement) | Operative rule (cause + non-JSON-safe dropped) met and tested |
+| ~~`toResponse` problem `title` = raw `_tag`, not a human title~~ RESOLVED — `toResponse` now delegates to core `/wire` `toProblem` (`NotFound` → `Not Found`) | PR #15 review (judgement) | #39 |
+| Problem-body props are denylist (all JSON-safe minus `_tag`/`message`/`cause`), not RFC allowlist wording | PR #15 review (judgement) | Core `/wire` supports `safeProps`; next's `toResponse` does not expose it yet (#39 kept its interface to status map + `onDefect`). Unmapped tags are masked as `InternalDefect`, which closes the leak class |
 | `mapConcurrent` runs to completion on early `Err` (no in-flight abort) | async.ts doc | v1 choice |
 | `retry` abort mid-retry returns the LAST Err (or Panic if nothing settled) | async.ts module doc | Deliberate choice |
 | Pure `/async` duals take no `{ signal }` (closure-bound instead) | RFC-0001 §4 errata + decisions note | Errata accepted |
@@ -51,7 +51,7 @@ Everything consciously postponed or accepted, with where it lives. Nothing else 
 | TS 7.0.2 root-tsc matchTag order-dependence; const type-param union mangling in `all()` | core src comments + issue #3 | Re-check at TS 7.1 stable |
 | `@friday-friday/next`: no plain-Node dist smoke (next@16.4.6 empty exports map) | ADR-0004 + PR #15 | Runtime covered by vitest + examples/next-app (#9) |
 | next adapter `tryAsync` takes no `{ signal }` (matches report §5.1 snippet exactly) | PR #15 review (judgement) | Core tryAsync remains the signal-capable path |
-| `orForbidden` has no dedicated runtime test (forbidden() is mocked; loader AC is existence) | PR #15 review (judgement) | Fold into a future next-adapter PR |
+| ~~`orForbidden` has no dedicated runtime test~~ RESOLVED — loaders.test.ts runs it against the real `forbidden()` (#52); next.test.ts no longer mocks `next/navigation` (#39) | PR #15 review (judgement) | #52, #39 |
 | Phase 5 extras: `effect`, `db`, `env`, codemods, oRPC recipe, `llms.txt` + per-package SKILL.md | Phase 5 (below) | After MVP exit criteria |
 | `toMutationFn` in `@friday-friday/query` (IDEA §5 package map) | IDEA §5; not implemented | **Deferred, no ticket.** Mutations need no throw bridge the way `queryFn` does: a `mutationFn` may return the Result as data and the caller branches on `r.ok`. Revisit if a caller needs `mutation.error === E` (it would be `toQueryFn`'s Err-throws rule over `MutationFunction`) |
 | Core `/interop` subpath (IDEA §5 package map) | IDEA §5; not implemented (core exports `.`, `/async`, `/gen` only) | **Deferred, no ticket.** Prior-art converters (better-result, unthrown, byethrow, neverthrow) stay out of core; the neverthrow migration is the codemod in `tooling/codemods`, Effect is `@friday-friday/effect`. Revisit on a concrete interop request |

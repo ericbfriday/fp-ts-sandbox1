@@ -4,6 +4,7 @@
  * Pattern: annotated-const assignments are the real inference assertions (see async.test-d.ts).
  */
 import { type AsyncResult, err, matchTag, ok, type Result, taggedError } from "@friday-friday/core"
+import type { InternalDefect } from "@friday-friday/core/wire"
 import {
   action,
   type ActionState,
@@ -13,6 +14,7 @@ import {
   toResponse,
   tryAsync
 } from "@friday-friday/next"
+import type { ValidationFailure } from "@friday-friday/schema"
 import { describe, expectTypeOf, test } from "vitest"
 import { z } from "zod"
 
@@ -87,5 +89,18 @@ describe("next types", () => {
     const save = action(Profile, async (input) => ok(input.name))
     const state: ActionState<string, never> = await save({ ok: null }, new FormData())
     expectTypeOf(state).toEqualTypeOf<ActionState<string, never>>()
+  })
+
+  test("action's error lane is E | ValidationFailure | core/wire's fixed-text InternalDefect", () => {
+    type ErrOf<S> = S extends { readonly ok: false; readonly error: infer X } ? X : never
+    expectTypeOf<ErrOf<ActionState<string, ConflictT>>>().toEqualTypeOf<
+      ConflictT | ValidationFailure | InternalDefect
+    >()
+    expectTypeOf<InternalDefect["message"]>().toEqualTypeOf<"Internal server error">()
+  })
+
+  test("toResponse takes an optional onDefect reporter", () => {
+    const r: Result<string, NotFoundT> = err(NotFound({ id: "1" }))
+    expectTypeOf(toResponse(r, undefined, { onDefect: (_c: unknown) => {} })).toEqualTypeOf<Response>()
   })
 })
