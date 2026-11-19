@@ -28,6 +28,7 @@ Thanks for contributing to `@friday-friday/*`. This repo has one rule above all 
 - Boundary sanitation is non-negotiable: `cause` and non-JSON-safe props never cross a wire boundary.
 - Framework vendors are peers (conservative ranges, lower bound = oldest tested version); vendors in tests are devDeps only.
 - Size budgets are hard: core fixture ≤ 600 B, full core ≤ 3 kB, adapters ≤ 2 kB (`.size-limit.json`).
+- The leaf packages `db` and `query` hold a tighter 1 kB; `env` holds 1.1 kB because it bundles core's `Panic` (via schema's `parse`), whose total, bounded message (RFC-0001 §3, #31) costs ~70 B min+gz that no shrink recovered.
 - When a cast is unavoidable (AST universes, phantom brands, wire decoding), guard it structurally and leave a scoped disable comment **with a reason**. Untouched assertions fail review.
 
 ## Issue triage

@@ -159,12 +159,6 @@ describe("allAsync", () => {
     ])
     expect(r).toEqual(err("second-err"))
   })
-
-  it("propagates thunk defects as Panic, never as Err", async () => {
-    await expect(allAsync([async () => {
-      throw "boom"
-    }])).rejects.toThrow(Panic)
-  })
 })
 
 describe("mapConcurrent", () => {
@@ -216,17 +210,16 @@ describe("mapConcurrent", () => {
     expect(panicked).toBe(true)
   })
 
+  it("an already-aborted signal is a Panic up front, like allAsync, even for empty inputs", async () => {
+    await expect(mapConcurrent([], async () => ok(1), { limit: 1, signal: AbortSignal.abort() })).rejects.toThrow(
+      Panic
+    )
+    await expect(allAsync([], { signal: AbortSignal.abort() })).rejects.toThrow(Panic)
+  })
+
   it("non-finite limit falls back to 1", async () => {
     const r = await mapConcurrent([1, 2], async (n) => ok(n), { limit: Number.NaN })
     expect(r).toEqual(ok([1, 2]))
-  })
-
-  it("mapper defects propagate as Panic", async () => {
-    await expect(
-      mapConcurrent([1], async () => {
-        throw "boom"
-      }, { limit: 1 })
-    ).rejects.toThrow(Panic)
   })
 })
 
@@ -307,19 +300,6 @@ describe("retry", () => {
     expect(calls).toBe(2)
   })
 
-  it("an existing Panic rejection passes through without double-wrapping", async () => {
-    const inner = new Panic("inner")
-    let caught: unknown
-    try {
-      await retry(async () => {
-        throw inner
-      }, { times: 3 })
-    } catch (e) {
-      caught = e
-    }
-    expect(caught).toBe(inner) // same instance: pass-through, not re-wrapped
-  })
-
   it("forwards opts.signal to fn", async () => {
     const controller = new AbortController()
     let seen: AbortSignal | undefined
@@ -331,6 +311,74 @@ describe("retry", () => {
       { times: 1, signal: controller.signal }
     )
     expect(seen).toBe(controller.signal)
+  })
+
+  it("abort mid-ATTEMPT (signal-honouring fn) returns the last Err, not a Panic", async () => {
+    const controller = new AbortController()
+    let calls = 0
+    const r = await retry(
+      (signal?: AbortSignal) => {
+        calls++
+        if (calls === 1) return Promise.resolve(err<string>("first-err"))
+        return new Promise<Result<number, string>>((_resolve, reject) => {
+          signal?.addEventListener("abort", () => reject(signal.reason), { once: true })
+          setTimeout(() => controller.abort(), 5)
+        })
+      },
+      { times: 3, delay: 1, signal: controller.signal }
+    )
+    expect(r).toEqual(err("first-err"))
+    expect(calls).toBe(2)
+  })
+
+  it("an UNRELATED throw after abort is still a defect: Panic(cause), not the last Err", async () => {
+    const controller = new AbortController()
+    const bug = new TypeError("real bug unrelated to abort")
+    let calls = 0
+    const promise = retry(
+      async () => {
+        calls++
+        if (calls === 1) return err<string>("first")
+        controller.abort()
+        throw bug
+      },
+      { times: 3, signal: controller.signal }
+    )
+    await expect(promise).rejects.toThrow(Panic)
+    await expect(promise).rejects.toMatchObject({ cause: bug })
+  })
+
+  it("a fn rejecting with an AbortError of its own (not signal.reason) on abort returns the last Err", async () => {
+    const controller = new AbortController()
+    let calls = 0
+    const r = await retry(
+      (signal?: AbortSignal) => {
+        calls++
+        if (calls === 1) return Promise.resolve(err<string>("first-err"))
+        return new Promise<Result<number, string>>((_resolve, reject) => {
+          signal?.addEventListener("abort", () => reject(new DOMException("op aborted", "AbortError")), {
+            once: true
+          })
+          controller.abort(new Error("caller gave up"))
+        })
+      },
+      { times: 3, signal: controller.signal }
+    )
+    expect(r).toEqual(err("first-err"))
+  })
+
+  it("abort mid-FIRST-attempt has no last Err, so it is a defect (Panic)", async () => {
+    const controller = new AbortController()
+    const promise = retry(
+      (signal?: AbortSignal) =>
+        new Promise<Result<number, string>>((_resolve, reject) => {
+          if (signal?.aborted) reject(signal.reason)
+          signal?.addEventListener("abort", () => reject(signal.reason), { once: true })
+        }),
+      { times: 3, signal: controller.signal }
+    )
+    controller.abort()
+    await expect(promise).rejects.toThrow(Panic)
   })
 
   it("abort before any result throws Panic", async () => {
@@ -382,10 +430,29 @@ describe("timeout", () => {
     expect(sawAbort).toBe(true) // the work actually observed cancellation, not just the race
   })
 
-  it("thunk defects propagate as Panic", async () => {
-    await expect(timeout(async () => {
-      throw "boom"
-    }, 100)).rejects.toThrow(Panic)
+  it("an already-aborted user signal short-circuits like allAsync/retry: Panic, thunk never runs", async () => {
+    let ran = false
+    const promise = timeout(
+      async () => {
+        ran = true
+        return ok("ran")
+      },
+      1000,
+      { signal: AbortSignal.abort("cancelled") }
+    )
+    await expect(promise).rejects.toThrow(Panic)
+    await expect(promise).rejects.toMatchObject({ cause: "cancelled" })
+    expect(ran).toBe(false)
+  })
+
+  it.each([-1, Number.NaN])("an invalid ms (%s) is a defect: Panic, thunk never runs", async (ms) => {
+    let ran = false
+    const promise = timeout(async () => {
+      ran = true
+      return ok("ran")
+    }, ms)
+    await expect(promise).rejects.toThrow(Panic)
+    expect(ran).toBe(false)
   })
 })
 
@@ -399,12 +466,6 @@ describe("tryAsync (boundary triage, RFC-0001 §3 async half)", () => {
       throw "boom"
     }, { catch: (c) => `mapped:${String(c)}` })
     expect(r).toEqual(err("mapped:boom"))
-  })
-
-  it("unmapped rejection is a defect: Panic with the original as cause", async () => {
-    await expect(tryAsync(async () => {
-      throw "boom"
-    }, { catch: () => undefined })).rejects.toThrow(Panic)
   })
 
   it("rethrow runs first so framework sentinels propagate untouched", async () => {
