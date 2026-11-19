@@ -104,11 +104,12 @@ export interface Throwable<E extends TaggedError<string>> extends Error {
 
 /**
  * Wrap a tagged error in a real `Error` for the few places that need one (Error Boundaries,
- * `catchError`, logging stacks). The tagged error's own `cause`, if any, becomes the `Error`'s
- * `cause` so logging keeps the full chain.
+ * `catchError`, logging stacks). The Error never has a `cause` (RFC-0001 §2: `cause` stays
+ * server-side): React's dev Flight serializer sends any `cause` on a thrown Error to the browser
+ * (#53). Server-side logging reaches it through `data.cause`.
  */
 export const toThrowable = <E extends TaggedError<string>>(e: E): Throwable<E> =>
-  Object.assign(new Error(e.message, "cause" in e ? { cause: e.cause } : undefined), { name: e._tag, data: e })
+  Object.assign(new Error(e.message), { name: e._tag, data: e })
 
 // ---------------------------------------------------------------------------
 // §3 Defects

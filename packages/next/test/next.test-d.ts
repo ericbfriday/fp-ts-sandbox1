@@ -3,7 +3,7 @@
  *
  * Pattern: annotated-const assignments are the real inference assertions (see async.test-d.ts).
  */
-import { type AsyncResult, err, matchTag, ok, type Result, taggedError } from "@friday-friday/core"
+import { type AsyncResult, err, matchTag, ok, type Result, type TaggedError, taggedError } from "@friday-friday/core"
 import type { InternalDefect } from "@friday-friday/core/wire"
 import {
   action,
@@ -14,7 +14,10 @@ import {
   toResponse,
   tryAsync
 } from "@friday-friday/next"
+import type * as NextRoot from "@friday-friday/next"
+import { type BoundaryProps, orThrow, resultBoundary } from "@friday-friday/next/client"
 import type { ValidationFailure } from "@friday-friday/schema"
+import type { ComponentType, ReactNode } from "react"
 import { describe, expectTypeOf, test } from "vitest"
 import { z } from "zod"
 
@@ -102,5 +105,20 @@ describe("next types", () => {
   test("toResponse takes an optional onDefect reporter", () => {
     const r: Result<string, NotFoundT> = err(NotFound({ id: "1" }))
     expectTypeOf(toResponse(r, undefined, { onDefect: (_c: unknown) => {} })).toEqualTypeOf<Response>()
+  })
+})
+
+describe("/client (#53: client-thrown errors only)", () => {
+  test("orThrow returns T and lives only on /client, not the react-server root", () => {
+    const r: Result<number, NotFoundT | ConflictT> = ok(1)
+    expectTypeOf(orThrow(r)).toEqualTypeOf<number>()
+    expectTypeOf<typeof NextRoot>().not.toHaveProperty("orThrow")
+  })
+
+  test("resultBoundary's fallback gets an unknown error and an unnarrowed tagged error", () => {
+    expectTypeOf<BoundaryProps["error"]>().toEqualTypeOf<unknown>()
+    expectTypeOf<BoundaryProps["tagged"]>().toEqualTypeOf<TaggedError<string> | undefined>()
+    const Boundary = resultBoundary(({ tagged }) => (NotFound.is(tagged) ? tagged.id : null))
+    expectTypeOf(Boundary).toEqualTypeOf<ComponentType<{ children?: ReactNode }>>()
   })
 })

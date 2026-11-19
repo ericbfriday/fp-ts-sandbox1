@@ -18,7 +18,6 @@ import {
   type Result,
   type Tagged,
   type TaggedError,
-  toThrowable,
   trySync as coreTrySync
 } from "@friday-friday/core"
 import { tryAsync as coreTryAsync } from "@friday-friday/core/async"
@@ -107,12 +106,6 @@ export function orForbidden<R extends Result<unknown, Tagged>>(r: R): Unhandled<
 /** Loader helper: redirects to `to` for `_tag: "Unauthenticated"`; `Unauthenticated` leaves `E`. */
 export function orRedirect<R extends Result<unknown, Tagged>>(r: R, to: string): Unhandled<R, "orRedirect"> {
   return interrupt("orRedirect", r, to)
-}
-
-/** Throws the tagged error as a real Error for error.tsx / `catchError`. */
-export function orThrow<T>(r: Result<T, TaggedError<string>>): T {
-  if (!r.ok) throw toThrowable(r.error)
-  return r.value
 }
 
 // ---------------------------------------------------------------------------
@@ -223,5 +216,8 @@ export function action<_S extends StandardSchemaV1, T, E extends TaggedError<str
   }
 }
 
-/** Re-export for loaders that need a real Error (error.tsx / catchError decoding). */
+/**
+ * Re-export of core's `toThrowable` (no `cause` on the Error, #53). Thrown on the server, it
+ * reaches error.tsx as a digest only: domain errors cross to the client as returned Results.
+ */
 export { toThrowable } from "@friday-friday/core"

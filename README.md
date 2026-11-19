@@ -13,7 +13,7 @@ Functional-light TypeScript suite: a plain-object `Result` core with thin, frame
 | ------------------------------------------------------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`@friday-friday/core`](packages/core)                                          | ✅ implemented | Plain-object Result, tagged errors, dual combinators, pipe/flow, boundary triage; subpaths `/async`, `/gen` (do-notation), `/wire` (RFC 9457 envelope)    |
 | [`@friday-friday/schema`](packages/schema)                                      | ✅ implemented | Standard Schema → Result: parse/parseAsync, field/form flatteners, phantom brands, JSON Schema                                                            |
-| [`@friday-friday/next`](packages/next)                                          | ✅ implemented | Next.js adapter: sentinel-safe triage (unstable_rethrow), useActionState actions, loaders, problem+json toResponse, client boundary                       |
+| [`@friday-friday/next`](packages/next)                                          | ✅ implemented | Next.js adapter: sentinel-safe triage (unstable_rethrow), useActionState actions, loaders, problem+json toResponse, client-thrown boundary                |
 | [`@friday-friday/query`](packages/query)                                        | ✅ implemented | TanStack Query adapter: `toQueryFn` (Err throws the tagged error so `query.error === E`), `retryUnless`, `resultQueryOptions`                             |
 | [`@friday-friday/better-auth`](packages/better-auth)                            | ✅ implemented | Better Auth adapter: `authCall`/`fromAuthTuple`/`requireSession`/`requireRole`/`beforeDbHook`; one `AuthError` vocabulary, structural `isAPIError` triage |
 | [`@friday-friday/http`](packages/http)                                          | ✅ implemented | HTTP client: `fetchResult` with Standard Schema decode, RFC 9457 problem+json parsing, lossless tagged-error reconstruction                               |
@@ -45,7 +45,7 @@ Functional-light TypeScript suite: a plain-object `Result` core with thin, frame
 - `pnpm test`: Vitest runtime tests plus `*.test-d.ts` type tests (`--typecheck`); `pnpm test:types` runs only the type tests
 - `pnpm build`: tsdown build of every `packages/*` (ESM + `.d.ts`, ADR-0002)
 - `pnpm size`: build, then size-limit budgets (ADR-0004)
-- `pnpm smoke`: run built `dist` output under plain Node (core + schema; the next adapter requires the Next.js runtime)
+- `pnpm run smoke`: run built `dist` output under plain Node (every package; next's smoke stubs `next/*`, which ships no `exports` map, and checks `/client` refuses to load under `react-server`)
 - `pnpm run ci`: run every gate CI runs, locally, before pushing: lint, typecheck (TS 7 only; CI adds the 6.0 and 7.1-beta matrix), test, size, smoke. Spell it `pnpm run ci`: in pnpm 12 a bare `pnpm ci` is the built-in clean install and never runs this script
 
 ## Status

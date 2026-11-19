@@ -42,7 +42,7 @@ Rules:
 - `cause` stays server-side; stripped (or replaced by a digest) before any boundary.
 - The factory owns `_tag` (#60): a `_tag` prop is a type error (`_tag?: never`, which also catches one spread in) and is overwritten at runtime, so `is()` and `matchTag` can't be fooled by a stray prop.
 - `matchTag` on a runtime tag with no own handler (e.g. rebuilt from the wire) is a defect: `Panic("matchTag: no handler for _tag <tag>")`.
-- `toThrowable(e)` produces a real `Error` (`name = _tag`, data attached) for Error Boundaries / `catchError` paths.
+- `toThrowable(e)` produces a real `Error` (`name = _tag`, data attached, never a `cause`: React's dev serializer would send it to the browser, #53) for Error Boundaries / `catchError` paths. Only a throw in the browser keeps `data`; see docs/decisions/2026-11-19-next-client-thrown-only.md.
 - No Option type: `T | undefined` + `fromNullable(x, () => NotFound(...))`.
 
 ## 3. Defects and triage
