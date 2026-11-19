@@ -4,7 +4,7 @@
  */
 import { err, ok, type Result, taggedError } from "@friday-friday/core"
 import { resultQueryOptions, retryUnless, toQueryFn } from "@friday-friday/query"
-import { QueryClient, type QueryKey } from "@tanstack/query-core"
+import { QueryClient, type QueryKey, QueryObserver, skipToken } from "@tanstack/query-core"
 import { describe, expect, it } from "vitest"
 
 const NotFound = taggedError("NotFound")<{ id: string }>()
@@ -152,5 +152,22 @@ describe("resultQueryOptions + real query-core run", () => {
       })
     ).rejects.toEqual("fail-3") // 1 initial + 2 retries
     expect(calls).toBe(3)
+  })
+
+  it("queryFn: skipToken disables the query, as TanStack's queryOptions does (#58)", async () => {
+    let calls = 0
+    const fetcher = (): Promise<Result<number>> => Promise.resolve(ok(++calls))
+    const client = new QueryClient()
+    const skipped = resultQueryOptions({ queryKey: ["skip", false], queryFn: calls > 0 ? fetcher : skipToken })
+    expect(client.defaultQueryOptions(skipped).enabled).toBe(false)
+    const live = resultQueryOptions({ queryKey: ["skip", true], queryFn: fetcher })
+    expect(client.defaultQueryOptions(live).enabled).toBeUndefined()
+
+    const observer = new QueryObserver(client, resultQueryOptions({ queryKey: ["skip"], queryFn: skipToken }))
+    const unsubscribe = observer.subscribe(() => {})
+    await Promise.resolve()
+    expect(observer.getCurrentResult()).toMatchObject({ status: "pending", fetchStatus: "idle" })
+    unsubscribe()
+    expect(calls).toBe(0)
   })
 })
