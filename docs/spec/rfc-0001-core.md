@@ -102,7 +102,7 @@ Pure, pipeable, **dual** (data-first/data-last via `arguments.length`), separate
 
 - `tag` is the reconstruction key for clients (`HttpError` parses it back into the tagged error — lossless Hono↔client round-trips).
 - `safeProps` = allowlisted JSON-safe props of the error; `cause` and anything non-JSON-safe is dropped.
-- Default tag→status suggestions (adapters take explicit status maps; these are only fallbacks): `NotFound→404`, `Forbidden→403`, `Unauthenticated→401`, `Conflict→409`, `ValidationFailure→422`, everything else→`500` as `InternalDefect`.
+- Default tag→status suggestions (adapters take explicit status maps; these are only fallbacks): `NotFound→404`, `Forbidden→403`, `Unauthenticated→401`, `Conflict→409`, `ValidationFailure→422`, `NetworkError→502`, `DbUnavailable→503`, `Timeout→504` (ADR-0005), everything else→`500` as `InternalDefect`.
 
 ## 7. Naming
 

@@ -18,7 +18,16 @@
  * a string or absent; every `InternalDefect` this module creates (`toDefect`, masking, the hostile-
  * input fallback) carries the fixed text and nothing from the original but an optional `digest`.
  */
-import type { TaggedError } from "./index.js"
+import {
+  Conflict,
+  DbUnavailable,
+  Forbidden,
+  NetworkError,
+  NotFound,
+  type TaggedError,
+  Timeout,
+  Unauthenticated
+} from "./index.js"
 
 /** A value that survives `JSON.parse(JSON.stringify(x))` and `structuredClone(x)` unchanged. */
 export type Json = null | boolean | number | string | ReadonlyArray<Json> | { readonly [key: string]: Json }
@@ -173,13 +182,19 @@ const RESERVED: ReadonlyArray<string> = ["type", "title", "status", "detail", "i
 /**
  * RFC-0001 §6 fallbacks: adapters pass explicit maps, these only fill the gaps. A tag found nowhere
  * is a defect: "everything else → 500 as `InternalDefect`". `InternalDefect` itself is always 500.
+ * Keyed by the fixed-vocabulary factories' `.tag` (ADR-0005), so the table and the factories can't
+ * drift; `ValidationFailure` is schema's tag (core doesn't import schema). The infrastructure rows
+ * (502/503/504) are ADR-0005's.
  */
 const DEFAULT_STATUS: { readonly [tag: string]: number } = {
-  NotFound: 404,
-  Forbidden: 403,
-  Unauthenticated: 401,
-  Conflict: 409,
+  [NotFound.tag]: 404,
+  [Forbidden.tag]: 403,
+  [Unauthenticated.tag]: 401,
+  [Conflict.tag]: 409,
   ValidationFailure: 422,
+  [NetworkError.tag]: 502,
+  [DbUnavailable.tag]: 503,
+  [Timeout.tag]: 504,
   InternalDefect: 500
 }
 
@@ -199,7 +214,8 @@ const typeUri = (tag: string): string =>
  *
  * Status: an explicit number, else `status[tag]` from a map, else (unless `options.strict`) the
  * RFC §6 default (`NotFound 404`, `Forbidden 403`, `Unauthenticated 401`, `Conflict 409`,
- * `ValidationFailure 422`, `InternalDefect 500`). A status outside 400–599 counts as no status.
+ * `ValidationFailure 422`, `InternalDefect 500`; ADR-0005 adds `NetworkError 502`,
+ * `DbUnavailable 503`, `Timeout 504`). A status outside 400–599 counts as no status.
  * A tag that resolves to no status is a defect (RFC §6 "everything else → 500 as `InternalDefect`"):
  * the body is `toProblem(toDefect(e, options.report), 500)` — fixed text, no tag, no props — and the
  * original error goes to `options.report`. So `body.status` is always an error status; adapters send
@@ -236,24 +252,21 @@ export const toProblem = (
 // Parse-back
 // ---------------------------------------------------------------------------
 
-/** Inverse of the default table, for problems that carry no `tag` (foreign producers). */
-const TAG_FOR_STATUS: { readonly [status: string]: string } = {
-  401: "Unauthenticated",
-  403: "Forbidden",
-  404: "NotFound",
-  409: "Conflict",
-  422: "ValidationFailure",
-  500: "InternalDefect"
-}
-
 const isPlainObject = (u: unknown): u is Record<string, unknown> =>
   typeof u === "object" && u !== null && !Array.isArray(u)
 
+/**
+ * The reconstruction key, or for a problem with no `tag` (foreign producers) the inverse of the
+ * default table's rows up to 500: the domain tags and `InternalDefect`. The infrastructure statuses
+ * (502/503/504) are not attributed: a tag-less 503 from a proxy says nothing about a database, so
+ * the caller keeps its own transport error. Derived from `DEFAULT_STATUS`, so the two can't drift.
+ */
 const tagOf = (b: Record<string, unknown>): string | undefined => {
-  const tag = b["tag"]
+  const { tag, status } = b
   if (typeof tag === "string") return tag
-  const status = b["status"]
-  return typeof status === "number" && Object.hasOwn(TAG_FOR_STATUS, status) ? TAG_FOR_STATUS[status] : undefined
+  return typeof status === "number" && status <= 500
+    ? Object.keys(DEFAULT_STATUS).find((t) => DEFAULT_STATUS[t] === status)
+    : undefined
 }
 
 /**

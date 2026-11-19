@@ -59,7 +59,9 @@ Types: `Json`, `WireError<Tag>`, `WireOptions`, `ProblemOptions`, `Problem`, `St
    #33 requires parse-back to be lossless "including props that collided with reserved members".
 4. **Status resolution:** an explicit number wins; otherwise `StatusMap[tag]`; otherwise the RFC §6
    defaults: `NotFound 404`, `Forbidden 403`, `Unauthenticated 401`, `Conflict 409`,
-   `ValidationFailure 422`, `InternalDefect 500`. A status outside the integer range 400–599 counts
+   `ValidationFailure 422`, `InternalDefect 500`, and since ADR-0005 (#87) the infrastructure tags
+   `NetworkError 502`, `DbUnavailable 503`, `Timeout 504`; the table is keyed by core's fixed-vocabulary
+   factories' `.tag`. A status outside the integer range 400–599 counts
    as no status, so a problem body can never claim success (fixes the hono "unmapped tag served as
    200" class of bug at the source). With `{ strict: true }` the defaults are skipped: only the
    caller's number or map counts (#37: "an Err whose tag isn't in the status map produces a 500").
@@ -83,7 +85,9 @@ Types: `Json`, `WireError<Tag>`, `WireOptions`, `ProblemOptions`, `Problem`, `St
    body yields `{ _tag: tag, message: detail, ...extension members, ...shadowed }` with the transport
    members (`type`, `title`, `status`, `detail`, `instance`, `tag`, `shadowed`) removed. A problem with
    no `tag` falls back to the inverse of the default table (`404 → NotFound`, `403 → Forbidden`,
-   `401 → Unauthenticated`, `409 → Conflict`, `422 → ValidationFailure`, `500 → InternalDefect`).
+   `401 → Unauthenticated`, `409 → Conflict`, `422 → ValidationFailure`, `500 → InternalDefect`;
+   the infrastructure statuses 502/503/504 are not attributed, since a tag-less 503 from a proxy says
+   nothing about a database).
    Otherwise the result is `undefined`, so the caller keeps its own transport error (for example
    `HttpError`). Untrusted input is re-sanitized. `problem → fromWire → toProblem` is a fixed point
    (a masked body parses back as the defect envelope, which resolves to 500 again).

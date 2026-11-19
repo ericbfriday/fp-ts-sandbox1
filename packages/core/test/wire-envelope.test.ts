@@ -143,7 +143,8 @@ describe("toProblem — a tag with no status is a defect (RFC-0001 §6 \"everyth
     detail: "Internal server error",
     tag: "InternalDefect"
   }
-  const leaky = { _tag: "DbUnavailable", host: "db.internal:5432", message: "conn refused" }
+  // A tag in no table (not a fixed tag: `DbUnavailable` has a default 503 since ADR-0005).
+  const leaky = { _tag: "ReplicaLagging", host: "db.internal:5432", message: "conn refused" }
 
   it.each([
     ["an empty map", {}],
@@ -153,7 +154,7 @@ describe("toProblem — a tag with no status is a defect (RFC-0001 §6 \"everyth
   ])("sends the fixed envelope, never the tag, message or props, for %s", (_, status) => {
     const p = toProblem(leaky, status)
     expect(p).toStrictEqual(defectBody)
-    expect(JSON.stringify(p)).not.toMatch(/db\.internal|conn refused|DbUnavailable/)
+    expect(JSON.stringify(p)).not.toMatch(/db\.internal|conn refused|ReplicaLagging/)
   })
 
   it("hands the original error to the reporter", () => {

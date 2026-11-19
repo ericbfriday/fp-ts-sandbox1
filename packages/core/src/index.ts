@@ -70,10 +70,12 @@ export interface ErrorFactory<Tag extends string, P extends object> {
  * Build a tagged-error factory. Usage (explicit annotation + `ReturnType` twin type):
  *
  * ```ts
- * export const NotFound: ErrorFactory<"NotFound", { resource: string; id: string }> =
- *   taggedError("NotFound")<{ resource: string; id: string }>()
- * export type NotFound = ReturnType<typeof NotFound>
+ * export const PaymentDeclined: ErrorFactory<"PaymentDeclined", { reason: string }> =
+ *   taggedError("PaymentDeclined")<{ reason: string }>()
+ * export type PaymentDeclined = ReturnType<typeof PaymentDeclined>
  * ```
+ *
+ * For a fixed tag, import core's factory below (ADR-0005); an app tag may require props.
  *
  * `cause` is kept on the object at runtime (server-side only) but is not part of the
  * public type: sanitizers strip it before any boundary (RFC-0001 §5).
@@ -95,6 +97,50 @@ export function taggedError<const Tag extends string>(tag: Tag): <P extends obje
       }
     )
 }
+
+// ---------------------------------------------------------------------------
+// §2 Fixed vocabulary — ADR-0005: core owns one factory per fixed tag (schema owns
+// `ValidationFailure`). A fixed tag guarantees only `_tag` and an optional `message`: every
+// other prop is optional and JSON-safe, so narrowing through any package's `is()` stays sound
+// for errors built in-process. Errors rebuilt from the wire carry untrusted JSON: read their
+// props as hints. `/*#__PURE__*/` keeps each factory out of bundles that don't use it.
+// ---------------------------------------------------------------------------
+
+/** Domain tag: the thing asked for does not exist. */
+export const NotFound: ErrorFactory<"NotFound", { readonly resource?: string; readonly id?: string }> =
+  /*#__PURE__*/ taggedError("NotFound")<{ readonly resource?: string; readonly id?: string }>()
+export type NotFound = ReturnType<typeof NotFound>
+
+/** Domain tag: the write clashes with existing state (a unique key, a stale version). */
+export const Conflict: ErrorFactory<"Conflict", { readonly field?: string; readonly constraint?: string }> =
+  /*#__PURE__*/ taggedError("Conflict")<{ readonly field?: string; readonly constraint?: string }>()
+export type Conflict = ReturnType<typeof Conflict>
+
+/** Domain tag: authenticated, but lacking the permission or role named by `required`. */
+export const Forbidden: ErrorFactory<"Forbidden", { readonly required?: string }> = /*#__PURE__*/ taggedError(
+  "Forbidden"
+)<{ readonly required?: string }>()
+export type Forbidden = ReturnType<typeof Forbidden>
+
+/** Domain tag: no (valid) session. */
+export const Unauthenticated: ErrorFactory<"Unauthenticated", {}> = /*#__PURE__*/ taggedError("Unauthenticated")()
+export type Unauthenticated = ReturnType<typeof Unauthenticated>
+
+/** Infrastructure tag: a time budget of `ms` milliseconds ran out (`/async` `timeout()` produces it). */
+export const Timeout: ErrorFactory<"Timeout", { readonly ms?: number }> = /*#__PURE__*/ taggedError("Timeout")<
+  { readonly ms?: number }
+>()
+export type Timeout = ReturnType<typeof Timeout>
+
+/** Infrastructure tag: the transport failed before a response arrived. */
+export const NetworkError: ErrorFactory<"NetworkError", { readonly reason?: string }> = /*#__PURE__*/ taggedError(
+  "NetworkError"
+)<{ readonly reason?: string }>()
+export type NetworkError = ReturnType<typeof NetworkError>
+
+/** Infrastructure tag: the database can't be reached (connection failures). */
+export const DbUnavailable: ErrorFactory<"DbUnavailable", {}> = /*#__PURE__*/ taggedError("DbUnavailable")()
+export type DbUnavailable = ReturnType<typeof DbUnavailable>
 
 /** A real `Error` built from a tagged error: `name` is the `_tag`, the error itself is `data`. */
 export interface Throwable<E extends TaggedError<string>> extends Error {
