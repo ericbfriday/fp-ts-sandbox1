@@ -27,8 +27,8 @@ Thanks for contributing to `@friday-friday/*`. This repo has one rule above all 
 - Every async helper that can cancel takes `{ signal }` and forwards it into user callbacks. Abort semantics are documented per function — see `packages/core/src/async.ts`.
 - Boundary sanitation is non-negotiable: `cause` and non-JSON-safe props never cross a wire boundary.
 - Framework vendors are peers (conservative ranges, lower bound = oldest tested version); vendors in tests are devDeps only.
-- Size budgets are hard: core fixture ≤ 600 B, full core ≤ 3 kB, adapters ≤ 2 kB (`.size-limit.json`).
-- The leaf packages `db` and `query` hold a tighter 1 kB; `env` holds 1.1 kB because it bundles core's `Panic` (via schema's `parse`), whose total, bounded message (RFC-0001 §3, #31) costs ~70 B min+gz that no shrink recovered.
+- Size budgets are hard: core fixture ≤ 600 B, full core ≤ 3 kB, adapters ≤ 2 kB of their own code (`.size-limit.json`). Adapter and schema entries `ignore` `@friday-friday/core` (and adapters `@friday-friday/schema`) along with their framework peers, because an app installs core once and every adapter shares it (#44 decision 2, #62); core's own entries measure `/wire`, `/async` and `/gen`.
+- The leaf packages `db`, `env` and `query` hold a tighter 1 kB of their own code.
 - When a cast is unavoidable (AST universes, phantom brands, wire decoding), guard it structurally and leave a scoped disable comment **with a reason**. Untouched assertions fail review.
 
 ## Issue triage
