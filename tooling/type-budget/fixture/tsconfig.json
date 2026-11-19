@@ -1,0 +1,12 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    // The fixture's exports are deliberately unannotated: the budget measures inference.
+    "isolatedDeclarations": false,
+    "declaration": false,
+    "paths": {
+      "@friday-friday/core": ["../../../packages/core/src/index.ts"]
+    }
+  },
+  "files": ["core-stress.ts"]
+}

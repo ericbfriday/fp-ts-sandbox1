@@ -105,6 +105,32 @@ describe("typecheck (ADR-0004 gate)", () => {
     expect(check).toContain(`tsc -p ${dir}/tsconfig.json`)
   })
 
+  // IDEA §8 / ADR-0004 (#61): the type-instantiation budget runs wherever `check` runs, so on
+  // every TypeScript in the matrix, and each of those versions has a recorded ceiling.
+  it("pnpm run check runs the type-instantiation budget", () => {
+    expect(check.split(" && ")).toContain("node tooling/type-budget/src/check.ts")
+  })
+
+  const workflow = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8")
+  const matrix = [...workflow.matchAll(/\{ name: "(\d+\.\d+)[^"]*", spec: /g)].map((m) => m[1] ?? "")
+  // oxlint-disable-next-line no-unsafe-type-assertion -- budget.json is the check script's own file
+  const budget = readJson("tooling/type-budget/budget.json") as {
+    readonly versions: Record<string, { readonly measured: number; readonly ceiling: number }>
+  }
+
+  it("the CI typecheck matrix lists TypeScript versions", () => {
+    expect(matrix.length).toBeGreaterThanOrEqual(3)
+  })
+
+  it.each(matrix.map((v) => [v] as const))("TypeScript %s has a recorded instantiation ceiling", (v) => {
+    expect(Object.keys(budget.versions)).toContain(v)
+  })
+
+  it.each(Object.entries(budget.versions))("TypeScript %s ceiling is within measured × 1.2", (_v, e) => {
+    expect(e.ceiling).toBeGreaterThanOrEqual(e.measured)
+    expect(e.ceiling).toBeLessThanOrEqual(Math.floor(e.measured * 1.2))
+  })
+
   it.each(examples.map((e) => [e.dir] as const))("%s tsconfig includes its tests", (dir) => {
     // oxlint-disable-next-line no-unsafe-type-assertion -- tsconfig.json shape
     const tsconfig = readJson(`${dir}/tsconfig.json`) as { include?: ReadonlyArray<string> }

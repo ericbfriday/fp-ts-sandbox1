@@ -62,6 +62,8 @@ jobs:
         if: matrix.ts.spec != ''
         run: pnpm add -D -w "typescript@npm:typescript@${{ matrix.ts.spec }}"
       - run: pnpm exec tsc --version
+      # `check` ends with the type-instantiation budget (tooling/type-budget, #61), which reads
+      # the ceiling recorded for this TypeScript major.minor.
       - run: pnpm run check
       - run: pnpm run test:types
 

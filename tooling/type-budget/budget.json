@@ -1,0 +1,8 @@
+{
+  "$comment": "Type-instantiation budget (IDEA §8, ADR-0004, #61). `measured` = instantiations of fixture/core-stress.ts minus fixture/core-baseline.ts under `tsc --extendedDiagnostics`, per TypeScript major.minor. `ceiling` = measured + at most 20%. Raising either needs a justification in the PR body.",
+  "versions": {
+    "6.0": { "tsc": "6.0.3", "measured": 3694, "ceiling": 4432 },
+    "7.0": { "tsc": "7.0.2", "measured": 3877, "ceiling": 4652 },
+    "7.1": { "tsc": "7.1.0-beta", "measured": 3877, "ceiling": 4652 }
+  }
+}
