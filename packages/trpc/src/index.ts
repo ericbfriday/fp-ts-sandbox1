@@ -3,15 +3,21 @@
  *
  * Dual-channel design:
  * - **Error channel (default):** handlers return a Result; `resultMiddleware(map)` turns
- *   `Err(e)` into `throw new TRPCError({ code: map[e._tag], cause: e })`, and `errorFormatter`
- *   writes the sanitized tagged error into `data.fl`. Errors flow through tRPC's links into
- *   TanStack Query's error state, so retry / `throwOnError` / Error Boundaries behave.
+ *   `Err(e)` into `throw new TRPCError({ code: map[e._tag] ?? "INTERNAL_SERVER_ERROR", cause: e })`,
+ *   and `errorFormatter()` writes the wire form into `data.friday_friday`. Errors flow through
+ *   tRPC's links into TanStack Query's error state, so retry / `throwOnError` / Error Boundaries behave.
  * - **Data channel (opt-in):** `resultProcedure({ channel: "data" })` resolves the Result as
  *   plain output (tagged errors are plain data and survive JSON) — useful for
  *   `useActionState`-like form flows where a rejection is a legitimate outcome.
  *
- * Formatting uses the STRUCTURAL tagged-error shape and Standard Schema issue shape — never
- * `instanceof ZodError` — so Valibot and ArkType inputs format identically.
+ * tRPC glue only (#38, parent #30). The wire rules (JSON-safe sanitize, the `InternalDefect`
+ * envelope, parse-back) live in `@friday-friday/core/wire` (RFC-0001 §5, IDEA §4.2–§4.3,
+ * docs/decisions/2026-11-17-core-wire-subpath.md); validation issues are projected by
+ * `@friday-friday/schema` `toValidationFailure` (message + path only, never the vendor's `input`).
+ * Formatting is STRUCTURAL — never `instanceof ZodError` — so Valibot and ArkType format alike.
+ *
+ * Member name: `data.friday_friday`, the `friday_friday` namespace of RFC-0001 §7 (the one
+ * otel's `friday_friday.error.tag` uses). The Design Report's `data.fl` was a placeholder.
  *
  * Documented design limit (report §5.3): tRPC infers the formatter shape GLOBALLY, not per
  * procedure, so the client-side error type is declared (via `fromTRPC<T, E>`), not inferred.
@@ -21,11 +27,13 @@ import {
   type AsyncResult,
   err,
   type ErrorFactory,
+  isResult,
   ok,
-  type Result,
   type TaggedError,
   taggedError
 } from "@friday-friday/core"
+import { fromWire, sanitize as project, toDefect, type WireError } from "@friday-friday/core/wire"
+import { type IssueLike, toValidationFailure } from "@friday-friday/schema"
 // Stable root entry point only (#57): every tRPC type here comes from `@trpc/server` and exists
 // there on the oldest peer (11.0.0). Never import `@trpc/server/unstable-core-do-not-import`:
 // it lands in dist/index.d.ts and a tRPC minor release could break consumers' builds.
@@ -49,103 +57,72 @@ export const TRPCTransportError: ErrorFactory<
 }>()
 export type TRPCTransportError = ReturnType<typeof TRPCTransportError>
 
-/** Structural tagged-error check (no instanceof: safe across module copies and JSON). */
-const asTagged = (u: unknown): TaggedError<string> & Record<string, unknown> | null => {
-  // oxlint-disable-next-line no-unsafe-type-assertion -- structural probe: _tag verified immediately below
-  const candidate = u as { _tag?: unknown } | null
-  if (candidate !== null && typeof candidate === "object" && typeof candidate._tag === "string") {
-    // oxlint-disable-next-line no-unsafe-type-assertion -- verified field-by-field above
-    // oxlint-disable-next-line no-unsafe-type-assertion -- verified: _tag is a string field
-    return u as TaggedError<string> & Record<string, unknown>
-  }
-  return null
-}
-
-/** Structural Standard Schema issue array check (works for zod/valibot/arktype alike). */
-const asStandardIssues = (u: unknown): ReadonlyArray<{ message?: string; path?: ReadonlyArray<unknown> }> | null => {
-  // oxlint-disable-next-line no-unsafe-type-assertion -- structural probe
-  const candidate = u as { issues?: unknown } | null
-  if (candidate !== null && typeof candidate === "object" && Array.isArray(candidate.issues)) {
-    // oxlint-disable-next-line no-unsafe-type-assertion -- issues verified as array above
-    return candidate.issues as ReadonlyArray<{ message?: string; path?: ReadonlyArray<unknown> }>
-  }
-  return null
-}
+/** A string `_tag`, read without trusting the value (`null`, primitives and wrappers alike). */
+const tagOf = (u: unknown): unknown =>
+  // oxlint-disable-next-line no-unsafe-type-assertion -- structural probe; the caller checks the type
+  (u as { _tag?: unknown } | null | undefined)?._tag
 
 /**
- * JSON-safe projection of a tagged error for the `data.fl` member: tag + plain props
- * (message/cause excluded — cause is rarely JSON-safe and never crosses a boundary).
+ * The `data.friday_friday` projection of a tagged error: core `/wire` `sanitize` — `_tag`, a
+ * string `message` and JSON-safe props survive; `cause`, bigint, functions and class instances
+ * are dropped. Never throws.
  */
-export function sanitize(e: TaggedError<string>): Record<string, unknown> {
-  // oxlint-disable-next-line no-unsafe-type-assertion -- tagged errors are plain data (IDEA.md 4.2); message/cause are transport-excluded
-  const { _tag, message, cause, ...safeProps } = e as TaggedError<string> & {
-    message?: unknown
-    cause?: unknown
-    [key: string]: unknown
-  }
-  void message
-  void cause
-  return { _tag, ...safeProps }
+export function sanitize(e: TaggedError<string>): WireError {
+  return project(e)
 }
 
-export interface FlMeta {
-  /** The sanitized tagged error, when the failure came from the domain channel. */
-  readonly tag?: string
-  readonly [key: string]: unknown
+/** Options for `errorFormatter`. */
+export interface ErrorFormatterOptions {
+  /**
+   * Receives the original throw of every defect (`INTERNAL_SERVER_ERROR`) before it is masked,
+   * for logging / OpenTelemetry (IDEA §4.3). A throwing reporter is swallowed.
+   */
+  readonly report?: (cause: unknown) => void
 }
 
-/** Standard Schema issue shape projected into `data.fl` (validator failures). */
-export interface FlValidation {
-  readonly tag: "ValidationFailure"
-  readonly issues: ReadonlyArray<{ message?: string; path?: ReadonlyArray<unknown> }>
-}
-
-/**
- * tRPC errorFormatter: attaches `data.fl` — the sanitized tagged error for domain errors,
- * the Standard Schema issues for validator errors (STRUCTURAL: zod/valibot/arkType alike),
- * `null` otherwise.
- */
-export function errorFormatter<TShape extends { data: Record<string, unknown> }>(opts: {
+/** The formatter `errorFormatter()` returns: tRPC's shape plus the `friday_friday` member. */
+export type ErrorFormatter = <TShape extends { message: string; data: object }>(opts: {
   shape: TShape
-  error: { cause?: unknown }
-}): TShape & { data: TShape["data"] & { fl: FlMeta | FlValidation | null } } {
-  const cause = opts.error.cause
-  const tagged = asTagged(cause)
-  let fl: FlMeta | FlValidation | null = null
-  if (tagged !== null) {
-    fl = sanitize(tagged)
-  } else {
-    const issues = asStandardIssues(cause)
-    if (issues !== null) fl = { tag: "ValidationFailure", issues }
-  }
-  return {
-    ...opts.shape,
-    data: { ...opts.shape.data, fl }
-  }
-}
-
-/** Structural Result check for middleware pass-through (plain data: `ok` discriminates). */
-const asResult = (u: unknown): Result<unknown, TaggedError<string>> | null => {
-  // oxlint-disable-next-line no-unsafe-type-assertion -- structural probe
-  const candidate = u as { ok?: unknown; value?: unknown; error?: unknown } | null
-  if (
-    candidate !== null &&
-    typeof candidate === "object" &&
-    typeof candidate.ok === "boolean" &&
-    (candidate.ok || asTagged(candidate.error) !== null)
-  ) {
-    // oxlint-disable-next-line no-unsafe-type-assertion -- ok/_tag verified above
-    return u as Result<unknown, TaggedError<string>>
-  }
-  return null
-}
+  error: TRPCError
+}) => TShape & { data: TShape["data"] & { friday_friday: WireError | null } }
 
 /**
- * Error-channel middleware: a handler returning a Result has `Err` thrown as
- * `TRPCError({ code: map[e._tag] ?? "INTERNAL_SERVER_ERROR", cause: e })` — the error
- * channel fires retry/boundaries correctly — and `Ok` unwrapped to the value.
- * Non-Result outputs pass through untouched.
+ * tRPC errorFormatter factory: `initTRPC.create({ errorFormatter: errorFormatter({ report }) })`.
+ * `data.friday_friday` holds, by tRPC error code and cause:
+ * - `INTERNAL_SERVER_ERROR` (a raw throw, a `Panic`, or an `Err` whose tag `resultMiddleware`
+ *   had no code for): core's `InternalDefect` envelope with the fixed text, and the original
+ *   goes to `report`. Outside tRPC's `isDev`, `shape.message` becomes the same fixed text. tRPC
+ *   sets `data.stack` only in dev, so a shape without it counts as production (fail-safe);
+ * - a tagged-error cause: core `sanitize(e)`;
+ * - Standard Schema issues (input validation, any vendor): schema's `ValidationFailure`, each
+ *   issue reduced to `{ message, path }`;
+ * - anything else (a deliberate `TRPCError`): `null`, message untouched.
  */
+export function errorFormatter(options: ErrorFormatterOptions = {}): ErrorFormatter {
+  return ({ shape, error }) => {
+    const cause: unknown = error.cause
+    // oxlint-disable-next-line no-unsafe-type-assertion -- structural probe: `issues` is checked with Array.isArray below
+    const issues = (cause as { issues?: unknown } | undefined)?.issues
+    let message = shape.message
+    let wire: WireError | null = null
+    if (error.code === "INTERNAL_SERVER_ERROR") {
+      wire = toDefect(cause ?? error, options.report)
+      if (!("stack" in shape.data)) message = wire.message ?? message
+    } else if (typeof tagOf(cause) === "string") {
+      // oxlint-disable-next-line no-unsafe-type-assertion -- `_tag` is a string (checked); sanitize re-projects the rest
+      const e = cause as TaggedError<string>
+      // tRPC wraps a plain-object cause in an Error (`UnknownCauseError`) whose own `message` is
+      // non-enumerable, so it is copied back explicitly; an absent message stays absent.
+      const { message: own } = e
+      wire = project(Object.hasOwn(e, "message") && typeof own === "string" ? { ...e, message: own } : e)
+    } else if (Array.isArray(issues)) {
+      // oxlint-disable-next-line no-unsafe-type-assertion -- vendor issues; the projection is total over arrays
+      wire = project(toValidationFailure(issues as ReadonlyArray<IssueLike>))
+    }
+    return { ...shape, message, data: { ...shape.data, friday_friday: wire } }
+  }
+}
+
 /** tRPC middleware result shape: OK results carry the "middleware" marker. */
 export interface NextOkOut {
   ok: true
@@ -161,6 +138,12 @@ export interface NextErrOut {
 export type NextOut = NextOkOut | NextErrOut
 
 /**
+ * Error-channel middleware: a handler returning a Result (core `isResult`) has `Err` thrown as
+ * `TRPCError({ code: map[e._tag] ?? "INTERNAL_SERVER_ERROR", cause: e })` — the error channel
+ * fires retry/boundaries correctly — and `Ok` unwrapped to the value. Only the map's OWN keys
+ * count (a tag such as `constructor` is unmapped). An unmapped tag is a defect at the formatter.
+ * Non-Result outputs pass through untouched.
+ *
  * NOTE: the returned middleware is asserted at the boundary - tRPC brands its middleware
  * marker (`"middlewareMarker" & { __brand }`) so the structural OK shape cannot be
  * expressed outside tRPC's own types. The runtime contract is proven in the wire tests;
@@ -170,14 +153,12 @@ export type NextOut = NextOkOut | NextErrOut
 export function resultMiddleware(map: { readonly [tag: string]: TRPCErrorCode }): AnyTRPCMiddlewareFunction {
   const mw = async ({ next }: { next: () => Promise<NextOut> }): Promise<NextOut> => {
     const out = await next()
-    if (!out.ok) return out
-    const r = asResult(out.data)
-    if (r === null) return out
-    if (!r.ok) {
-      const code = (map as Record<string, TRPCErrorCode>)[r.error._tag] ?? "INTERNAL_SERVER_ERROR"
-      throw new TRPCError({ code, cause: r.error })
-    }
-    return { ok: true as const, marker: "middleware" as const, data: r.value }
+    if (!out.ok || !isResult(out.data)) return out
+    const r = out.data
+    if (r.ok) return { ok: true as const, marker: "middleware" as const, data: r.value }
+    const tag = tagOf(r.error)
+    const code = typeof tag === "string" && Object.hasOwn(map, tag) ? map[tag] : undefined
+    throw new TRPCError({ code: code ?? "INTERNAL_SERVER_ERROR", cause: r.error })
   }
   // oxlint-disable-next-line no-unsafe-type-assertion -- tRPC brands the middleware marker; runtime contract proven in wire tests
   return mw as unknown as AnyTRPCMiddlewareFunction
@@ -194,9 +175,10 @@ export function resultProcedure(opts: { readonly channel: "data" }): <B>(builder
 
 /**
  * Client-side bridge: a tRPC call promise resolved as a Result. A `TRPCClientError` whose
- * `data.fl` carries a sanitized tagged error is reconstructed (lossless round-trip);
- * `data.fl` with Standard Schema issues becomes a `ValidationFailure` tagged error; anything
- * else is `Err(TRPCTransportError)`.
+ * `data.friday_friday` holds a wire error is rebuilt by core `fromWire` (`_tag`, `message` and
+ * props survive; a `ValidationFailure` keeps its `{ message, path }` issues). The defect
+ * envelope (`InternalDefect`, never in `E`) and anything else become `Err(TRPCTransportError)`
+ * carrying tRPC's code and message.
  *
  * The error type is DECLARED here, not inferred — tRPC types the formatter shape globally,
  * not per procedure (report §5.3 design limit, documented).
@@ -211,30 +193,19 @@ export function fromTRPC<T, E extends TaggedError<string> = TRPCTransportError>(
       // oxlint-disable-next-line no-unsafe-type-assertion -- T is declared by the caller (report 5.3: declared, not inferred)
       return ok((await promise) as T)
     } catch (cause) {
-      // oxlint-disable-next-line no-unsafe-type-assertion -- TRPCClientError.data is structurally accessed; verified below
-      const fl = asTagged((cause as { data?: { fl?: unknown } } | null)?.data?.fl)
-      if (fl !== null) {
-        // oxlint-disable-next-line no-unsafe-type-assertion -- fl came from our own sanitize() on the wire; E is caller-declared (report 5.3)
-        return err(fl as unknown as E)
+      // oxlint-disable-next-line no-unsafe-type-assertion -- TRPCClientError fields are structurally accessed; fromWire re-projects untrusted input
+      const { data, message } = Object(cause) as {
+        data?: { friday_friday?: unknown; code?: unknown }
+        message?: unknown
       }
-      // oxlint-disable-next-line no-unsafe-type-assertion -- TRPCClientError.data is structurally accessed; verified below
-      const issues = asStandardIssues((cause as { data?: { fl?: unknown } } | null)?.data?.fl)
-      if (issues !== null) {
-        const ValidationFailure = taggedError("ValidationFailure")<{ issues: typeof issues }>()
-        // oxlint-disable-next-line no-unsafe-type-assertion -- ValidationFailure reconstructed from ~standard issues; E is caller-declared
-        return err(ValidationFailure({ issues }) as unknown as E)
-      }
-      // oxlint-disable-next-line no-unsafe-type-assertion -- TRPCClientError fields are structurally accessed
-      const code = (cause as { code?: unknown } | null)?.code
-      // oxlint-disable-next-line no-unsafe-type-assertion -- TRPCClientError fields are structurally accessed
-      const message = (cause as { message?: unknown } | null)?.message
-      const codeStr = typeof code === "string" ? code : undefined
+      const wire = fromWire(data?.friday_friday)
+      const code = data?.code
+      // oxlint-disable-next-line no-unsafe-type-assertion -- rebuilt from our own errorFormatter's wire form; E is caller-declared (report 5.3)
+      if (wire !== undefined && wire._tag !== "InternalDefect") return err(wire as unknown as E)
       const msg = typeof message === "string" ? message : "transport error"
-      const transportError = codeStr === undefined
-        ? TRPCTransportError({ message: msg })
-        : TRPCTransportError({ code: codeStr, message: msg })
-      // oxlint-disable-next-line no-unsafe-type-assertion -- E is caller-declared (report 5.3); transport error is our own construction
-      return err(transportError as unknown as E)
+      return err(
+        typeof code === "string" ? TRPCTransportError({ code, message: msg }) : TRPCTransportError({ message: msg })
+      )
     }
   })()
 }
