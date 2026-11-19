@@ -10,6 +10,10 @@
  *   as its output (tagged errors are plain data and survive JSON) — useful for
  *   `useActionState`-like form flows where a rejection is a legitimate outcome. No helper is
  *   needed (#64 deleted the identity `resultProcedure`).
+ * - **With `.output(schema)`:** use `resultResolver(map, handler)` instead of `resultMiddleware`
+ *   (#108, #44 decision 4). The resolver unwraps the Result itself, so tRPC's output validator
+ *   sees `T` and the client infers `T`. `.use(resultMiddleware(map)).output(schema)` fails every
+ *   call, Ok and Err alike, as `InternalDefect`, because the validator sees the Result envelope.
  *
  * Result primitives (`ok`, `err`, `taggedError`, `TaggedError`) come from `@friday-friday/core`;
  * this package exports tRPC glue only (#44 decision 6, #64).
@@ -31,8 +35,10 @@ import {
   type AsyncResult,
   err,
   type ErrorFactory,
+  type InferOk,
   isResult,
   ok,
+  type Result,
   type TaggedError,
   taggedError
 } from "@friday-friday/core"
@@ -142,6 +148,18 @@ export interface NextErrOut {
 export type NextOut = NextOkOut | NextErrOut
 
 /**
+ * The error channel's one step, shared by `resultMiddleware` and `resultResolver`: `Ok` → its
+ * value; `Err(e)` → `throw new TRPCError({ code: map[e._tag] ?? "INTERNAL_SERVER_ERROR", cause: e })`.
+ * Only the map's OWN keys count (a tag such as `constructor` is unmapped).
+ */
+const settle = <T>(r: Result<T, unknown>, map: { readonly [tag: string]: TRPCErrorCode }): T => {
+  if (r.ok) return r.value
+  const tag = tagOf(r.error)
+  const code = typeof tag === "string" && Object.hasOwn(map, tag) ? map[tag] : undefined
+  throw new TRPCError({ code: code ?? "INTERNAL_SERVER_ERROR", cause: r.error })
+}
+
+/**
  * Error-channel middleware: a handler returning a Result (core `isResult`) has `Err` thrown as
  * `TRPCError({ code: map[e._tag] ?? "INTERNAL_SERVER_ERROR", cause: e })` — the error channel
  * fires retry/boundaries correctly — and `Ok` unwrapped to the value. Only the map's OWN keys
@@ -158,14 +176,32 @@ export function resultMiddleware(map: { readonly [tag: string]: TRPCErrorCode })
   const mw = async ({ next }: { next: () => Promise<NextOut> }): Promise<NextOut> => {
     const out = await next()
     if (!out.ok || !isResult(out.data)) return out
-    const r = out.data
-    if (r.ok) return { ok: true as const, marker: "middleware" as const, data: r.value }
-    const tag = tagOf(r.error)
-    const code = typeof tag === "string" && Object.hasOwn(map, tag) ? map[tag] : undefined
-    throw new TRPCError({ code: code ?? "INTERNAL_SERVER_ERROR", cause: r.error })
+    return { ok: true as const, marker: "middleware" as const, data: settle(out.data, map) }
   }
   // oxlint-disable-next-line no-unsafe-type-assertion -- tRPC brands the middleware marker; runtime contract proven in wire tests
   return mw as unknown as AnyTRPCMiddlewareFunction
+}
+
+/**
+ * Error-channel RESOLVER, for procedures with an output schema (#108, #44 decision 4):
+ * `t.procedure.input(i).output(o).query(resultResolver(map, ({ ctx, input }) => findUser(input)))`.
+ * The handler returns a `Result`/`AsyncResult`; `Ok` resolves to its value, so tRPC's output
+ * validator checks `T` and the client infers `T`. `Err(e)` throws exactly as `resultMiddleware`
+ * (same map, same unmapped-tag defect). An `Ok` value that fails the output schema is tRPC's
+ * output-validation error, which the formatter reports as a defect (`InternalDefect`).
+ *
+ * `ctx`/`input` are inferred from the procedure (the contextual type of `.query()`/`.mutation()`).
+ * Don't combine it with `resultMiddleware` on the same procedure: the middleware would see a
+ * plain value and pass it through, so it's harmless, but it's redundant.
+ */
+export function resultResolver<TOpts, R extends Result<unknown, unknown>>(
+  map: { readonly [tag: string]: TRPCErrorCode },
+  resolver: (opts: TOpts) => R | PromiseLike<R>
+): (opts: TOpts) => Promise<InferOk<R>> {
+  // The whole Result is inferred (not T and E separately), so a handler returning
+  // `Ok<A> | Err<X> | Err<Y>` from several branches keeps every member.
+  // oxlint-disable-next-line no-unsafe-type-assertion -- R's Ok member carries InferOk<R>
+  return async (opts) => settle(await resolver(opts), map) as InferOk<R>
 }
 
 /**
