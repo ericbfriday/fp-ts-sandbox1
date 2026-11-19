@@ -19,26 +19,38 @@ import {
   pgForeignKey,
   pgNotNull,
   pgProtocolViolation,
+  pgTerminatedUnexpectedly,
+  pgTimeoutExpired,
   pgUndefinedTable,
   pgUnique,
   postgresJsAdminShutdown,
   postgresJsCannotConnectNow,
+  postgresJsConnectionClosed,
+  postgresJsConnectTimeout,
   postgresJsForeignKey,
   postgresJsNotNull,
   postgresJsRefused,
   postgresJsUnique,
   prisma6ForeignKey,
+  prisma6ModelAdminShutdown,
   prisma6NotFound,
+  prisma6RawAdminShutdown,
   prisma6ReachedButTimedOut,
   prisma6Unique,
   prisma6UnreachableOnConnect,
   prisma6UnreachableOnQuery,
+  prisma7ConnectionClosed,
   prisma7ForeignKey,
+  prisma7ModelAdminShutdown,
   prisma7NotFound,
+  prisma7RawAdminShutdown,
+  prisma7RawUndefinedTable,
+  prisma7TimedOut,
   prisma7Unique,
   prisma7UniqueByFields,
   prisma7Unreachable,
   socketRefused,
+  socketReset,
   socketTimedOut
 } from "./_fixtures.js"
 
@@ -69,7 +81,11 @@ describe("driver detail and row values stay server-side", () => {
     ["postgres-js ECONNREFUSED", postgresJsRefused],
     ["pg 57P01", pgAdminShutdown],
     ["prisma 7 P1001", prisma7Unreachable],
-    ["prisma 6 P1001", prisma6UnreachableOnConnect]
+    ["prisma 6 P1001", prisma6UnreachableOnConnect],
+    ["postgres-js CONNECTION_CLOSED", postgresJsConnectionClosed],
+    ["prisma 6 lazy connect", prisma6UnreachableOnQuery],
+    ["prisma 6 P2010(57P01)", prisma6RawAdminShutdown],
+    ["prisma 7 P2039(57P01)", prisma7ModelAdminShutdown]
   ]
 
   it.each(inputs)("%s: no detail/message/query text outside cause; original reachable on cause", (_, make) => {
@@ -79,7 +95,9 @@ describe("driver detail and row values stay server-side", () => {
     expect(mapped).toHaveProperty("cause", e)
     const wire = wireJson(mapped)
     const leaks = ["a@example.com", "(42)", "Failing row", "Key (", "insert into", "select ", "Invalid `prisma"]
-    for (const leak of [...leaks, "10.0.0.5", "5432", "ECONNREFUSED", "terminating", "Can't reach"]) {
+    for (
+      const leak of [...leaks, "10.0.0.5", "5432", "ECONNREFUSED", "CONNECTION_CLOSED", "terminating", "Can't reach"]
+    ) {
       expect(wire).not.toContain(leak)
     }
     expect(mapped).not.toHaveProperty("detail")
@@ -201,8 +219,12 @@ describe("connection failures -> core's DbUnavailable (#88, ADR-0005)", () => {
   const pg: ReadonlyArray<readonly [string, () => Error]> = [
     ["ECONNREFUSED (pg / node net)", socketRefused],
     ["ENOTFOUND (pg / node dns)", dnsNotFound],
-    ["ETIMEDOUT (U)", socketTimedOut],
+    ["ETIMEDOUT (pg / node net)", socketTimedOut],
+    ["ECONNRESET (pg / node net)", socketReset],
     ["postgres-js ECONNREFUSED", postgresJsRefused],
+    ["postgres-js CONNECT_TIMEOUT", postgresJsConnectTimeout],
+    ["postgres-js CONNECTION_CLOSED", postgresJsConnectionClosed],
+    ["drizzle(postgres-js CONNECTION_CLOSED)", () => drizzleWrapped(postgresJsConnectionClosed(), "select 1", [])],
     ["drizzle(ECONNREFUSED)", () => drizzleWrapped(socketRefused(), "select 1", [])],
     ["pg 57P01 admin_shutdown", pgAdminShutdown],
     ["postgres-js 57P01 admin_shutdown", postgresJsAdminShutdown],
@@ -224,7 +246,13 @@ describe("connection failures -> core's DbUnavailable (#88, ADR-0005)", () => {
   const prisma: ReadonlyArray<readonly [string, () => Error]> = [
     ["Prisma 7 P1001 (adapter-pg, KnownRequestError.code)", prisma7Unreachable],
     ["Prisma 6 P1001 ($connect, InitializationError.errorCode)", prisma6UnreachableOnConnect],
-    ["Prisma 6 P1002 (U)", prisma6ReachedButTimedOut]
+    ["Prisma 6 P1002 (U)", prisma6ReachedButTimedOut],
+    ["Prisma 6 lazy connect (errorCode undefined, InitializationError's own text)", prisma6UnreachableOnQuery],
+    ["Prisma 7 P1008 (adapter-pg ETIMEDOUT)", prisma7TimedOut],
+    ["Prisma 7 P1017 (adapter-pg ECONNRESET)", prisma7ConnectionClosed],
+    ["Prisma 6 P2010 wrapping 57P01 (meta.code)", prisma6RawAdminShutdown],
+    ["Prisma 7 P2010 wrapping 57P01 (meta.driverAdapterError.cause.code)", prisma7RawAdminShutdown],
+    ["Prisma 7 P2039 wrapping 57P01 (model query)", prisma7ModelAdminShutdown]
   ]
 
   it.each(prisma)("mapPrismaError: %s -> DbUnavailable, original on cause", (_, make) => {
@@ -272,16 +300,47 @@ describe("connection failures -> core's DbUnavailable (#88, ADR-0005)", () => {
   it("leaves non-connection look-alikes unmapped (null -> the caller's defect lane)", () => {
     // 08P01 is class 08 but, as captured, a client bug (wrong Bind parameter count): retrying won't help.
     expect(mapPgError(pgProtocolViolation())).toBe(null)
-    // Prisma 6 lazy connect: captured with errorCode undefined, so no code to read.
-    expect(mapPrismaError(prisma6UnreachableOnQuery())).toBe(null)
+    // P2010 / P2039 map only when the wrapped SQLSTATE is a connection failure (#99).
+    expect(mapDbError(prisma7RawUndefinedTable())).toBe(null)
+    expect(mapPrismaError({ code: "P2010", meta: { code: "08P01" } })).toBe(null)
     // Socket codes that aren't connection failures to a database.
     expect(mapPgError(Object.assign(new Error("write EPIPE"), { code: "EPIPE", syscall: "write" }))).toBe(null)
     // P-codes are read from `errorCode` only by mapPrismaError; SQLSTATEs never from `errorCode`.
     expect(mapPgError({ errorCode: "57P01" })).toBe(null)
   })
 
+  it("deliberate non-mappings (#99): shapes with nothing but message text outside a named class", () => {
+    // pg throws these as bare `Error`s (no class, no own props): an app's `new Error(...)` with the
+    // same text is the same object, so reading the message would map app errors too.
+    for (const e of [pgTerminatedUnexpectedly(), pgTimeoutExpired()]) {
+      expect(mapDbError(e)).toBe(null)
+      expect(mapDbError(drizzleWrapped(e, "select 1", []))).toBe(null)
+    }
+    // Prisma 6 model query hit by 57P01: no code; the SQLSTATE is only inside Rust debug text.
+    expect(mapDbError(prisma6ModelAdminShutdown())).toBe(null)
+  })
+
+  it("message text is read only on Prisma's PrismaClientInitializationError (#99)", () => {
+    const text = prisma6UnreachableOnQuery().message
+    expect(mapPrismaError(new Error(text))).toBe(null)
+    expect(mapPrismaError(Object.assign(new Error(text), { name: "PrismaClientKnownRequestError" }))).toBe(null)
+    expect(mapPrismaError(new Error("wrapped", { cause: new Error(text) }))).toBe(null)
+    // A Prisma 6 InitializationError that is not "can't reach" (e.g. bad credentials) stays unmapped.
+    const authFailed = Object.assign(new Error("Authentication failed against database server"), {
+      name: "PrismaClientInitializationError"
+    })
+    expect(mapPrismaError(authFailed)).toBe(null)
+  })
+
   it("through core /wire toProblem: a 503 problem body, tag only, no driver text or host (#87)", () => {
-    for (const e of [socketRefused(), dnsNotFound(), pgAdminShutdown(), prisma7Unreachable()]) {
+    const inputs = [
+      socketRefused(),
+      dnsNotFound(),
+      pgAdminShutdown(),
+      prisma7Unreachable(),
+      prisma6UnreachableOnQuery()
+    ]
+    for (const e of [...inputs, postgresJsConnectionClosed(), prisma7ModelAdminShutdown()]) {
       const mapped = mapDbError(e)
       if (mapped === null) throw new Error("expected a mapped error")
       const body = toProblem(mapped)

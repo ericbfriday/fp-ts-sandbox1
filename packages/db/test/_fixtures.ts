@@ -35,8 +35,22 @@
  *   `errorCode` is "P1001" from `$connect()`, but `undefined` when the first query connects
  *   lazily (captured both).
  *
+ * More connection failures (#99), captured 2026-11-19 with the same versions (scripts kept
+ * outside the repo, as for #88):
+ * - A server that accepts then resets (`socket.resetAndDestroy()`): pg and postgres-js throw
+ *   Node's `ECONNRESET` socket error; Prisma 7 (adapter-pg) turns it into P1017.
+ * - Dropped SYNs (`iptables -j DROP`, `tcp_syn_retries=1`): pg and postgres-js throw Node's
+ *   `ETIMEDOUT`; Prisma 7 turns it into P1008.
+ * - postgres-js's own codes: `CONNECT_TIMEOUT` (a server that accepts and never answers) and
+ *   `CONNECTION_CLOSED` (the server drops the session mid-query, e.g. a sibling backend crash).
+ * - pg's codeless errors: a bare `Error` with no own props but `message` ("Connection
+ *   terminated unexpectedly", "timeout expired").
+ * - 57P01 under Prisma: raw queries give P2010, Prisma 7 model queries P2039; the SQLSTATE is
+ *   `meta.code` (Prisma 6) or `meta.driverAdapterError.cause.code` (Prisma 7).
+ * - Prisma 6 model query hit by 57P01: `PrismaClientUnknownRequestError`, no code at all.
+ *
  * Shapes marked `U` below are hand-built from the vendor's docs or source and were not
- * provoked: Node's ETIMEDOUT, class-08 SQLSTATEs other than 08P01, 57P02 and Prisma P1002.
+ * provoked: class-08 SQLSTATEs other than 08P01, 57P02 and Prisma P1002.
  */
 
 /** Rebuilt pg-protocol `DatabaseError`: `name` is the protocol message name ("error"). */
@@ -304,7 +318,7 @@ export const dnsNotFound = (): Error =>
     hostname: "db.internal.example"
   })
 
-/** `U`: not provoked (needs dropped SYNs); errno -110 is Linux's ETIMEDOUT, layout as ECONNREFUSED. */
+/** Captured (#99): `connect()` whose SYNs are dropped (pg and postgres-js throw it as is). */
 export const socketTimedOut = (): Error =>
   socketError("connect ETIMEDOUT 10.0.0.5:5432", {
     errno: -110,
@@ -411,6 +425,115 @@ export const prisma7Unreachable = (): Error =>
       },
       clientVersion: "7.10.1"
     }
+  )
+
+/** Captured (#99): a server that accepts then resets (pg; postgres-js adds its query props). */
+export const socketReset = (): Error =>
+  socketError("connect ECONNRESET 10.0.0.5:5432", {
+    errno: -104,
+    code: "ECONNRESET",
+    syscall: "connect",
+    address: "10.0.0.5",
+    port: 5432
+  })
+
+/** postgres-js's own connection errors carry a string `errno` equal to `code`. */
+const postgresJsConnectionError = (code: string, message: string): Error =>
+  socketError(message, {
+    code,
+    errno: code,
+    address: "10.0.0.5",
+    port: 5432,
+    query: "select * from users where email = $1",
+    parameters: ["a@example.com"],
+    args: [],
+    types: []
+  })
+
+/** Captured (#99): `connect_timeout` against a server that accepts and never answers. */
+export const postgresJsConnectTimeout = (): Error =>
+  postgresJsConnectionError("CONNECT_TIMEOUT", "write CONNECT_TIMEOUT 10.0.0.5:5432")
+
+/** Captured (#99): the session dropped mid-query (here: another backend crashed). */
+export const postgresJsConnectionClosed = (): Error =>
+  postgresJsConnectionError("CONNECTION_CLOSED", "write CONNECTION_CLOSED 10.0.0.5:5432")
+
+/** Captured (#99): pg's codeless errors are bare `Error`s, nothing but the message to read. */
+export const pgTerminatedUnexpectedly = (): Error => new Error("Connection terminated unexpectedly")
+export const pgTimeoutExpired = (): Error => new Error("timeout expired")
+
+/** Captured (#99): Prisma 7 + adapter-pg, ECONNRESET → P1017. */
+export const prisma7ConnectionClosed = (): Error =>
+  new PrismaClientKnownRequestError(
+    "\nInvalid `prisma.users.findMany()` invocation:\n\n\nServer has closed the connection.",
+    {
+      code: "P1017",
+      meta: { modelName: "users", driverAdapterError: driverAdapterError({ kind: "ConnectionClosed" }) },
+      clientVersion: "7.10.1"
+    }
+  )
+
+/** Captured (#99): Prisma 7 + adapter-pg, ETIMEDOUT → P1008. */
+export const prisma7TimedOut = (): Error =>
+  new PrismaClientKnownRequestError("\nInvalid `prisma.users.findMany()` invocation:\n\n\nOperation has timed out", {
+    code: "P1008",
+    meta: { modelName: "users", driverAdapterError: driverAdapterError({ kind: "SocketTimeout" }) },
+    clientVersion: "7.10.1"
+  })
+
+/** Prisma 7's adapter error for a PG ErrorResponse: the SQLSTATE is both `originalCode` and `code`. */
+const prisma7Postgres = (code: string, message: string): Record<string, unknown> =>
+  driverAdapterError({
+    originalCode: code,
+    originalMessage: message,
+    kind: "postgres",
+    code,
+    severity: "FATAL",
+    message
+  })
+
+const terminating = "terminating connection due to administrator command"
+
+/** Captured (#99): Prisma 6 `$queryRawUnsafe` hit by `pg_terminate_backend`. */
+export const prisma6RawAdminShutdown = (): Error =>
+  new PrismaClientKnownRequestError(
+    `\nInvalid \`prisma.$queryRawUnsafe()\` invocation:\n\n\nRaw query failed. Code: \`57P01\`. Message: \`FATAL: ${terminating}\``,
+    { code: "P2010", meta: { code: "57P01", message: `FATAL: ${terminating}` }, clientVersion: "6.19.3" }
+  )
+
+/** Captured (#99): the same through Prisma 7 (adapter-pg). */
+export const prisma7RawAdminShutdown = (): Error =>
+  new PrismaClientKnownRequestError(
+    `\nInvalid \`prisma.$queryRawUnsafe()\` invocation:\n\n\nRaw query failed. Code: \`57P01\`. Message: \`${terminating}\``,
+    { code: "P2010", meta: { driverAdapterError: prisma7Postgres("57P01", terminating) }, clientVersion: "7.10.1" }
+  )
+
+/** Captured (#99): a Prisma 7 model query (`users.findMany()`) hit by `pg_terminate_backend`. */
+export const prisma7ModelAdminShutdown = (): Error =>
+  new PrismaClientKnownRequestError(
+    `\nInvalid \`prisma.users.findMany()\` invocation:\n\n\nDatabase error. Code: \`57P01\`. Message: \`${terminating}\``,
+    {
+      code: "P2039",
+      meta: { modelName: "users", driverAdapterError: prisma7Postgres("57P01", terminating) },
+      clientVersion: "7.10.1"
+    }
+  )
+
+/** P2010 wrapping a SQLSTATE that is not a connection failure (shape as above; 42P01 from PG). */
+export const prisma7RawUndefinedTable = (): Error =>
+  new PrismaClientKnownRequestError("Raw query failed. Code: `42P01`. Message: `relation \"nope\" does not exist`", {
+    code: "P2010",
+    meta: { driverAdapterError: prisma7Postgres("42P01", "relation \"nope\" does not exist") },
+    clientVersion: "7.10.1"
+  })
+
+/** Captured (#99): Prisma 6 model query hit by 57P01: no code, the SQLSTATE only in Rust debug text. */
+export const prisma6ModelAdminShutdown = (): Error =>
+  Object.assign(
+    new Error(
+      `\nInvalid \`prisma.users.findMany()\` invocation:\n\n\nError occurred during query execution:\nConnectorError(ConnectorError { user_facing_error: None, kind: QueryError(PostgresError { code: "57P01", message: "${terminating}", severity: "FATAL", detail: None, column: None, hint: None }), transient: false })`
+    ),
+    { name: "PrismaClientUnknownRequestError", clientVersion: "6.19.3" }
   )
 
 /** Captured: Prisma 6 `$connect()` to an unreachable server. */
