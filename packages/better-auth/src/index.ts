@@ -8,8 +8,9 @@
  * - Cookies need `returnHeaders: true` when calling the server API outside a request handler.
  * - `databaseHooks` signal via `false` (abort), `{ data }` (replace) or a thrown `APIError`.
  *
- * Normalization: both lanes collapse to one `AuthError` vocabulary:
- * `Unauthenticated` | `Forbidden` | `AuthApiError` (with `status`/`code`).
+ * Normalization: both lanes collapse to one `AuthError` vocabulary (RFC 0001 §2):
+ * 401 → `Unauthenticated`, 403 → `Forbidden`, any other status → `AuthApiError` (with `status`).
+ * Better Auth's machine-readable `code` is kept on all three.
  */
 import {
   type AsyncResult,
@@ -21,13 +22,20 @@ import {
   taggedError
 } from "@friday-friday/core"
 import { tryAsync } from "@friday-friday/core/async"
-import { isAPIError } from "better-auth/api"
+import { APIError, isAPIError } from "better-auth/api"
 
-export const Unauthenticated: ErrorFactory<"Unauthenticated", {}> = taggedError("Unauthenticated")()
+/** `code` carries Better Auth's machine-readable error code when the 401 came from Better Auth. */
+export const Unauthenticated: ErrorFactory<"Unauthenticated", { code?: string }> = taggedError("Unauthenticated")<
+  { code?: string }
+>()
 export type Unauthenticated = ReturnType<typeof Unauthenticated>
 
-export const Forbidden: ErrorFactory<"Forbidden", { required: string }> = taggedError("Forbidden")<
-  { required: string }
+/**
+ * `required` names the missing role when `requireRole` rejects; a 403 from Better Auth names
+ * no role, so it carries Better Auth's `code` instead.
+ */
+export const Forbidden: ErrorFactory<"Forbidden", { required?: string; code?: string }> = taggedError("Forbidden")<
+  { required?: string; code?: string }
 >()
 export type Forbidden = ReturnType<typeof Forbidden>
 
@@ -42,10 +50,26 @@ export type AuthApiErrorInstance = ReturnType<typeof AuthApiError>
 
 export type AuthError = Unauthenticated | Forbidden | AuthApiErrorInstance
 
-/** Extract `status`/`code` from an `isAPIError`-recognized error (better-call attaches them). */
-const fromAPIError = (error: Parameters<typeof isAPIError>[0]): AuthApiErrorInstance => {
-  // better-call APIError: `status` (string code or number), `statusCode` (number), `body` = { message?, code?, cause? }.
-  // oxlint-disable-next-line no-unsafe-type-assertion -- better-call APIError shape is runtime-verified (error.mjs): status/statusCode + body.code
+/**
+ * One status→vocabulary mapping for both lanes (RFC 0001 §2 fixed vocabulary, §6 defaults):
+ * 401 → `Unauthenticated`, 403 → `Forbidden`, anything else → `AuthApiError` with its status.
+ * Better Auth's `code` rides along on all three (exactOptionalPropertyTypes: only when present).
+ */
+const fromStatus = (status: number, code: string | undefined): AuthError => {
+  const props = code === undefined ? {} : { code }
+  if (status === 401) return Unauthenticated(props)
+  if (status === 403) return Forbidden(props)
+  return AuthApiError({ status, ...props })
+}
+
+/**
+ * Read `status`/`code` off an `isAPIError`-recognized error. Verified against better-call 1.4.5
+ * `dist/error.mjs` (via better-auth 1.7.25): `name = "APIError"`, `status` is the string key
+ * (`"UNAUTHORIZED"`) or a number, `statusCode` is always the numeric code, `body` is
+ * `{ message?, code? }`. Read structurally so a second module copy maps the same way.
+ */
+const fromAPIError = (error: Parameters<typeof isAPIError>[0]): AuthError => {
+  // oxlint-disable-next-line no-unsafe-type-assertion -- shape verified above; every field is typeof-checked before use
   const raw = error as { status?: unknown; statusCode?: unknown; body?: { code?: unknown } | null }
   const status = typeof raw.statusCode === "number"
     ? raw.statusCode
@@ -53,15 +77,15 @@ const fromAPIError = (error: Parameters<typeof isAPIError>[0]): AuthApiErrorInst
     ? raw.status
     : 500
   const rawCode = raw.body !== null && typeof raw.body === "object" ? raw.body.code : undefined
-  const code = typeof rawCode === "string" ? rawCode : undefined
-  return code === undefined ? AuthApiError({ status }) : AuthApiError({ status, code })
+  return fromStatus(status, typeof rawCode === "string" ? rawCode : undefined)
 }
 
 /**
- * Boundary triage shared by `authCall` and `requireSession`: a thrown `APIError` maps to
- * `Err(AuthApiError)` (via `isAPIError` — structural, NOT instanceof: duplicate `better-call`
- * copies break that); our own tagged `Unauthenticated` passes through as `Err`; anything else
- * returns `undefined`, which core's tryAsync rethrows as `Panic` (the defect convention).
+ * Boundary triage shared by `authCall` and `requireSession`: a thrown `APIError` maps through
+ * `fromStatus` (recognized via `isAPIError`, which falls back to `name === "APIError"`, so
+ * duplicate `better-call` copies still match); our own tagged `Unauthenticated` passes through
+ * as `Err`; anything else returns `undefined`, which core's tryAsync rethrows as `Panic` (the
+ * defect convention).
  */
 const triageAuthError = (cause: unknown): AuthError | undefined => {
   if (isAPIError(cause)) return fromAPIError(cause)
@@ -80,14 +104,11 @@ export interface ClientAuthError {
   readonly code?: string
 }
 
-/** Normalize the client tuple `{ data, error }` into a Result. */
+/** Normalize the client tuple `{ data, error }` into a Result (same 401/403 mapping as `authCall`). */
 export function fromAuthTuple<T>(tuple: { data: T | null; error: ClientAuthError | null }): Result<T, AuthError> {
   const { data, error } = tuple
   if (error !== null) {
-    // exactOptionalPropertyTypes: only pass `code` through when present.
-    return error.code === undefined
-      ? err(AuthApiError({ status: typeof error.status === "number" ? error.status : 500 }))
-      : err(AuthApiError({ status: typeof error.status === "number" ? error.status : 500, code: error.code }))
+    return err(fromStatus(typeof error.status === "number" ? error.status : 500, error.code))
   }
   if (data === null) {
     return err(Unauthenticated({}))
@@ -109,7 +130,7 @@ export interface SessionLike {
   readonly user: { readonly id: string; readonly role?: string | ReadonlyArray<string> }
 }
 
-/** Require a live session: missing session → `Err(Unauthenticated)`; APIError → `Err(AuthApiError)`; defects rethrow as `Panic`. */
+/** Require a live session: missing session → `Err(Unauthenticated)`; APIError → `Err` via the 401/403 mapping; defects rethrow as `Panic`. */
 export function requireSession(
   auth: AuthLike,
   headers: Headers
@@ -145,7 +166,16 @@ export function requireRole(required: string): (session: SessionLike) => Result<
  * The vendored contract (better-auth 1.7.25, `init-options.d.mts` + `with-hooks.mjs`) is
  * `Promise<boolean | void | { data }>`: the runner only checks `=== false` (abort) and
  * `"data" in result` (replace) — there is no `abort` field, so the adapter emits exactly
- * `false` on `Err` (or throws the tagged error when `throwOnReject`) and `{ data }` on `Ok`.
+ * `false` on `Err` and `{ data }` on `Ok`.
+ *
+ * `throwOnReject` (Design Report §5.6 item 4): `Err` throws a real Better Auth `APIError`
+ * (`BAD_REQUEST`, `body.code` = the error's `_tag`, `body.message` = its `message` when present).
+ * It must be an `APIError`: on sign-up (better-auth 1.7.25 `api/routes/sign-up.mjs`, run in the
+ * tests) any other throw collapses into a generic 422 `FAILED_TO_CREATE_USER` and the tag is
+ * lost; where no route-level catch exists, better-call 1.4.5's router (`dist/router.mjs`)
+ * answers a non-`APIError` throw with a bare 500 (U: read from source, not run). The status is
+ * a fixed 400 rather than a tag-derived one because sign-up rewrites a 403 `APIError` into its
+ * generic duplicate-email response. The tagged error's `cause` is not forwarded (RFC 0001 §2).
  * Defects thrown by `validate` propagate as-is (the hook runner surfaces them).
  */
 export function beforeDbHook<T, E extends TaggedError<string>>(
@@ -155,7 +185,10 @@ export function beforeDbHook<T, E extends TaggedError<string>>(
   return async (data: T) => {
     const r = await validate(data)
     if (r.ok) return { data: r.value }
-    if (opts?.throwOnReject === true) throw r.error
+    if (opts?.throwOnReject === true) {
+      const { _tag: code, message } = r.error
+      throw new APIError("BAD_REQUEST", message === undefined ? { code } : { code, message })
+    }
     return false
   }
 }
