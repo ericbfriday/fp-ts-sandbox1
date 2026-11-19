@@ -2,7 +2,7 @@
  * Contract test for `@friday-friday/core/wire` (RFC-0001 §5–§6, IDEA §4.2–§4.3, #33).
  * Every assertion goes through the public interface; expected values are literals (goldens).
  */
-import { type TaggedError, taggedError } from "@friday-friday/core"
+import { DbUnavailable, NetworkError, type TaggedError, taggedError, Timeout } from "@friday-friday/core"
 import { fromWire, PROBLEM_CONTENT_TYPE, sanitize, toDefect, toProblem } from "@friday-friday/core/wire"
 import * as fc from "fast-check"
 import { describe, expect, it } from "vitest"
@@ -143,7 +143,8 @@ describe("toProblem — a tag with no status is a defect (RFC-0001 §6 \"everyth
     detail: "Internal server error",
     tag: "InternalDefect"
   }
-  const leaky = { _tag: "DbUnavailable", host: "db.internal:5432", message: "conn refused" }
+  // A tag in no table (not a fixed tag: `DbUnavailable` has a default 503 since ADR-0005).
+  const leaky = { _tag: "ReplicaLagging", host: "db.internal:5432", message: "conn refused" }
 
   it.each([
     ["an empty map", {}],
@@ -153,7 +154,7 @@ describe("toProblem — a tag with no status is a defect (RFC-0001 §6 \"everyth
   ])("sends the fixed envelope, never the tag, message or props, for %s", (_, status) => {
     const p = toProblem(leaky, status)
     expect(p).toStrictEqual(defectBody)
-    expect(JSON.stringify(p)).not.toMatch(/db\.internal|conn refused|DbUnavailable/)
+    expect(JSON.stringify(p)).not.toMatch(/db\.internal|conn refused|ReplicaLagging/)
   })
 
   it("hands the original error to the reporter", () => {
@@ -212,6 +213,73 @@ describe("toProblem — strict: only the caller's statuses count (#37)", () => {
     const seen: Array<unknown> = []
     expect(toProblem(toDefect("boom"), {}, { strict: true, report: (c) => seen.push(c) })).toStrictEqual(defectBody)
     expect(seen).toStrictEqual([])
+  })
+})
+
+describe("infrastructure tags cross as tag + status only (ADR-0005, #87)", () => {
+  const driverText = "connect ECONNREFUSED 10.0.0.5:5432"
+  const extra: Record<string, unknown> = { host: "db.internal:5432" } // spread, so no excess-prop check
+  const cases = [
+    ["NetworkError", NetworkError({ reason: driverText, message: "x-leak" }), 502],
+    ["DbUnavailable", DbUnavailable({ ...extra, message: "x-leak" }), 503],
+    ["Timeout", Timeout({ ms: 500, message: "x-leak" }), 504]
+  ] as const
+  const leaks = /ECONNREFUSED|10\.0\.0\.5|db\.internal|x-leak|"reason"|"detail"|"host"|"ms"/
+
+  it.each(cases)("%s: toProblem drops message and every prop", (tag, e, status) => {
+    const body = toProblem(e)
+    expect(body).toStrictEqual({ type: expect.any(String), title: expect.any(String), status, tag })
+    expect(JSON.stringify(body)).not.toMatch(leaks)
+    roundTrips(body)
+  })
+
+  it.each(cases)("%s: sanitize drops message and every prop", (tag, e) => {
+    expect(sanitize(e)).toStrictEqual({ _tag: tag })
+  })
+
+  it.each(cases)("%s: a mapped status or explicit number doesn't change the rule", (tag, e, status) => {
+    expect(JSON.stringify(toProblem(e, { [tag]: status }))).not.toMatch(leaks)
+    expect(JSON.stringify(toProblem(e, 500))).not.toMatch(/ECONNREFUSED|db\.internal|x-leak|"reason"|"host"/)
+  })
+
+  it("safeProps lets only the named keys through; message only when named too", () => {
+    const t = Timeout({ ms: 500, message: "took too long" })
+    expect(sanitize(t, { safeProps: ["ms"] })).toStrictEqual({ _tag: "Timeout", ms: 500 })
+    expect(toProblem(t, undefined, { safeProps: ["ms"] })).toStrictEqual({
+      type: "https://friday-friday.dev/errors/timeout",
+      title: "Timeout",
+      status: 504,
+      tag: "Timeout",
+      ms: 500
+    })
+    expect(toProblem(t, undefined, { safeProps: ["ms", "message"] })).toMatchObject({
+      detail: "took too long",
+      ms: 500
+    })
+    expect(sanitize(NetworkError({ reason: driverText }), { safeProps: ["ms"] })).toStrictEqual({
+      _tag: "NetworkError"
+    })
+  })
+
+  it("fromWire still rebuilds the tag, and keeps what the server allowlisted (fixed point)", () => {
+    for (const [tag, e, status] of cases) {
+      const p: unknown = JSON.parse(JSON.stringify(toProblem(e)))
+      expect(fromWire(p)).toStrictEqual({ _tag: tag })
+      expect(toProblem(fromWire(p)!, status)).toStrictEqual(p)
+    }
+    const allowed = toProblem(Timeout({ ms: 500 }), undefined, { safeProps: ["ms"] })
+    expect(fromWire(allowed)).toStrictEqual({ _tag: "Timeout", ms: 500 })
+  })
+
+  it("domain and app tags are unchanged: message and props still cross", () => {
+    expect(sanitize(NotFound({ resource: "user", id: "1", message: "gone" }))).toStrictEqual({
+      _tag: "NotFound",
+      resource: "user",
+      id: "1",
+      message: "gone"
+    })
+    expect(toProblem({ _tag: "RateLimited", retryAfter: 30, message: "slow" } as TaggedError<string>, 429))
+      .toMatchObject({ detail: "slow", retryAfter: 30 })
   })
 })
 

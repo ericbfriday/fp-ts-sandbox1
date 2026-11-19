@@ -25,16 +25,7 @@
  *     nothing had settled yet. Any other throw after the abort is still a defect (`Panic`).
  */
 
-import {
-  type AsyncResult,
-  err,
-  type ErrorFactory,
-  ok,
-  type Result,
-  taggedError,
-  toPanic,
-  type TryOptions
-} from "./index.js"
+import { type AsyncResult, err, ok, type Result, Timeout, toPanic, type TryOptions } from "./index.js"
 import { call, callAsync, dual } from "./internal.js"
 
 /** A `Result` that may already be wrapped in a promise. */
@@ -47,10 +38,9 @@ export interface SignalOptions {
   readonly signal?: AbortSignal
 }
 
-/** Infrastructure tag for a `timeout()` boundary (RFC-0001 §2 infrastructure errors).
- * Follows the RFC §2 usage pattern: explicit ErrorFactory annotation + ReturnType twin type. */
-export const Timeout: ErrorFactory<"Timeout", { ms: number }> = taggedError("Timeout")<{ ms: number }>()
-export type Timeout = ReturnType<typeof Timeout>
+/** Infrastructure tag for a `timeout()` boundary: core root's `Timeout` (factory + type twin),
+ * re-exported so existing `/async` imports keep working (ADR-0005, #87 expand step). */
+export { Timeout }
 
 // ---------------------------------------------------------------------------
 // Async-aware duals of the sync combinators (pure: no cancellation of their own)

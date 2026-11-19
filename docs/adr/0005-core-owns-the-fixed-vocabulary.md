@@ -21,6 +21,8 @@ Core now exports one factory per fixed tag, from its root. Schema keeps `Validat
 
 Default statuses in `/wire` gain `DbUnavailable` 503, `Timeout` 504 and `NetworkError` 502.
 
+Infrastructure tags cross the wire as tag + status only (Eric, 2026-11-18, #87): `/wire`'s `sanitize` and `toProblem` drop `message` and every prop of `NetworkError`, `DbUnavailable` and `Timeout` unless the caller's `safeProps` names them (`message` too), because their text and props come from drivers and sockets (hosts, DSNs, `ECONNREFUSED 10.0.0.5:5432`), the same leak class as #30. Domain, app and adapter tags are unchanged.
+
 ## Considered options
 
 - **Required props per tag** (for example `NotFound{resource}`). Rejected because db can't fill them: a missing row doesn't know its resource unless every caller passes it in.

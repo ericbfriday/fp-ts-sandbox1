@@ -43,20 +43,20 @@ export const goldenProblems: ReadonlyArray<GoldenProblem> = [
     }
   },
   {
-    name: "status map hit",
-    error: t("Timeout", { ms: 500 }),
-    status: { Timeout: 504, NotFound: 404 },
+    name: "status map hit (beats the RFC §6 default)",
+    error: t("Forbidden", { required: "admin" }),
+    status: { Forbidden: 404, NotFound: 404 },
     body: {
-      type: "https://friday-friday.dev/errors/timeout",
-      title: "Timeout",
-      status: 504,
-      tag: "Timeout",
-      ms: 500
+      type: "https://friday-friday.dev/errors/forbidden",
+      title: "Forbidden",
+      status: 404,
+      tag: "Forbidden",
+      required: "admin"
     }
   },
   {
     name: "a tag with no status (not in the map, not in the RFC §6 table) is masked as InternalDefect",
-    error: t("DbUnavailable", { host: "db.internal:5432", message: "connection refused" }),
+    error: t("ReplicaLagging", { host: "db.internal:5432", message: "replica 30s behind" }),
     status: { NotFound: 404 },
     body: {
       type: "https://friday-friday.dev/errors/internal-defect",
@@ -68,15 +68,46 @@ export const goldenProblems: ReadonlyArray<GoldenProblem> = [
   },
   {
     name: "an explicit status keeps a tag the RFC §6 table doesn't list",
-    error: t("DbUnavailable", { retryAfter: 30, message: "database unavailable" }),
-    status: 503,
+    error: t("RateLimited", { retryAfter: 30, message: "slow down" }),
+    status: 429,
+    body: {
+      type: "https://friday-friday.dev/errors/rate-limited",
+      title: "Rate Limited",
+      status: 429,
+      detail: "slow down",
+      tag: "RateLimited",
+      retryAfter: 30
+    }
+  },
+  {
+    name: "infrastructure default (ADR-0005): DbUnavailable → 503, tag + status only (no message, no props)",
+    error: t("DbUnavailable", { host: "db.internal:5432", message: "connect ECONNREFUSED 10.0.0.5:5432" }),
     body: {
       type: "https://friday-friday.dev/errors/db-unavailable",
       title: "Db Unavailable",
       status: 503,
-      detail: "database unavailable",
-      tag: "DbUnavailable",
-      retryAfter: 30
+      tag: "DbUnavailable"
+    }
+  },
+  {
+    name: "infrastructure default (ADR-0005): Timeout → 504 filling a gap in a map; `ms` dropped",
+    error: t("Timeout", { ms: 500, message: "query took 500 ms" }),
+    status: { NotFound: 404 },
+    body: {
+      type: "https://friday-friday.dev/errors/timeout",
+      title: "Timeout",
+      status: 504,
+      tag: "Timeout"
+    }
+  },
+  {
+    name: "infrastructure default (ADR-0005): NetworkError → 502; driver `reason` dropped",
+    error: t("NetworkError", { reason: "connect ECONNREFUSED 10.0.0.5:5432" }),
+    body: {
+      type: "https://friday-friday.dev/errors/network-error",
+      title: "Network Error",
+      status: 502,
+      tag: "NetworkError"
     }
   },
   {
@@ -146,6 +177,19 @@ export const goldenProblems: ReadonlyArray<GoldenProblem> = [
     name: "strict: a tag missing from the caller's map is masked even if the RFC §6 table lists it",
     error: t("NotFound", { resource: "user", id: "42", message: "no such user" }),
     status: { Conflict: 409 },
+    options: { strict: true },
+    body: {
+      type: "https://friday-friday.dev/errors/internal-defect",
+      title: "Internal Defect",
+      status: 500,
+      detail: "Internal server error",
+      tag: "InternalDefect"
+    }
+  },
+  {
+    name: "strict: an infrastructure tag missing from the caller's map is masked too",
+    error: t("DbUnavailable", { message: "connection refused" }),
+    status: { NotFound: 404 },
     options: { strict: true },
     body: {
       type: "https://friday-friday.dev/errors/internal-defect",

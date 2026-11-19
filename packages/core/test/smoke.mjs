@@ -3,19 +3,26 @@ import assert from "node:assert/strict"
 import {
   all,
   andThen,
+  Conflict,
+  DbUnavailable,
   err,
+  Forbidden,
   fromNullable,
   isResult,
   map,
   matchTag,
+  NetworkError,
+  NotFound as CoreNotFound,
   ok,
   Panic,
   pipe,
   taggedError,
+  Timeout,
   toPanic,
-  toThrowable
+  toThrowable,
+  Unauthenticated
 } from "../dist/index.js"
-import { allAsync, mapAsync, retry, timeout, tryAsync } from "../dist/async.js"
+import { allAsync, mapAsync, retry, Timeout as AsyncTimeout, timeout, tryAsync } from "../dist/async.js"
 import { $, gen } from "../dist/gen.js"
 import { fromWire, PROBLEM_CONTENT_TYPE, sanitize, toDefect, toProblem } from "../dist/wire.js"
 
@@ -40,7 +47,23 @@ const { proxy, revoke } = Proxy.revocable({}, {})
 revoke()
 assert.equal(toPanic(proxy).message, "Unprintable thrown value") // total
 
+// Fixed vocabulary (ADR-0005): one factory per fixed tag, every prop optional.
+const fixed = [CoreNotFound, Conflict, Forbidden, Unauthenticated, Timeout, NetworkError, DbUnavailable]
+assert.deepEqual(fixed.map((f) => f.tag), [
+  "NotFound",
+  "Conflict",
+  "Forbidden",
+  "Unauthenticated",
+  "Timeout",
+  "NetworkError",
+  "DbUnavailable"
+])
+for (const f of fixed) assert.deepEqual(f({}), { _tag: f.tag })
+assert.equal(CoreNotFound.is(JSON.parse(JSON.stringify(CoreNotFound({ resource: "user", id: "1" })))), true)
+
 // /async subpath (dist/async.js)
+assert.equal(AsyncTimeout, Timeout) // the same factory across the two dist entries
+assert.deepEqual(await timeout(() => new Promise((r) => setTimeout(() => r(ok(1)), 50)), 5), err(Timeout({ ms: 5 })))
 const asyncOk = await mapAsync(Promise.resolve(ok(2)), async (n) => n * 10)
 assert.deepEqual(asyncOk, { ok: true, value: 20 })
 await assert.rejects(mapAsync(ok(1), async () => { throw new Error("boom") }), (e) => e instanceof Panic)
@@ -80,9 +103,11 @@ assert.equal(toProblem(toDefect("boom")).status, 500)
 assert.equal(PROBLEM_CONTENT_TYPE, "application/problem+json")
 // RFC-0001 §6: a tag with no status is masked as the defect envelope; the original is reported.
 const reported = []
-const masked = toProblem({ _tag: "DbUnavailable", host: "db.internal:5432" }, {}, { report: (c) => reported.push(c) })
+const masked = toProblem({ _tag: "ReplicaLagging", host: "db.internal:5432" }, {}, { report: (c) => reported.push(c) })
 assert.deepEqual(masked, toProblem(toDefect("x")))
 assert.equal(reported[0].host, "db.internal:5432")
+assert.deepEqual([DbUnavailable({}), Timeout({}), NetworkError({})].map((e) => toProblem(e).status), [503, 504, 502])
+assert.equal(toProblem(DbUnavailable({}), {}, { strict: true }).tag, "InternalDefect")
 assert.equal(toProblem(nf, { Conflict: 409 }).status, 404)
 assert.equal(toProblem(nf, { Conflict: 409 }, { strict: true }).tag, "InternalDefect")
 assert.deepEqual(sanitize(nf, { safeProps: ["id"] }), { _tag: "NotFound", id: "1", message: "gone" })

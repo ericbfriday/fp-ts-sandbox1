@@ -46,6 +46,7 @@ describe("async types", () => {
   test("Timeout is a value + type twin: both name the error (RFC-0001 §2)", () => {
     expectTypeOf(Timeout({ ms: 1 })).toEqualTypeOf<Timeout>()
     expectTypeOf<Timeout["_tag"]>().toEqualTypeOf<"Timeout">()
-    expectTypeOf<Timeout["ms"]>().toEqualTypeOf<number>()
+    // ADR-0005: every prop on a fixed tag is optional, `Timeout`'s `ms` included (#87).
+    expectTypeOf<Timeout["ms"]>().toEqualTypeOf<number | undefined>()
   })
 })
