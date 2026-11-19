@@ -1,16 +1,22 @@
 /**
- * `@friday-friday/hono` runtime tests - a real Hono app on the wire (app.request()),
- * covering respond's literal statuses + problem shape, sv's 422 Problem path,
- * onErrorHandler's HTTPException passthrough (headers! - the report's U claim) and the
- * sanitized 500 for unknown throws, plus the http-client round-trip.
+ * `@friday-friday/hono` runtime tests - a real Hono app on the wire (app.request()).
+ *
+ * The wire rules (sanitize, RFC 9457 body, tag -> status, defect envelope, parse-back) belong to
+ * `@friday-friday/core/wire` (#33, decision note 2026-11-17-core-wire-subpath.md); validation
+ * issues belong to `@friday-friday/schema` (`toValidationFailure`, #45). These tests assert that
+ * hono's HTTP output matches core's golden bodies and parses back with core's real `fromWire`
+ * (#37), instead of hand-copied fixtures.
  *
  * NOTE (report TS2589 guidance, observed live): respond's status-literal return types hit
  * instantiation-depth limits and degrade inference for LATER generics in the same file -
  * so each concern runs on its own minimal sub-app, sv's validator is built before any
  * respond() appears in the file, and its explicit type args are kept.
  */
-import { err, ok, taggedError } from "@friday-friday/core"
+import { err, ok, Panic, taggedError } from "@friday-friday/core"
+import { goldenProblems } from "@friday-friday/core/test/wire-golden"
+import { fromWire, PROBLEM_CONTENT_TYPE } from "@friday-friday/core/wire"
 import { onErrorHandler, problem, respond, sv } from "@friday-friday/hono"
+import type { StandardSchemaV1 } from "@friday-friday/schema"
 import { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { describe, expect, it } from "vitest"
@@ -20,23 +26,52 @@ const NotFound = taggedError("NotFound")<{ id: string }>()
 const Forbidden = taggedError("Forbidden")<{ required: string }>()
 const Teapot = taggedError("Teapot")()
 
-// Fixture replica of @friday-friday/http reconstruct() (adapters never import each other,
-// IDEA 5 / DEVELOPER.md boundary rules; http PR #20 set the fixture precedent). The
-// round-trip contract with the REAL client-side reconstruct is covered in packages/http.
-const reconstructFixture = (body: Record<string, unknown>): Record<string, unknown> | null => {
-  if (typeof body["tag"] !== "string") return null
-  const safe: Record<string, unknown> = { ...body }
-  for (const k of ["type", "title", "status", "detail", "tag"]) delete safe[k]
-  return { _tag: body["tag"], ...safe }
-}
+const json = async (res: Response): Promise<unknown> => res.json()
 
-// -- sv validator FIRST (before any respond() instantiations poison this file) --
+// -- sv validators FIRST (before any respond() instantiations poison this file) --
 const itemsValidator = sv<"json", z.ZodObject<{ name: z.ZodString }>>("json", z.object({ name: z.string().min(2) }))
 const itemsApp = new Hono()
 itemsApp.post("/items", itemsValidator, (c) => {
   const body = c.req.valid("json")
   return c.json({ created: body.name }, 201)
 })
+
+/**
+ * A hand-rolled Standard Schema whose issues look like what some vendors really send: a root
+ * issue with NO `path`, a `{ key }` segment, and vendor extras (`input`, `expected`) that must
+ * never reach the client (the submitted password).
+ */
+const passwordSchema: StandardSchemaV1<unknown, { password: string }> = {
+  "~standard": {
+    version: 1,
+    vendor: "test",
+    validate: (value) => ({
+      issues: [
+        // oxlint-disable-next-line no-unsafe-type-assertion -- vendor extras on purpose: sv must drop them
+        { message: "Passwords differ", input: value, expected: "match" } as StandardSchemaV1.Issue,
+        // oxlint-disable-next-line no-unsafe-type-assertion -- vendor extras on purpose: sv must drop them
+        { message: "Too short", path: [{ key: "password" }], input: "hunter2" } as StandardSchemaV1.Issue
+      ]
+    })
+  }
+}
+const passwordApp = new Hono()
+passwordApp.post("/signup", sv("json", passwordSchema), (c) => c.json({ ok: true }, 201))
+
+/** A vendor whose validate throws: a defect, not a validation failure. */
+const throwingSchema: StandardSchemaV1<unknown, unknown> = {
+  "~standard": {
+    version: 1,
+    vendor: "test",
+    validate: () => {
+      throw new Error("vendor exploded: secret=hunter2")
+    }
+  }
+}
+const throwingReports: Array<unknown> = []
+const throwingApp = new Hono()
+throwingApp.onError(onErrorHandler({ report: (cause) => throwingReports.push(cause) }))
+throwingApp.post("/x", sv("json", throwingSchema), (c) => c.json({ ok: true }, 201))
 
 // -- respond sub-app (its types are the instantiation-heavy ones) --
 const respondApp = new Hono()
@@ -50,6 +85,13 @@ respondApp.get("/users/:id", (c) => {
   return respond(c, r, { NotFound: 404, Forbidden: 403 } as const)
 })
 respondApp.get("/teapot", (c) => respond(c, err(Teapot({})), { NotFound: 404, Forbidden: 403, Teapot: 418 } as const))
+// A widened E at runtime (cast, or an Err from code the map never saw): the tag isn't in the map.
+respondApp.get("/unmapped", (c) =>
+  // oxlint-disable-next-line no-unsafe-type-assertion -- deliberately lies about E: the runtime safety net is under test
+  respond(c, err(NotFound({ id: "db.internal:5432" })) as ResultLike, { Forbidden: 403 } as never))
+respondApp.get("/bigint", (c) =>
+  // oxlint-disable-next-line no-unsafe-type-assertion -- a bigint prop the types allow via an untyped payload
+  respond(c, err(NotFound({ id: "1", count: 3n } as never)), { NotFound: 404 } as const))
 
 type ResultLike =
   | { readonly ok: true; readonly value: { readonly id: string; readonly name: string } }
@@ -57,34 +99,60 @@ type ResultLike =
 
 type AppError = ReturnType<typeof NotFound> | ReturnType<typeof Forbidden>
 
+// -- golden sub-app: every core golden body, served by respond --
+const goldenApp = new Hono()
+goldenProblems.forEach((g, i) => {
+  // A golden whose body keeps the error's tag was mapped: give respond exactly that status.
+  // A masked golden (body tag InternalDefect for another tag) keeps the golden's own map.
+  const masked = g.body.tag !== g.error._tag
+  const statuses = masked ? (typeof g.status === "object" ? g.status : {}) : { [g.error._tag]: g.body.status }
+  // oxlint-disable-next-line no-unsafe-type-assertion -- golden statuses are runtime data; the status-literal typing is tested in hono.test-d.ts
+  goldenApp.get(`/g/${i}`, (c) => respond(c, err(g.error), statuses as never))
+})
+
 // -- onError sub-app --
+const reports: Array<unknown> = []
+const boom = new Error("internal detail: db password=hunter2")
 const errorApp = new Hono()
-errorApp.onError(onErrorHandler({ report: () => {} }))
+errorApp.onError(onErrorHandler({ report: (cause) => reports.push(cause) }))
 errorApp.get("/boom", () => {
-  throw new Error("internal detail: db password=hunter2")
+  throw boom
+})
+errorApp.get("/panic", () => {
+  throw new Panic(new Error("postgres://user:hunter2@db"))
 })
 errorApp.get("/http-ex", () => {
   const res = new Response("Custom unauthorized body", { status: 401, headers: { "x-custom": "kept" } })
   throw new HTTPException(401, { res })
 })
+const defaultErrorApp = new Hono()
+defaultErrorApp.onError(onErrorHandler())
+defaultErrorApp.get("/boom", () => {
+  throw boom
+})
 
-describe("respond + problem", () => {
+const defectGolden = goldenProblems.find((g) => g.error._tag === "InternalDefect" && g.status === undefined)
+const validationGolden = goldenProblems.find((g) => g.error._tag === "ValidationFailure")
+
+describe("respond", () => {
   it("Ok -> 200 json", async () => {
     const res = await respondApp.request("/users/1")
     expect(res.status).toBe(200)
+    expect(res.headers.get("content-type")).toMatch(/^application\/json/)
     expect(await res.json()).toEqual({ id: "1", name: "ada" })
   })
 
-  it("Err -> literal status from StatusMap + RFC 9457 problem body with tag", async () => {
+  it("Err -> literal status from the StatusMap, application/problem+json, core's problem body", async () => {
     const res = await respondApp.request("/users/missing")
     expect(res.status).toBe(404)
-    // oxlint-disable-next-line no-unsafe-type-assertion -- wire body probe; asserted field-by-field below
-    const body = (await res.json()) as Record<string, unknown>
-    expect(body["type"]).toBe("about:blank")
-    expect(body["title"]).toBe("Not Found")
-    expect(body["status"]).toBe(404)
-    expect(body["tag"]).toBe("NotFound")
-    expect(body["id"]).toBe("missing") // safe props carried through
+    expect(res.headers.get("content-type")).toBe(PROBLEM_CONTENT_TYPE)
+    expect(await res.json()).toEqual({
+      type: "https://friday-friday.dev/errors/not-found",
+      title: "Not Found",
+      status: 404,
+      tag: "NotFound",
+      id: "missing"
+    })
   })
 
   it("multiple error tags map to distinct literal statuses", async () => {
@@ -92,12 +160,67 @@ describe("respond + problem", () => {
     expect((await respondApp.request("/teapot")).status).toBe(418)
   })
 
-  it("problem() is reconstruct()-lossless (http client round-trip contract)", async () => {
+  it("an Err whose tag isn't in the status map is a 500 InternalDefect, never 2xx (#37)", async () => {
+    const res = await respondApp.request("/unmapped")
+    expect(res.status).toBe(500)
+    expect(res.headers.get("content-type")).toBe(PROBLEM_CONTENT_TYPE)
+    const body = await json(res)
+    expect(body).toEqual(defectGolden?.body)
+    expect(JSON.stringify(body)).not.toContain("db.internal")
+  })
+
+  it("a bigint prop doesn't make serialization throw; it is dropped (#37 repro)", async () => {
+    const res = await respondApp.request("/bigint")
+    expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({
+      type: "https://friday-friday.dev/errors/not-found",
+      title: "Not Found",
+      status: 404,
+      tag: "NotFound",
+      id: "1"
+    })
+  })
+
+  it("real round-trip: core fromWire rebuilds the tagged error from the HTTP body", async () => {
     const res = await respondApp.request("/users/missing")
-    // oxlint-disable-next-line no-unsafe-type-assertion -- wire body probe; asserted field-by-field below
-    const body = (await res.json()) as Record<string, unknown>
-    // oxlint-disable-next-line no-unsafe-type-assertion -- wire body probe; Problem shape verified above
-    expect(reconstructFixture(body)).toEqual(NotFound({ id: "missing" }))
+    expect(fromWire(await res.json())).toEqual(NotFound({ id: "missing" }))
+  })
+
+  it("serves every core golden body over HTTP with its status and the problem content type", async () => {
+    expect(goldenProblems.length).toBeGreaterThan(0)
+    for (const [i, g] of goldenProblems.entries()) {
+      // safeProps allowlists are a toProblem option hono doesn't expose; those goldens are core's.
+      if (g.options?.safeProps !== undefined) continue
+      const res = await goldenApp.request(`/g/${i}`)
+      expect(res.status, g.name).toBe(g.body.status)
+      expect(res.headers.get("content-type"), g.name).toBe(PROBLEM_CONTENT_TYPE)
+      expect(await res.json(), g.name).toEqual(g.body)
+    }
+  })
+})
+
+describe("problem()", () => {
+  it("equals core's golden body for every golden built from an explicit status", () => {
+    let checked = 0
+    for (const g of goldenProblems) {
+      if (typeof g.status !== "number" || g.options !== undefined) continue
+      expect(problem(g.error, g.status), g.name).toEqual(g.body)
+      checked++
+    }
+    expect(checked).toBeGreaterThan(0)
+  })
+
+  it("never throws on non-JSON-safe props, and cause never appears", () => {
+    // oxlint-disable-next-line no-unsafe-type-assertion -- non-JSON-safe props on purpose
+    const e = NotFound({ id: "z", n: 1n, f: () => 1, cause: new Error("secret") } as never)
+    const p = problem(e, 404)
+    expect(p).toEqual({
+      type: "https://friday-friday.dev/errors/not-found",
+      title: "Not Found",
+      status: 404,
+      tag: "NotFound",
+      id: "z"
+    })
   })
 })
 
@@ -112,19 +235,54 @@ describe("sv (Standard Schema validation)", () => {
     expect(await res.json()).toEqual({ created: "widget" })
   })
 
-  it("invalid body -> 422 Problem built from issues", async () => {
+  it("invalid body -> 422 ValidationFailure problem, application/problem+json", async () => {
     const res = await itemsApp.request("/items", {
       method: "POST",
       body: JSON.stringify({ name: "x" }),
       headers: { "content-type": "application/json" }
     })
     expect(res.status).toBe(422)
-    // oxlint-disable-next-line no-unsafe-type-assertion -- wire body probe; asserted field-by-field below
-    const body = (await res.json()) as Record<string, unknown>
-    expect(body["tag"]).toBe("ValidationFailure")
-    expect(body["status"]).toBe(422)
-    expect(String(body["detail"])).toContain(">=")
-    expect(Array.isArray(body["issues"])).toBe(true)
+    expect(res.headers.get("content-type")).toBe(PROBLEM_CONTENT_TYPE)
+    const body = await json(res)
+    expect(body).toMatchObject({
+      type: validationGolden?.body.type,
+      title: validationGolden?.body.title,
+      status: 422,
+      tag: "ValidationFailure",
+      issues: [{ path: ["name"], message: expect.any(String) }]
+    })
+  })
+
+  it("uses schema's projection: root issue path [] and no vendor extras (#37 repro)", async () => {
+    const res = await passwordApp.request("/signup", {
+      method: "POST",
+      body: JSON.stringify({ password: "hunter2" }),
+      headers: { "content-type": "application/json" }
+    })
+    expect(res.status).toBe(422)
+    const body = await json(res)
+    expect(body).toEqual({
+      type: "https://friday-friday.dev/errors/validation-failure",
+      title: "Validation Failure",
+      status: 422,
+      tag: "ValidationFailure",
+      issues: [{ message: "Passwords differ", path: [] }, { message: "Too short", path: ["password"] }]
+    })
+    expect(JSON.stringify(body)).not.toContain("hunter2")
+  })
+
+  it("a throwing vendor validate is a defect: 500 InternalDefect, original reported", async () => {
+    throwingReports.length = 0
+    const res = await throwingApp.request("/x", {
+      method: "POST",
+      body: "{}",
+      headers: { "content-type": "application/json" }
+    })
+    expect(res.status).toBe(500)
+    const body = await json(res)
+    expect(body).toEqual(defectGolden?.body)
+    expect(JSON.stringify(body)).not.toContain("hunter2")
+    expect(throwingReports).toHaveLength(1)
   })
 })
 
@@ -136,23 +294,29 @@ describe("onErrorHandler", () => {
     expect(await res.text()).toBe("Custom unauthorized body")
   })
 
-  it("unknown throw -> sanitized 500 Problem; internals never leak", async () => {
+  it("unknown throw -> core InternalDefect envelope with the fixed message; the original reaches report", async () => {
+    reports.length = 0
     const res = await errorApp.request("/boom")
     expect(res.status).toBe(500)
-    // oxlint-disable-next-line no-unsafe-type-assertion -- wire body probe; asserted field-by-field below
-    const body = (await res.json()) as Record<string, unknown>
-    expect(body["tag"]).toBe("InternalError")
+    expect(res.headers.get("content-type")).toBe(PROBLEM_CONTENT_TYPE)
+    const body = await json(res)
+    expect(body).toEqual(defectGolden?.body)
     expect(JSON.stringify(body)).not.toContain("hunter2")
-    expect(JSON.stringify(body)).not.toContain("db password")
+    expect(reports).toEqual([boom])
+    expect(fromWire(body)).toEqual({ _tag: "InternalDefect", message: "Internal server error" })
   })
-})
 
-describe("problem() unit", () => {
-  it("message becomes detail; cause is dropped", () => {
-    const e = NotFound({ id: "z" })
-    const p = problem(e, 404)
-    expect(p.tag).toBe("NotFound")
-    expect(p.type).toBe("about:blank")
-    expect("cause" in p).toBe(false)
+  it("a thrown Panic gets the same envelope (no cause text on the wire)", async () => {
+    const res = await errorApp.request("/panic")
+    expect(res.status).toBe(500)
+    const body = await json(res)
+    expect(body).toEqual(defectGolden?.body)
+    expect(JSON.stringify(body)).not.toContain("hunter2")
+  })
+
+  it("works without a reporter", async () => {
+    const res = await defaultErrorApp.request("/boom")
+    expect(res.status).toBe(500)
+    expect(await res.json()).toEqual(defectGolden?.body)
   })
 })

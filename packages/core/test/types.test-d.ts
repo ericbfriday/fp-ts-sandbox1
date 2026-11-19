@@ -74,6 +74,16 @@ describe("tagged errors", () => {
     NotFound({ resource: "user" })
   })
 
+  test("a _tag prop is rejected, even when spread in (#60: the factory owns _tag)", () => {
+    const conflict = { _tag: "Conflict" as const, resource: "user", id: "1" }
+    // @ts-expect-error a spread hides `_tag` from excess-property checks; `_tag?: never` still rejects it
+    NotFound({ ...conflict })
+    // @ts-expect-error a literal `_tag` is rejected too, even the factory's own tag
+    NotFound({ _tag: "NotFound", resource: "user", id: "1" })
+    // @ts-expect-error a whole tagged error passed as props
+    NotFound(NotFound({ resource: "user", id: "1" }))
+  })
+
   test("is() narrows unknown and the E of a Result", () => {
     const u: unknown = null
     if (NotFound.is(u)) expectTypeOf(u).toEqualTypeOf<NotFound>()

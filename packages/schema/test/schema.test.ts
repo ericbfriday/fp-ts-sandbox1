@@ -89,6 +89,42 @@ describe("parse", () => {
     expect(thenCalled).toBe(false)
   })
 
+  it("converts through core's one total toPanic: a revoked-Proxy throw is still a Panic, not a TypeError", async () => {
+    // A revoked Proxy throws from `instanceof`: a hand-rolled `cause instanceof Panic` check
+    // would let that TypeError escape. Core's `toPanic` (RFC-0001 §3) is total.
+    const { proxy, revoke } = Proxy.revocable({}, {})
+    revoke()
+    const hostile: StandardSchemaV1 = {
+      "~standard": {
+        version: 1,
+        vendor: "fixture",
+        validate: () => {
+          throw proxy
+        }
+      }
+    }
+    expect(() => parse(hostile, null)).toThrow(Panic)
+    await expect(parseAsync(hostile, null)).rejects.toBeInstanceOf(Panic)
+    // An existing Panic passes through the sync lane as the same instance too.
+    const panic = new Panic("already a defect")
+    const panicking: StandardSchemaV1 = {
+      "~standard": {
+        version: 1,
+        vendor: "fixture",
+        validate: () => {
+          throw panic
+        }
+      }
+    }
+    let thrown: unknown
+    try {
+      parse(panicking, null)
+    } catch (e) {
+      thrown = e
+    }
+    expect(thrown).toBe(panic)
+  })
+
   it("a validate that returns null breaks the contract: a defect (Panic), not a TypeError", () => {
     const broken: StandardSchemaV1 = {
       "~standard": {

@@ -1,4 +1,5 @@
-# CI per ADR-0004: install (frozen) -> lint, typecheck matrix, test, size-limit.
+# CI per ADR-0004: install (frozen) -> lint, typecheck matrix, test, size-limit, dist smoke.
+# Locally, `pnpm run ci` runs the same gates (typecheck on TS 7 only).
 # Publishing is intentionally absent: never publish to npm from CI without Eric.
 name: CI
 
