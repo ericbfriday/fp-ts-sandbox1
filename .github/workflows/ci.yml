@@ -62,6 +62,25 @@ jobs:
       - run: pnpm run check
       - run: pnpm run test:types
 
+  trpc-floor:
+    # #57: @friday-friday/trpc's peer range is `^11`, so its types must hold on the oldest
+    # 11.x. Same throwaway-swap approach as the TypeScript matrix: install the frozen
+    # lockfile, then pin the tRPC devDependencies to the floor (never committed).
+    name: tRPC peer floor (11.0.0)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm add -D --filter @friday-friday/trpc @trpc/server@11.0.0 @trpc/client@11.0.0
+      - run: pnpm run check
+      # Runtime + type tests for the trpc package only.
+      - run: pnpm exec vitest run packages/trpc
+
   test:
     name: test
     runs-on: ubuntu-latest

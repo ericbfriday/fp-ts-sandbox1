@@ -4,7 +4,8 @@
  * and the dual-channel procedure shapes.
  */
 import { type Result, taggedError } from "@friday-friday/core"
-import { type FlMeta, fromTRPC, type TRPCTransportError } from "@friday-friday/trpc"
+import { type FlMeta, fromTRPC, resultMiddleware, type TRPCTransportError } from "@friday-friday/trpc"
+import { type AnyTRPCMiddlewareFunction, initTRPC, type TRPCError } from "@trpc/server"
 import { describe, expectTypeOf, it } from "vitest"
 
 const NotFound = taggedError("NotFound")<{ id: string }>()
@@ -48,5 +49,24 @@ describe("fl metadata shapes", () => {
   it("FlMeta carries the tag + free props", () => {
     const fl: FlMeta = { _tag: "NotFound", id: "x", tag: "NotFound" }
     expectTypeOf(fl.tag).toEqualTypeOf<string | undefined>()
+  })
+})
+
+describe("resultMiddleware public type (#57: stable @trpc/server entry points only)", () => {
+  it("is exactly tRPC's stable root AnyTRPCMiddlewareFunction (not any, not an unstable-core type)", () => {
+    expectTypeOf(resultMiddleware({ NotFound: "NOT_FOUND" })).toEqualTypeOf<AnyTRPCMiddlewareFunction>()
+  })
+
+  it("map values are exactly TRPCError's code union (derived from the stable root class)", () => {
+    expectTypeOf(resultMiddleware).parameter(0).toEqualTypeOf<{ readonly [tag: string]: TRPCError["code"] }>()
+    // @ts-expect-error -- not a tRPC error code
+    resultMiddleware({ NotFound: "NOPE" })
+  })
+
+  it("plugs into procedure.use()", () => {
+    const t = initTRPC.create()
+    const domain = t.procedure.use(resultMiddleware({ NotFound: "NOT_FOUND" }))
+    const router = t.router({ ping: domain.query(() => "pong") })
+    expectTypeOf(router.ping).not.toBeAny()
   })
 })
