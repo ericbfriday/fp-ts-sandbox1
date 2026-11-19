@@ -13,18 +13,23 @@
 import {
   type AsyncResult,
   err,
-  type ErrorFactory,
   type InferErr,
   type InferOk,
   type Result,
   type Tagged,
   type TaggedError,
-  taggedError,
   toThrowable,
   trySync as coreTrySync
 } from "@friday-friday/core"
 import { tryAsync as coreTryAsync } from "@friday-friday/core/async"
-import { parse, type ValidationFailure } from "@friday-friday/schema"
+import {
+  type InternalDefect,
+  PROBLEM_CONTENT_TYPE,
+  type StatusMap,
+  toDefect,
+  toProblem
+} from "@friday-friday/core/wire"
+import { parseAsync, type ValidationFailure } from "@friday-friday/schema"
 import type { StandardSchemaV1 } from "@standard-schema/spec"
 import { forbidden, notFound, redirect, unstable_rethrow } from "next/navigation"
 
@@ -111,63 +116,29 @@ export function orThrow<T>(r: Result<T, TaggedError<string>>): T {
 }
 
 // ---------------------------------------------------------------------------
-// toResponse: route handlers (RFC-0001 §6 Problem Details)
+// toResponse: route handlers (RFC-0001 §6 Problem Details, via @friday-friday/core/wire)
 // ---------------------------------------------------------------------------
 
-export interface StatusMap {
-  readonly [tag: string]: number | undefined
-}
-
 /**
- * Route-handler exit: `Ok` → `Response.json(value)`; `Err` → `application/problem+json` with the
- * tag-mapped status (RFC-0001 §6). Unmapped tags default to 500 as `InternalDefect`-shaped
- * problem details (`cause` and non-JSON-safe props are stripped before crossing the boundary).
+ * Route-handler exit: `Ok` → `Response.json(value)`; `Err` → the core wire module's RFC 9457 body
+ * (`toProblem`) with `application/problem+json` and `body.status` as the HTTP status.
+ *
+ * Status: `statuses[tag]`, else the RFC-0001 §6 defaults (`NotFound 404`, `Forbidden 403`,
+ * `Unauthenticated 401`, `Conflict 409`, `ValidationFailure 422`). A tag with no status is a defect:
+ * the body is the fixed `InternalDefect` 500 and the original error goes to `opts.onDefect`. Props
+ * are projected JSON-safe (`cause`, bigint, functions, … dropped); a prop named like a reserved
+ * member (`status`, `type`, …) is carried in `shadowed`, so it can never overwrite the real status.
  */
-export function toResponse<T, E extends TaggedError<string>>(r: Result<T, E>, statuses?: StatusMap): Response {
+export function toResponse<T, E extends TaggedError<string>>(
+  r: Result<T, E>,
+  statuses?: StatusMap,
+  opts?: { readonly onDefect?: (cause: unknown) => void }
+): Response {
   if (r.ok) return Response.json(r.value satisfies T)
-  const tag = r.error._tag
-  const status = statuses?.[tag] ?? defaultStatus(tag)
-  return Response.json(problemBody(r.error, status), {
-    status,
-    headers: { "content-type": "application/problem+json" }
-  })
+  const report = opts?.onDefect
+  const body = toProblem(r.error, statuses, report ? { report } : {})
+  return Response.json(body, { status: body.status, headers: { "content-type": PROBLEM_CONTENT_TYPE } })
 }
-
-const defaultStatus = (tag: string): number =>
-  tag === "NotFound"
-    ? 404
-    : tag === "Forbidden"
-    ? 403
-    : tag === "Unauthenticated"
-    ? 401
-    : tag === "Conflict"
-    ? 409
-    : tag === "ValidationFailure"
-    ? 422
-    : 500
-
-/** RFC-0001 §6 problem body: `cause` and non-JSON-safe props never cross the boundary. */
-const problemBody = (error: TaggedError<string>, status: number): Record<string, unknown> => {
-  const body: Record<string, unknown> = {
-    type: `https://friday-friday.dev/errors/${kebab(error._tag)}`,
-    title: error._tag,
-    status,
-    tag: error._tag
-  }
-  if (error.message !== undefined) body["detail"] = error.message
-  for (const [k, v] of Object.entries(error)) {
-    if (k === "_tag" || k === "message" || k === "cause") continue
-    try {
-      JSON.stringify(v)
-      body[k] = v
-    } catch {
-      // non-JSON-safe prop: stripped
-    }
-  }
-  return body
-}
-
-const kebab = (tag: string): string => tag.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase()
 
 // ---------------------------------------------------------------------------
 // useActionState server actions (report §5.1 trap 3: throwing destroys form state)
@@ -177,19 +148,16 @@ const kebab = (tag: string): string => tag.replace(/([a-z0-9])([A-Z])/g, "$1-$2"
 export interface IdleActionState {
   readonly ok: null
 }
+/** `E` from the handler, plus `ValidationFailure` (schema) and the core wire `InternalDefect` envelope. */
 export type ActionState<T, E extends TaggedError<string>> =
   | IdleActionState
   | Result<T, E | ValidationFailure | InternalDefect>
 
-export interface InternalDefect extends TaggedError<"InternalDefect"> {
-  readonly reason?: string
-}
-export const InternalDefect: ErrorFactory<"InternalDefect", { readonly reason?: string }> = taggedError(
-  "InternalDefect"
-)<{ reason?: string }>()
-
 export interface ActionOptions {
-  /** Observe defects (they still return as `Err(InternalDefect)` data — never thrown). */
+  /**
+   * Observe defects (they still return as `Err(InternalDefect)` data — never thrown). Receives the
+   * original cause; the browser never sees it. A throwing `onDefect` is swallowed.
+   */
   readonly onDefect?: (cause: unknown) => void
 }
 
@@ -201,11 +169,32 @@ export interface ActionFn<T, E extends TaggedError<string>> {
 }
 
 /**
- * Server Action wrapper for `useActionState`: validates the FormData with a Standard Schema,
- * runs the handler, and returns Results as DATA. Only defects reach the error lane — and even
- * those are returned as `Err(InternalDefect)` so form state survives (report §5.1 trap 3).
- * Sentinel safety: `unstable_rethrow` runs first in the triage, so `redirect()` after a save
- * (thrown outside any catch in the user handler) propagates.
+ * FormData → plain input: a key sent once is its value (`string | File`); a key sent more than
+ * once (`tags=a&tags=b`, multi-selects, checkbox groups) is the array of its values, in order.
+ * So a field that MAY repeat must accept both shapes (e.g. `z.preprocess(toArray, z.array(…))`).
+ * `Object.fromEntries` defines own data properties, so a `__proto__` field never sets a prototype.
+ */
+const fromFormData = (formData: FormData): Record<string, string | File | Array<string | File>> =>
+  Object.fromEntries(
+    Array.from(new Set(formData.keys()), (k) => {
+      const all = formData.getAll(k)
+      return [k, all.length === 1 ? all[0]! : all]
+    })
+  )
+
+/**
+ * Server Action wrapper for `useActionState`: validates the FormData with a Standard Schema
+ * (`parseAsync`, so async-refining schemas work), runs the handler, and returns Results as DATA
+ * (report §5.1 trap 3: a throw would destroy form state).
+ *
+ * - FormData: a repeated key becomes an array of its values; a single key stays a scalar.
+ * - Invalid input → `Err(ValidationFailure)`.
+ * - Triage (validation AND handler run inside it): `unstable_rethrow` runs first, walking the
+ *   `cause` chain, so `redirect()`/`notFound()` thrown in the handler — also from inside a
+ *   combinator such as `mapAsync`, which wraps it in `Panic` — propagate to Next. Any other throw
+ *   (a handler defect, a vendor `validate` that throws) returns the core wire envelope
+ *   `Err({ _tag: "InternalDefect", message: "Internal server error" })`; the original goes only to
+ *   `opts.onDefect` (IDEA §4.3), never to the browser.
  */
 export function action<_S extends StandardSchemaV1, T, E extends TaggedError<string> = never>(
   schema: _S,
@@ -213,15 +202,13 @@ export function action<_S extends StandardSchemaV1, T, E extends TaggedError<str
   opts?: ActionOptions
 ): ActionFn<T, E> {
   return async (_prev: ActionState<T, E>, formData: FormData): Promise<ActionState<T, E>> => {
-    const raw: Record<string, string | File> = {}
-    for (const [k, v] of formData.entries()) raw[k] = v
-    const validated = parse(schema, raw)
-    if (!validated.ok) return validated
     // Sentinel rethrow needs the exact caught value propagated; a bare `catch (e) { throw e }`
     // would trip no-useless-catch, so the flag form carries the distinction.
     let sentinel: unknown
     let rethrown = false
     try {
+      const validated = await parseAsync(schema, fromFormData(formData))
+      if (!validated.ok) return validated
       return await handler(validated.value)
     } catch (cause) {
       try {
@@ -231,8 +218,7 @@ export function action<_S extends StandardSchemaV1, T, E extends TaggedError<str
         sentinel = e
       }
       if (rethrown) throw sentinel // framework control flow must win
-      opts?.onDefect?.(cause)
-      return err(InternalDefect({ reason: cause instanceof Error ? cause.message : String(cause) }))
+      return err(toDefect(cause, opts?.onDefect))
     }
   }
 }
