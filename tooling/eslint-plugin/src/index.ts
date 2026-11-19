@@ -1,5 +1,5 @@
 import type { TSESTree } from "@typescript-eslint/utils"
-import type { ESLint, Rule } from "eslint"
+import type { ESLint, Rule, Scope } from "eslint"
 import type { Node as TSNode, Program, TypeChecker } from "typescript"
 
 // The AST traversal below intentionally sits at the boundary between ESLint's and
@@ -51,6 +51,14 @@ function isErrorFactoryType(context: Rule.RuleContext, node: TSESTree.Node): boo
 // must-use-result
 // ---------------------------------------------------------------------------
 
+const RESULT_PRODUCING_SHAPES = new Set<string>([
+  "CallExpression",
+  "AwaitExpression",
+  "ConditionalExpression",
+  "ChainExpression",
+  "LogicalExpression"
+])
+
 const mustUseResult: Rule.RuleModule = {
   meta: {
     type: "problem",
@@ -68,13 +76,11 @@ const mustUseResult: Rule.RuleModule = {
     return {
       ExpressionStatement(node): void {
         const expr = node.expression
-        // Restrict to expression shapes that plausibly produce a Result; skips directives and
-        // assignments (their expression type is the assigned value).
-        if (
-          expr.type !== "CallExpression" && expr.type !== "AwaitExpression" && expr.type !== "ConditionalExpression"
-        ) {
-          return
-        }
+        // Restrict to expression shapes that plausibly produce a Result; skips directives,
+        // assignments (their expression type is the assigned value) and `void` (explicit
+        // discard). `svc?.save()` is a ChainExpression and `flag && save()` a
+        // LogicalExpression; both are typed as a union that still contains the Result.
+        if (!RESULT_PRODUCING_SHAPES.has(expr.type)) return
         if (isResultType(context, expr as TSESTree.Node)) {
           context.report({ node, messageId: "mustUse" })
         }
@@ -87,44 +93,131 @@ const mustUseResult: Rule.RuleModule = {
 // no-try-around-redirect
 // ---------------------------------------------------------------------------
 
-const NAVIGATION_SENTINELS = new Set(["redirect", "permanentRedirect", "notFound", "forbidden", "unauthorized"])
+/** Calls that throw a Next.js control-flow sentinel, by module and exported name. The suite's
+ * loader helpers call `notFound()`/`forbidden()`/`redirect()` for a matching tag (report §5.1). */
+const SENTINELS: ImportTable = new Map([
+  ["next/navigation", new Set(["redirect", "permanentRedirect", "notFound", "forbidden", "unauthorized"])],
+  ["@friday-friday/next", new Set(["orNotFound", "orForbidden", "orRedirect"])]
+])
 
-/** Walk `node`, returning the name of the first sentinel call found (cycles skipped). */
-function findSentinelCall(node: unknown, sentinels: Set<string>): string | undefined {
-  if (node === null || node === undefined || typeof node !== "object") return undefined
-  const visited = new Set<unknown>()
-  const visit = (n: TSESTree.Node): string | undefined => {
-    if (visited.has(n)) return undefined
-    visited.add(n)
-    if (n.type === "CallExpression" && n.callee.type === "Identifier" && sentinels.has(n.callee.name)) {
-      return n.callee.name
-    }
-    for (const key of Object.keys(n)) {
-      // `parent` back-references create cycles; never walk them.
-      if (key === "parent") continue
-      const value = (n as unknown as Record<string, unknown>)[key]
-      if (Array.isArray(value)) {
-        for (const child of value) {
-          if (child !== null && typeof child === "object" && "type" in child) {
-            const found = visit(child as TSESTree.Node)
-            if (found !== undefined) return found
-          }
-        }
-      } else if (value !== null && typeof value === "object" && "type" in value) {
-        const found = visit(value as TSESTree.Node)
-        if (found !== undefined) return found
-      }
-    }
-    return undefined
+/** Calls that rethrow a sentinel they are handed: Next's documented remedy and the suite's
+ * cause-chain-walking wrapper around it. */
+const REMEDIES: ImportTable = new Map([
+  ["next/navigation", new Set(["unstable_rethrow"])],
+  ["@friday-friday/next", new Set(["nextRethrow"])]
+])
+
+type ImportTable = ReadonlyMap<string, ReadonlySet<string>>
+
+const FUNCTION_TYPES = new Set<string>(["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"])
+const EXIT_TYPES = new Set<string>(["ReturnStatement", "ThrowStatement", "BreakStatement", "ContinueStatement"])
+
+/** Resolves `id` through the scope chain to the binding it refers to. */
+function resolve(context: Rule.RuleContext, id: TSESTree.Identifier): Scope.Variable | undefined {
+  for (let scope: Scope.Scope | null = context.sourceCode.getScope(id); scope !== null; scope = scope.upper) {
+    const variable = scope.set.get(id.name)
+    if (variable !== undefined) return variable
   }
-  return visit(node as TSESTree.Node)
+  return undefined
 }
 
-/** True when `handler` contains an `unstable_rethrow` call — the documented remedy that makes
- * sentinel-throwing code inside the `try` safe (Next.js docs / report §5.1). */
-function handlerCallsUnstableRethrow(handler: TSESTree.Node | undefined | null): boolean {
-  return handler !== undefined && handler !== null &&
-    findSentinelCall(handler, new Set(["unstable_rethrow"])) !== undefined
+/** The import a callee refers to: `name()` / `alias()` for a named import, `ns.name()` for a
+ * namespace import. `undefined` for anything that is not a module import (locals, params, globals). */
+function importedCallee(
+  context: Rule.RuleContext,
+  callee: TSESTree.Node
+): { source: string; name: string } | undefined {
+  const binding = (id: TSESTree.Identifier): { decl: TSESTree.ImportDeclaration; spec: TSESTree.Node } | undefined => {
+    const def = resolve(context, id)?.defs[0]
+    if (def?.type !== "ImportBinding") return undefined
+    return { decl: def.parent as unknown as TSESTree.ImportDeclaration, spec: def.node as unknown as TSESTree.Node }
+  }
+  if (callee.type === "Identifier") {
+    const b = binding(callee)
+    if (b === undefined || b.spec.type !== "ImportSpecifier") return undefined
+    const imported = b.spec.imported
+    return { source: b.decl.source.value, name: imported.type === "Identifier" ? imported.name : imported.value }
+  }
+  if (
+    callee.type === "MemberExpression" && !callee.computed && callee.object.type === "Identifier" &&
+    callee.property.type === "Identifier"
+  ) {
+    const b = binding(callee.object)
+    if (b === undefined || b.spec.type !== "ImportNamespaceSpecifier") return undefined
+    return { source: b.decl.source.value, name: callee.property.name }
+  }
+  return undefined
+}
+
+function calls(context: Rule.RuleContext, node: TSESTree.Node, table: ImportTable): string | undefined {
+  if (node.type !== "CallExpression") return undefined
+  const target = importedCallee(context, node.callee)
+  return target !== undefined && table.get(target.source)?.has(target.name) === true ? target.name : undefined
+}
+
+/** Visits `node`'s descendants (never `parent` back-references), stopping where `enter` returns false. */
+function walk(node: TSESTree.Node, enter: (n: TSESTree.Node) => boolean): void {
+  if (!enter(node)) return
+  for (const key of Object.keys(node)) {
+    if (key === "parent") continue
+    const value = (node as unknown as Record<string, unknown>)[key]
+    for (const child of Array.isArray(value) ? value : [value]) {
+      if (child !== null && typeof child === "object" && "type" in child) walk(child as TSESTree.Node, enter)
+    }
+  }
+}
+
+/** True when `stmt` can leave the catch block before a later statement runs (exits inside
+ * nested functions don't count). Statements that throw through a call are not modelled. */
+function canExit(stmt: TSESTree.Statement): boolean {
+  let found = false
+  walk(stmt, (n) => {
+    if (EXIT_TYPES.has(n.type)) found = true
+    return !found && !FUNCTION_TYPES.has(n.type)
+  })
+  return found
+}
+
+/**
+ * True when the catch clause re-raises whatever it caught on every path: some top-level
+ * statement is `throw e` or a remedy call on `e` (alias- and namespace-aware), and no earlier
+ * statement can leave the block. ADR-0003: the remedy runs first, `throw e` is the escape hatch.
+ */
+function catchRethrows(context: Rule.RuleContext, handler: TSESTree.CatchClause): boolean {
+  const param = handler.param
+  if (param?.type !== "Identifier") return false
+  const isParam = (n: TSESTree.Node | undefined): boolean => n?.type === "Identifier" && n.name === param.name
+  for (const stmt of handler.body.body) {
+    if (stmt.type === "ThrowStatement" && isParam(stmt.argument)) return true
+    if (
+      stmt.type === "ExpressionStatement" && calls(context, stmt.expression, REMEDIES) !== undefined &&
+      stmt.expression.type === "CallExpression" && isParam(stmt.expression.arguments[0])
+    ) return true
+    if (canExit(stmt)) return false
+  }
+  return false
+}
+
+/**
+ * Sentinel calls that run synchronously inside `block`: function bodies are skipped (they run
+ * later, outside the try), and a nested try that swallows is left to its own report, while one
+ * whose catch rethrows passes its block's sentinels through to the enclosing try.
+ */
+function sentinelCalls(context: Rule.RuleContext, block: TSESTree.Node): Array<{ node: TSESTree.Node; name: string }> {
+  const found: Array<{ node: TSESTree.Node; name: string }> = []
+  walk(block, (n) => {
+    if (FUNCTION_TYPES.has(n.type)) return false
+    if (n.type === "TryStatement" && n.handler !== null && n !== block) {
+      if (catchRethrows(context, n.handler)) found.push(...sentinelCalls(context, n.block))
+      found.push(...sentinelCalls(context, n.handler.body))
+      if (n.finalizer !== null) found.push(...sentinelCalls(context, n.finalizer))
+      return false
+    }
+    const name = calls(context, n, SENTINELS)
+    if (name !== undefined) found.push({ node: n, name })
+    return true
+  })
+  return found
 }
 
 const noTryAroundRedirect: Rule.RuleModule = {
@@ -132,44 +225,28 @@ const noTryAroundRedirect: Rule.RuleModule = {
     type: "problem",
     docs: {
       description:
-        "redirect()/notFound()/forbidden()/unauthorized() inside `try` blocks get swallowed — they throw Next.js control-flow sentinels",
+        "redirect()/notFound()/forbidden()/unauthorized() (and the suite's orNotFound/orForbidden/orRedirect) inside a `try` whose catch swallows — they throw Next.js control-flow sentinels",
       recommended: false
     },
     schema: [],
     messages: {
       noTryAround:
-        "'{{name}}()' throws a Next.js control-flow sentinel that this try/catch swallows. Call it outside the try, or call unstable_rethrow first in every catch."
+        "'{{name}}()' throws a Next.js control-flow sentinel that this catch swallows. Call it outside the try, or start the catch with unstable_rethrow(e) / nextRethrow(e) (or throw e)."
     }
   },
   create(context) {
-    const sentinels = new Set<string>()
     return {
-      ImportDeclaration(node): void {
-        if (node.source.value !== "next/navigation") return
-        for (const spec of node.specifiers) {
-          if (spec.type !== "ImportSpecifier") continue
-          const imported = spec.imported
-          if (imported.type === "Identifier" && NAVIGATION_SENTINELS.has(imported.name)) {
-            sentinels.add(spec.local.name)
-          }
-        }
-      },
+      // Only the try block is guarded by its own catch: the finalizer and the catch body are
+      // not, and a try without a catch swallows nothing (report §5.1, ADR-0003).
       TryStatement(node): void {
-        // Try block/finalizer sentinel calls are flagged ONLY when the catch handler does not
-        // call unstable_rethrow \u2014 that call is the documented remedy (report \u00a75.1) which
-        // re-raises the sentinel before any mapping can swallow it.
-        if (handlerCallsUnstableRethrow(node.handler as unknown as TSESTree.Node)) return
-        const parts: Array<unknown> = [node.block]
-        if (node.finalizer !== null && node.finalizer !== undefined) parts.push(node.finalizer)
-        for (const part of parts) {
-          const found = findSentinelCall(part, sentinels)
-          if (found !== undefined) {
-            context.report({
-              node,
-              messageId: "noTryAround",
-              data: { name: found }
-            })
-          }
+        const t = node as unknown as TSESTree.TryStatement
+        if (t.handler === null || catchRethrows(context, t.handler)) return
+        for (const call of sentinelCalls(context, t.block)) {
+          context.report({
+            node: call.node as unknown as Rule.Node,
+            messageId: "noTryAround",
+            data: { name: call.name }
+          })
         }
       }
     }
@@ -198,7 +275,9 @@ const noInstanceofTaggedError: Rule.RuleModule = {
     return {
       BinaryExpression(node): void {
         if (node.operator !== "instanceof") return
-        if (node.right.type === "Identifier" && isErrorFactoryType(context, node.right as unknown as TSESTree.Node)) {
+        // Any right-hand side shape (`NotFound`, `Errors.NotFound`, an alias): the checker
+        // decides, not the syntax.
+        if (isErrorFactoryType(context, node.right as unknown as TSESTree.Node)) {
           context.report({ node, messageId: "noInstanceof" })
         }
       }
