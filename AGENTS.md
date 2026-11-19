@@ -45,7 +45,7 @@ Every `packages/*` entry has a size budget (`.size-limit.json`) and a plain-Node
 - `packages/env` — `@friday-friday/env`: `parseEnv` (redacted issues), `envRecord`
 - `packages/effect` — `@friday-friday/effect`: Result/Effect bridge (`toEffect`, `fromExit`, `runResult`)
 - `tooling/eslint-plugin` — `@friday-friday/eslint-plugin`: the three custom rules, run on `packages/*/src` and `examples/*/src`. `private`, not shipped: open decision in `docs/decisions/2026-11-19-tooling-not-shipped.md`
-- `tooling/codemods` — neverthrow-to-core codemod (plain script, not a workspace package; not shipped, same open decision)
+- `tooling/codemods` — `neverthrow-imports.mjs`, a neverthrow → core import rewriter that flags method calls for REVIEW (plain script, not a workspace package; internal, never shipped: #44 decisions 3 and 8)
 - `tooling/gates` — gate-coverage tests + `src/source-smoke.ts` (`pnpm run smoke:source`, ADR-0002) + `src/publish-gate.ts` (`pnpm run pack:check`, #65) (plain dir, not a workspace package)
 - `tooling/type-budget` — type-instantiation budget: core stress fixture, per-TS ceilings, `src/check.ts` (plain dir, not a workspace package)
 - `examples/next-app` — `@friday-friday/example-next-app`: profile form end-to-end on Result (issue #9); typechecked with its own tsconfig and built with `next build` in CI
