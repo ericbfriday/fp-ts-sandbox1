@@ -19,6 +19,7 @@
     "isolatedDeclarations": true,
     "erasableSyntaxOnly": true,
     "verbatimModuleSyntax": true,
+    "rewriteRelativeImportExtensions": true,
     "declaration": true,
     "noEmit": true,
 

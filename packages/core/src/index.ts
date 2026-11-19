@@ -13,7 +13,7 @@
  * - Every export carries an explicit type so the package is `isolatedDeclarations` clean.
  */
 
-import { call, dual } from "./internal.js"
+import { call, dual } from "./internal.ts"
 
 // ---------------------------------------------------------------------------
 // §1 Result shape

@@ -27,7 +27,7 @@ import {
   unwrapOr
 } from "@friday-friday/core"
 import { describe, expectTypeOf, test } from "vitest"
-import { Forbidden, NotFound } from "./_fixtures.js"
+import { Forbidden, NotFound } from "./_fixtures.ts"
 
 // Compile-time only: picked up by `vitest --typecheck` (ADR-0004) and by `tsc -p tsconfig.json`.
 

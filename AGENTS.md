@@ -9,12 +9,14 @@ Project brief: see **`IDEA.md`** (read it first). The authoritative design sourc
 - `pnpm run lint-fix` — oxlint --fix + dprint fmt
 - `pnpm test` — Vitest runtime + type tests; `pnpm test:types` for type-only
 - `pnpm run build` / `pnpm run size` / `pnpm run smoke` — build, size budgets, dist smokes
+- `pnpm run smoke:source` — every package entry loads from `src` under plain Node 24 with `--conditions=@friday-friday/source` and matches dist's exports (ADR-0002; next excluded, no `exports` map; needs `pnpm run build`)
 - `pnpm run build:examples` — `next build` of each example (needs `pnpm run build` first: the app resolves package `dist`)
 - `pnpm run ci` — everything CI runs, locally
 
 ## Conventions
 
 - ESM-only, TypeScript 7, **erasable syntax only** (no `enum`, `namespace`, parameter properties); `isolatedDeclarations`-clean — explicit return types on every export.
+- Relative imports name the file on disk: `./internal.ts`, not `./internal.js` (src and tests). Node type stripping reads no tsconfig; `rewriteRelativeImportExtensions` + tsdown keep `.js` in dist. ADR-0002, #63.
 - **Module resolution is `bundler`** (not NodeNext): next@16.4.6 ships an empty exports map, so NodeNext cannot resolve `next/*` subpaths. See ADR-0004.
 - Small PR-sized steps: one package or concern at a time, each landing with its own tests, feature branch → PR → CI → review → merge to main.
 - Source of truth for locked design decisions is `IDEA.md` §4. To change one, stop and write a note in `docs/decisions/` first.
@@ -43,7 +45,7 @@ Every `packages/*` entry has a size budget (`.size-limit.json`) and a plain-Node
 - `packages/effect` — `@friday-friday/effect`: Result/Effect bridge (`toEffect`, `fromExit`, `runResult`)
 - `tooling/eslint-plugin` — `@friday-friday/eslint-plugin`: the three custom rules, run on `packages/*/src` and `examples/*/src`
 - `tooling/codemods` — neverthrow-to-core codemod (plain script, not a workspace package)
-- `tooling/gates` — gate-coverage tests (plain test dir, not a workspace package)
+- `tooling/gates` — gate-coverage tests + `src/source-smoke.ts` (`pnpm run smoke:source`, ADR-0002) (plain dir, not a workspace package)
 - `tooling/type-budget` — type-instantiation budget: core stress fixture, per-TS ceilings, `src/check.ts` (plain dir, not a workspace package)
 - `examples/next-app` — `@friday-friday/example-next-app`: profile form end-to-end on Result (issue #9); typechecked with its own tsconfig and built with `next build` in CI
 

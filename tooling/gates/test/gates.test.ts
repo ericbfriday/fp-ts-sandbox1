@@ -9,6 +9,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
+import { excluded as sourceSmokeExcluded } from "../src/source-smoke.ts"
 
 const root = join(import.meta.dirname, "..", "..", "..")
 
@@ -69,6 +70,59 @@ interface SizeEntry {
   readonly path: string
   readonly ignore?: ReadonlyArray<string>
 }
+
+describe("source-condition smoke (ADR-0002 gate, #63)", () => {
+  // oxlint-disable-next-line no-unsafe-type-assertion -- package.json is the shape npm defines
+  const rootScripts = (readJson("package.json") as Manifest).scripts ?? {}
+  const workflow = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8")
+  const names = packages.map((p) => p.manifest.name)
+
+  it("pnpm run ci and the CI workflow run the source smoke after the dist smokes", () => {
+    expect(rootScripts["smoke:source"]).toBe("node tooling/gates/src/source-smoke.ts")
+    const ci = rootScripts["ci"]?.split(" && ") ?? []
+    expect(ci.indexOf("pnpm run smoke:source")).toBe(ci.indexOf("pnpm run smoke") + 1)
+    expect(workflow).toMatch(/- run: pnpm run smoke\n\s+(#.*\n\s+)*- run: pnpm run smoke:source\n/)
+  })
+
+  it.each(Object.entries(sourceSmokeExcluded))("excluded %s is a package, with a reason", (name, reason) => {
+    expect(names).toContain(name)
+    expect(reason.length).toBeGreaterThan(20)
+  })
+
+  // The smoke reaches an entry only through its `@friday-friday/source` target, so every built
+  // entry of every smoked package needs one, and it must name a file that exists.
+  it.each(packages.filter((p) => !(p.manifest.name in sourceSmokeExcluded)).map((p) => [p.manifest.name, p] as const))(
+    "every built export of %s has a source target",
+    (_name, p) => {
+      for (const [subpath, entry] of Object.entries(p.manifest.exports ?? {})) {
+        if (distTargets(entry).length === 0) continue
+        const source = typeof entry === "string" ? undefined : entry["@friday-friday/source"]
+        expect(source, subpath).toMatch(/^\.\/src\/.+\.ts$/)
+        expect(existsSync(join(root, p.dir, source ?? "")), subpath).toBe(true)
+      }
+    }
+  )
+
+  // Node's type stripping loads `./x.ts` but not `./x.js` when only x.ts exists, and it does not
+  // read tsconfig, so a relative specifier names the file on disk (rewriteRelativeImportExtensions
+  // and tsdown turn it back into `.js` in dist). Tests follow the same rule as src.
+  const dirs = ["packages", "tooling"].flatMap((g) =>
+    readdirSync(join(root, g)).flatMap((w) => ["src", "test"].map((s) => `${g}/${w}/${s}`))
+  ).filter((d) => existsSync(join(root, d)))
+  const sources = dirs.flatMap((d) =>
+    readdirSync(join(root, d), { recursive: true, encoding: "utf8" })
+      .filter((f) => /\.tsx?$/.test(f))
+      .map((f) => `${d}/${f}`)
+  )
+
+  it.each(sources.map((f) => [f] as const))("%s has no relative `.js` specifier for a `.ts` file", (file) => {
+    const text = readFileSync(join(root, file), "utf8")
+    const stale = [...text.matchAll(/(?:from|import)\s*\(?\s*["'](\.\.?\/[^"']+)\.js["']/g)]
+      .map((m) => m[1] ?? "")
+      .filter((spec) => [".ts", ".tsx"].some((ext) => existsSync(join(root, file, "..", spec + ext))))
+    expect(stale).toEqual([])
+  })
+})
 
 describe("size budgets (ADR-0004 gate)", () => {
   // oxlint-disable-next-line no-unsafe-type-assertion -- .size-limit.json is size-limit's documented array shape
@@ -153,6 +207,7 @@ describe("example build (Phase 1 exit: the example app builds under Next)", () =
       "pnpm run test",
       "pnpm run size",
       "pnpm run smoke",
+      "pnpm run smoke:source",
       "pnpm run build:examples"
     ])
     expect(workflow).toContain("- run: pnpm run build:examples")

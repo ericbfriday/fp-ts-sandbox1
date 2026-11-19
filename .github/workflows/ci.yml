@@ -1,7 +1,8 @@
 # CI per ADR-0004: install (frozen) -> lint (packages + examples), typecheck matrix (root +
 # examples/next-app incl. its tests), test, then build -> size-limit -> dist smokes (ADR-0002;
-# every package but next) -> `next build` of the example. `pnpm run ci` runs the same gates
-# locally (typecheck on TS 7 only; the tRPC peer-floor job is CI-only).
+# every package but next) -> source-condition smoke (ADR-0002, #63; every package but next) ->
+# `next build` of the example. `pnpm run ci` runs the same gates locally (typecheck on TS 7
+# only; the tRPC peer-floor job is CI-only).
 # Publishing is intentionally absent: never publish to npm from CI without Eric.
 name: CI
 
@@ -114,6 +115,9 @@ jobs:
       - run: pnpm run size
       # ADR-0002 gate: the built dist output must run under plain Node 24.
       - run: pnpm run smoke
+      # ADR-0002 gate (#63): every package entry also loads from src under plain Node 24 with
+      # --conditions=@friday-friday/source (type stripping, no loader) and matches dist's exports.
+      - run: pnpm run smoke:source
       # Phase 1 exit criterion: the example app builds under Next (offline; resolves package dist).
       - run: pnpm run build:examples
         env:

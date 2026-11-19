@@ -15,7 +15,7 @@ import {
   unwrapOr
 } from "@friday-friday/core"
 import { describe, expect, it } from "vitest"
-import { Forbidden, NotFound } from "./_fixtures.js"
+import { Forbidden, NotFound } from "./_fixtures.ts"
 
 describe("constructors", () => {
   it("build plain data with no prototype tricks", () => {
