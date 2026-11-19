@@ -37,7 +37,6 @@
   "peerDependencies": {
     "@friday-friday/core": "workspace:^",
     "@friday-friday/schema": "workspace:^",
-    "@trpc/client": "^11",
     "@trpc/server": "^11"
   },
   "devDependencies": {

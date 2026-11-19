@@ -49,7 +49,7 @@ Known conflicts, resolved in favor of the Design Report:
 7. **No Option type.** Use `T | undefined` plus `fromNullable(x, () => NotFound(...))`.
 8. **Async lives in `/async`** (`Promise<Result>`; `retry`, `timeout`, `mapConcurrent`, all taking `{ signal }`). **Do-notation lives in `/gen`**, opt-in, via a `$()` wrapper so Results stay pure data.
 9. **Validation is Standard Schema only** (`@standard-schema/spec` 1.1, types only). Never a hard dependency on Zod, Valibot or ArkType.
-10. **Effect is an optional bridge** (`effect ^4.0`), importing only `@stability`-stable modules. DI is plain: functions take a `deps` object first.
+10. **Effect is an optional bridge** (`effect ^4.0.2`: the tested floor, see `docs/decisions/2026-11-19-peer-floors.md`), importing only `@stability`-stable modules. DI is plain: functions take a `deps` object first.
 11. **ESM-only, erasable syntax only** (no `enum`, `namespace`, parameter properties), `isolatedDeclarations` clean so source runs under Node type stripping.
 
 ## 5. Package map
@@ -61,10 +61,10 @@ All adapters import `core` (and `schema`) plus their own peers, and list core (a
 | `core` | Result, tagged errors, pipe/flow, combinators; subpaths `/async`, `/gen`, `/wire` (`/interop`: *deferred*) | none |
 | `schema` | `parse`/`parseAsync` → `Result<T, ValidationFailure>`, `toFieldErrors`, `toFormErrors`, `branded`, `toJsonSchema` | none |
 | `next` | `action` (for `useActionState`), `tryAsync` with `unstable_rethrow`, `orNotFound`/`orRedirect`, `toResponse`, `catchError` fallbacks | `next >=16.3 <18`, `react >=19.2` |
-| `query` | `toQueryFn`, `resultQueryOptions`, `retryUnless` (`toMutationFn`: *deferred*) | `@tanstack/query-core ^5` |
-| `better-auth` | `authCall`, `fromAuthTuple`, `requireSession`, `requireRole`, `beforeDbHook` | `better-auth ^1.6 \|\| ^1.7` |
-| `hono` | `respond` (status-literal unions), `problem` (RFC 9457), `sv`, `onErrorHandler` | `hono ^4.10 \|\| ^5.0.0-0` |
-| `trpc` | `resultMiddleware`, `resultResolver` (with `.output()`, #108), `errorFormatter`, `fromTRPC` (data channel: a plain procedure without the middleware) | `@trpc/server ^11`, `@trpc/client ^11` |
+| `query` | `toQueryFn`, `resultQueryOptions`, `retryUnless` (`toMutationFn`: *deferred*) | `@tanstack/query-core ^5.62` |
+| `better-auth` | `authCall`, `fromAuthTuple`, `requireSession`, `requireRole`, `beforeDbHook` | `better-auth ^1.6` |
+| `hono` | `respond` (status-literal unions), `problem` (RFC 9457), `sv`, `onErrorHandler` | `hono ^4.10` |
+| `trpc` | `resultMiddleware`, `resultResolver` (with `.output()`, #108), `errorFormatter`, `fromTRPC` (data channel: a plain procedure without the middleware) | `@trpc/server ^11` |
 | `tanstack-start` | `resultHandler`, `loaderResult`, `toFormErrors` (from `schema`) | `@tanstack/router-core ^1.169` |
 | `http`, `db`, `env`, `effect`, `otel` | `fetchResult`, DB error mappers, `parseEnv`, Effect bridge, tracing | optional |
 | `eslint-plugin` (no Oxlint-native plugin: type-aware JS plugins unsupported, ADR-0003) | `must-use-result`, `no-try-around-redirect`, `no-instanceof-tagged-error` | lint host |
@@ -127,7 +127,7 @@ Stay at **0.x** until the MVP has run for a quarter in Eric's own apps.
 - **Source of truth for decisions is section 4.** If a task seems to need a change to a locked decision, stop and write a short note in `docs/decisions/` rather than editing silently.
 - **Cite the research doc section** in commit messages or ADRs when implementing a trap-absorbing behavior.
 - **Mark unverified facts** with `U` in docs and code comments, the way the Design Report does. Verify against official docs or release notes before removing the mark.
-- **Pin conservatively:** each peer range's lower bound equals the oldest version in the CI matrix.
+- **Pin conservatively:** each peer range's lower bound equals the oldest version in the CI matrix (the `peer-floor` job, one row per adapter; `tooling/gates` checks every row against its range, #109).
 - **Never put secrets or credentials in the repo.** Public repo.
 
 ### Suggested first tasks
