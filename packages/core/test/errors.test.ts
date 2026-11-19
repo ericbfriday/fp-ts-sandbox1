@@ -57,6 +57,20 @@ describe("taggedError", () => {
     expect(NotFound.is(Object.assign(Object.create(null), { _tag: "NotFound" }))).toBe(true)
   })
 
+  it("the factory owns _tag: a _tag smuggled in through props is ignored at runtime (#60)", () => {
+    // The repro: a Conflict's fields used as NotFound's props. A typed `_tag` prop is now a type
+    // error (types.test-d.ts), so the props come untyped, as off-the-wire data would arrive.
+    const smuggled: { resource: string; id: string } = JSON.parse(
+      "{\"_tag\":\"Conflict\",\"resource\":\"u\",\"id\":\"1\"}"
+    )
+    const e = NotFound(smuggled)
+    expect(e._tag).toBe("NotFound")
+    expect(NotFound.is(e)).toBe(true)
+    expect(e).toStrictEqual({ _tag: "NotFound", resource: "u", id: "1" })
+    // `_tag` stays the first key, so JSON output is unchanged for every well-formed call.
+    expect(JSON.stringify(e)).toBe("{\"_tag\":\"NotFound\",\"resource\":\"u\",\"id\":\"1\"}")
+  })
+
   it("is() never uses instanceof or the prototype chain", () => {
     const e = NotFound({ resource: "user", id: "1" })
     expect(() => NotFound.is(e)).not.toThrow()
@@ -184,6 +198,26 @@ describe("Panic", () => {
   it("matchTag with a tag that has no handler at runtime (off-the-wire data) is a defect", () => {
     const wire: Result<number, NotFoundT | Forbidden> = JSON.parse("{\"ok\":false,\"error\":{\"_tag\":\"Unknown\"}}")
     expect(() => matchTag(wire, { ok: () => 0, NotFound: () => 1, Forbidden: () => 2 })).toThrow(Panic)
+  })
+
+  it("matchTag with no handler for the runtime tag panics with a message naming the tag (#60)", () => {
+    const handlers = { ok: () => 0, NotFound: () => 1, Forbidden: () => 2 }
+    const fromWire = (tag: string): Result<number, NotFoundT | Forbidden> =>
+      JSON.parse(JSON.stringify({ ok: false, error: { _tag: tag } }))
+    const p = capturePanic(() => matchTag(fromWire("Conflict"), handlers))
+    expect(p.message).toBe("matchTag: no handler for _tag Conflict")
+    expect(p.message).not.toMatch(/is not a function/)
+    // Data-last takes the same path.
+    expect(capturePanic(() => matchTag(handlers)(fromWire("Conflict"))).message).toBe(
+      "matchTag: no handler for _tag Conflict"
+    )
+    // Only own handlers count: inherited Object.prototype members and the `ok` handler are not
+    // error handlers, so a wire tag that happens to name one still panics instead of misdispatching.
+    for (const tag of ["constructor", "toString", "hasOwnProperty", "__proto__", "ok"]) {
+      expect(capturePanic(() => matchTag(fromWire(tag), handlers)).message).toBe(
+        `matchTag: no handler for _tag ${tag}`
+      )
+    }
   })
 })
 
