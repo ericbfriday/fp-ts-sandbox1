@@ -26,7 +26,7 @@ Thanks for contributing to `@friday-friday/*`. This repo has one rule above all 
 - Error unions grow by `|` only; `E` defaults to `never`.
 - Every async helper that can cancel takes `{ signal }` and forwards it into user callbacks. Abort semantics are documented per function — see `packages/core/src/async.ts`.
 - Boundary sanitation is non-negotiable: `cause` and non-JSON-safe props never cross a wire boundary.
-- Framework vendors are peers (conservative ranges, lower bound = oldest tested version); vendors in tests are devDeps only.
+- Framework vendors are peers (conservative ranges, lower bound = oldest tested version); vendors in tests are devDeps only. CI's `peer-floor` matrix runs each adapter against its lower bounds, and `tooling/gates` fails if a peer has no row or its row's version isn't the range's lower bound, or if a range uses `||`. To widen a range, add the older version to the row and make it pass (#109).
 - Suite packages are peers too: `@friday-friday/core` (and `@friday-friday/schema` where imported) under `peerDependencies` as `workspace:^` plus `devDependencies` as `workspace:*`, never `dependencies` (ADR-0006).
 - Size budgets are hard: core fixture ≤ 600 B, full core ≤ 3 kB, adapters ≤ 2 kB of their own code (`.size-limit.json`). Adapter and schema entries `ignore` `@friday-friday/core` (and adapters `@friday-friday/schema`) along with their framework peers, because an app installs core once and every adapter shares it (#44 decision 2, #62); core's own entries measure `/wire`, `/async` and `/gen`.
 - The leaf packages `db`, `env` and `query` hold a tighter 1 kB of their own code, as do `hono`, `trpc`, `tanstack-start`, `effect` and next's react-server root since their alias re-exports went (#64).

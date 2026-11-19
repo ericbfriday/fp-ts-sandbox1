@@ -30,9 +30,12 @@ interface RecordedSpan {
 const recorded: Array<RecordedSpan> = []
 
 const makeSpan = (name: string, o?: SpanOptions): RecordedSpan => {
+  // The fake's own record type, not the API's `Attributes` (whose value type differs across
+  // @opentelemetry/api 1.x; #109 floor job).
+  const attributes: Record<string, unknown> = { ...(o?.attributes) }
   const span = {
     name,
-    attributes: { ...(o?.attributes) },
+    attributes,
     status: { code: SpanStatusCode.UNSET } as { code: SpanStatusCode },
     events: [] as Array<{ name: string; attributes?: Record<string, unknown> }>,
     ended: false,

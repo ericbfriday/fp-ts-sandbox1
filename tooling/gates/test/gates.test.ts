@@ -354,3 +354,41 @@ describe("publish gate (#65, #51 story 22)", () => {
     }
   )
 })
+
+describe("peer floors (IDEA §4 'lower bound = oldest in the CI matrix', #109)", () => {
+  const workflow = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8")
+  // The `peer-floor` job's matrix rows: `- pkg: <dir>` followed by `floor: <specs>`.
+  const rows = new Map(
+    [...workflow.matchAll(/^ {10}- pkg: ([\w-]+)\n {12}floor: "?([^"\n]+)"?$/gm)].map((m) => [m[1] ?? "", m[2] ?? ""])
+  )
+  /** `<name>@<version>` specs of a row, keyed by name (scoped names keep their leading `@`). */
+  const specs = (floor: string): ReadonlyMap<string, string> =>
+    new Map(floor.split(/\s+/).map((s) => [s.slice(0, s.lastIndexOf("@")), s.slice(s.lastIndexOf("@") + 1)]))
+  /** `4.10` → `4.10.0`: a version or range bound padded to major.minor.patch. */
+  const full = (v: string): string => [...v.split("."), "0", "0"].slice(0, 3).join(".")
+  const framework = packages.flatMap((p) =>
+    Object.entries(p.manifest.peerDependencies ?? {})
+      .filter(([peer]) => !peer.startsWith("@friday-friday/"))
+      .map(([peer, range]) => [`${p.manifest.name} → ${peer}`, p.dir.slice("packages/".length), peer, range] as const)
+  )
+
+  it("the CI workflow runs the peer-floor matrix: install, swap, check, the package's tests", () => {
+    expect(workflow).toContain("run: pnpm add -D --filter \"@friday-friday/${{ matrix.pkg }}\" ${{ matrix.floor }}")
+    expect(workflow).toContain("run: pnpm exec vitest run \"packages/${{ matrix.pkg }}\"")
+    expect(rows.size).toBeGreaterThan(0)
+  })
+
+  it.each(framework)("%s has a floor row whose version is the range's lower bound", (_label, dir, peer, range) => {
+    // One lower bound per range: `^4.10`, `>=16.3 <18`; an `||` union would hide an untested arm.
+    expect(range).not.toContain("||")
+    const lower = /^(?:\^|~|>=)?(\d+(?:\.\d+){0,2})/.exec(range)?.[1]
+    expect(lower, `unparseable range ${range}`).toBeDefined()
+    const floor = rows.get(dir)
+    expect(floor, `no peer-floor row for packages/${dir}`).toBeDefined()
+    expect(specs(floor ?? "").get(peer)).toBe(full(lower ?? ""))
+  })
+
+  it.each([...rows.keys()].map((dir) => [dir] as const))("floor row %s names a package with framework peers", (dir) => {
+    expect(framework.some(([, d]) => d === dir)).toBe(true)
+  })
+})

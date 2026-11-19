@@ -9,13 +9,13 @@ Sources of truth: `IDEA.md` (brief, §4 locked decisions) · `docs/spec/rfc-0001
 | TanStack/router#6428 | **OPEN** | Start adapter keeps validate-inside-handler workaround |
 | better-auth#7338 | **CLOSED** (no official Effect pkg) | `@friday-friday/effect` + `authCall` is the bridge |
 | TypeScript | latest 7.0.2, 7.1 still `beta` (stable planned 24 Nov) | matrix = 6.0 / 7.0 / 7.1-beta |
-| next / react | 16.4.6 / 19.3.1 | peers `next >=16.3 <18`, `react >=19.2` |
-| better-auth | 1.7.25 | peer `^1.6 \|\| ^1.7` |
-| @tanstack/query-core | 5.107.1 | peer `^5` |
-| @tanstack/react-start | 1.169.5 | pin `>=1.169` (`.validator()`) |
-| hono | 4.13.19 (5.0.0-rc exists) | peer `^4.10 \|\| ^5.0.0-0` |
-| @trpc/server·client | 11.28.3 | peer `^11` |
-| effect | 4.1.4 | peer `^4.0`, stable modules only |
+| next / react | 16.4.6 / 19.3.1 | peers `next >=16.3 <18`, `react >=19.2` (floor 16.3.0 / 19.2.0, #109) |
+| better-auth | 1.7.25 | peer `^1.6` (floor 1.6.0, #109) |
+| @tanstack/query-core | 5.107.1 | peer `^5.62` (5.0.0 lacks `SkipToken`/two-arg `DataTag`; bisected floor 5.62.0, #109) |
+| @tanstack/router-core | 1.171.39 | peer `^1.169` (floor 1.169.0, #109). The adapter types against router-core, not `@tanstack/react-start` (1.169.5 at review time). |
+| hono | 4.13.19 (5.0.0-rc exists) | peer `^4.10` (floor 4.10.0; the untested `^5.0.0-0` arm dropped, #109) |
+| @trpc/server·client | 11.28.3 | peer `@trpc/server ^11` (floor 11.0.0); `@trpc/client` is test-only, peer dropped (#109) |
+| effect | 4.1.4 | peer `^4.0.2` (4.0.0–4.0.1 lack `@stability stable` on the bridge's members; floor 4.0.2, #109), stable modules only |
 | @standard-schema/spec | 1.1.0 | types-only dep |
 | Prior art | better-result 3.0.1, unthrown 5.12.2, @praha/byethrow 0.13.0 | converters/interop, never deps |
 
@@ -103,7 +103,7 @@ Exit criteria (from report §9): size budgets green, TS 6/7/7.1 matrix green, `e
 
 ### Phase 3 — Servers: `hono`, `trpc`
 - **`@friday-friday/hono`** ✅ (PR #22, MERGED; respond + StatusMap literal statuses with hc inference proven in type tests incl. per-status res.json() narrowing, RFC 9457 problem() with reconstruct round-trip via in-repo fixture — adapters never import each other, sv on hono validator + ~standard: report's sValidator does not exist in any hono version (verified 4.13.18/19 + 5.0.0-rc.1), onErrorHandler with HTTPException header passthrough (report's U claim exercised); TS2589 guidance reproduced live in tests; peer `^4.10 || ^5.0.0-0` (package.json, per the baseline table) while tests run the exact devDep pin 4.13.18 — 4.13.19 blocked by pnpm's CI-enforced supply-chain minimumReleaseAge; 5.0.0-rc onError changes NOT covered by a fixture yet (see the peer-range note in `packages/hono/src/index.ts`); 929 B)
-- **`@friday-friday/trpc`** ✅ (PR #23, MERGED; dual channel: resultMiddleware Err -> TRPCError with mapped code + cause, errorFormatter data.fl (renamed `data.friday_friday` and moved onto core `/wire` in #38) = sanitize(e) or ~standard issues (structural, no instanceof ZodError), resultProcedure data-channel opt-in, fromTRPC lossless reconstruction; 7 tests on a REAL router via the fetch adapter + httpBatchLink; 850 B)
+- **`@friday-friday/trpc`** ✅ (PR #23, MERGED; dual channel: resultMiddleware Err -> TRPCError with mapped code + cause, errorFormatter data.fl (renamed `data.friday_friday` and moved onto core `/wire` in #38) = sanitize(e) or ~standard issues (structural, no instanceof ZodError), resultProcedure data-channel opt-in, fromTRPC lossless reconstruction; 7 tests on a REAL router via the fetch adapter + httpBatchLink; 850 B. **PR for #108 (#44 decision 4):** `resultResolver(map, handler)` unwraps inside the resolver, so `.output(schema)` validates the Ok value and the client infers `T`; tests pin that `.use(resultMiddleware).output()` fails every call as `InternalDefect`.)
 `respond` (status-literal unions), `problem` (RFC 9457 per RFC-0001 §6), `sv`, `onErrorHandler` (test HTTPException header loss — report marks it U); tRPC dual channel + Standard-Schema-based `errorFormatter` + `fromTRPC`. TS2589 budget fixtures: not built in Phase 3; issue #61 added the core fixture (`tooling/type-budget`), adapter fixtures still open (see register).
 
 ### Phase 4 — `tanstack-start` (last; churn risk)
