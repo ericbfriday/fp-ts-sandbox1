@@ -13,11 +13,13 @@ directly:
 
 ```ts
 import { ORPC, meta } from "@orpc/server"
-import { err, ok, Panic, taggedError } from "@friday-friday/core"
+import { err, NotFound, ok, Panic } from "@friday-friday/core"
 import { resultHandler } from "@friday-friday/tanstack-start" // vendor-light: pure wrapper
 import { PostSchema } from "./schemas"
 
-const UserNotFound = taggedError("NotFound")<{ id: string }>()
+// `NotFound` is a fixed tag: use core's factory (`{ resource?, id? }`, ADR-0005). A local
+// `taggedError("NotFound")<{ id: string }>()` is a compile error, because a fixed tag's props
+// must all be optional (#92).
 
 // Data channel by default: the Result IS the output, so .errors() stays free for
 // oRPC's own machinery (or omit it and treat Err as data end-to-end).

@@ -1,11 +1,10 @@
 /**
  * `/gen` subpath tests (RFC-0001 §4 / Design Report §3.5).
  */
-import { andThen, type AsyncResult, err, ok, pipe, type Result, taggedError } from "@friday-friday/core"
+import { andThen, type AsyncResult, err, NotFound, ok, pipe, type Result } from "@friday-friday/core"
 import { $, gen, genAsync } from "@friday-friday/core/gen"
 import { describe, expect, it } from "vitest"
 
-const NotFound = taggedError("NotFound")<{ id: string }>()
 type NotFoundT = ReturnType<typeof NotFound>
 
 describe("gen (sync do-notation)", () => {

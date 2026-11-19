@@ -4,7 +4,7 @@
  * global tracer degrades to no-op spans, which the API guarantees — the provider-less
  * fallback test exercises that path.
  */
-import { Panic, taggedError } from "@friday-friday/core"
+import { NotFound, Panic } from "@friday-friday/core"
 import { type Span, type SpanOptions, SpanStatusCode, type Tracer } from "@opentelemetry/api"
 import { describe, expect, it } from "vitest"
 
@@ -14,8 +14,6 @@ import { ERROR_TAG_ATTR, traced, tracedSync } from "@friday-friday/otel"
 // RFC-0001 §7: names use the `@friday-friday` scope, not the report's `@fl/*` placeholder.
 // OTel attribute naming: dot namespaces, snake_case words, app-name prefix for custom keys.
 const TAG_KEY = "friday_friday.error.tag"
-
-const NotFound = taggedError("NotFound")<{ id: string }>()
 
 interface RecordedSpan {
   readonly name: string

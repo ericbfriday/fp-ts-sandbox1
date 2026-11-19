@@ -27,23 +27,34 @@ export interface ErrorFactory<Tag extends string, P extends object> {
   readonly tag: Tag;
   is(u: unknown): u is TaggedError<Tag> & Readonly<P>;
 }
+// A fixed tag (the table below; `FixedProps` is core-internal) takes the first overload, whose
+// `FixedTagRule` checks P against ADR-0005 (#92). App and adapter tags take the second.
+export function taggedError<const Tag extends keyof FixedProps>(tag: Tag): <P extends object & FixedTagRule<Tag, P> = {}>() => ErrorFactory<Tag, P>;
 export function taggedError<const Tag extends string>(tag: Tag): <P extends object = {}>() => ErrorFactory<Tag, P>;
 ```
 
-Convention-fixed vocabulary:
+Fixed vocabulary (ADR-0005). Each fixed tag has one owner, which exports its factory (core's from its root; schema's `ValidationFailure`). A fixed tag guarantees only `_tag` and an optional `message`; every other prop is optional except `ValidationFailure`'s `issues`:
 
-| Layer | Tags |
-|---|---|
-| Domain (in `E`) | `NotFound`, `Conflict`, `Forbidden`, `Unauthenticated`, `ValidationFailure` |
-| Infrastructure (in `E`) | `NetworkError`, `Timeout`, `DbUnavailable` |
-| Defects (never in `E`) | thrown `Panic extends Error`; `InternalDefect` exists only at the wire |
+| Layer | Tag | Owner | Props | `/wire` default status |
+|---|---|---|---|---|
+| Domain (in `E`) | `NotFound` | core | `resource?`, `id?` | 404 |
+| Domain (in `E`) | `Conflict` | core | `field?`, `constraint?` | 409 |
+| Domain (in `E`) | `Forbidden` | core | `required?` | 403 |
+| Domain (in `E`) | `Unauthenticated` | core | none | 401 |
+| Domain (in `E`) | `ValidationFailure` | schema | `issues` (required) | 422 |
+| Infrastructure (in `E`) | `Timeout` | core | `ms?` | 504 |
+| Infrastructure (in `E`) | `NetworkError` | core | `reason?` | 502 |
+| Infrastructure (in `E`) | `DbUnavailable` | core | none (db produces it from connection failures) | 503 |
+| Defects (never in `E`) | thrown `Panic extends Error`; `InternalDefect` exists only at the wire | core | | 500 |
+
+App tags and adapter tags (one producer each) may require props. A package that needs more data on a fixed tag declares its own factory for that tag with extra **optional** props that keep core's types; `taggedError`'s types reject anything else (a required prop, a retyped prop such as `NotFound<{ id?: number }>`), naming each bad prop in the error, e.g. `Type '{ id: string; }' does not satisfy the constraint 'object & { readonly "ADR-0005": { readonly id: "must be optional: \"NotFound\" is a fixed tag"; }; }'`. Infrastructure tags cross `/wire` as tag + status only unless `safeProps` names a key.
 
 Rules:
 - `cause` stays server-side; stripped (or replaced by a digest) before any boundary.
 - The factory owns `_tag` (#60): a `_tag` prop is a type error (`_tag?: never`, which also catches one spread in) and is overwritten at runtime, so `is()` and `matchTag` can't be fooled by a stray prop.
 - `matchTag` on a runtime tag with no own handler (e.g. rebuilt from the wire) is a defect: `Panic("matchTag: no handler for _tag <tag>")`.
 - `toThrowable(e)` produces a real `Error` (`name = _tag`, data attached, never a `cause`: React's dev serializer would send it to the browser, #53) for Error Boundaries / `catchError` paths. Only a throw in the browser keeps `data`; see docs/decisions/2026-11-19-next-client-thrown-only.md.
-- Value + type twin: every error is declared as `export const X: ErrorFactory<"X", P> = taggedError("X")<P>()` plus `export type X = ReturnType<typeof X>`, so one name is both the factory and the error type. Core follows it too: `/async` exports `Timeout` (factory and type); the `timeout()` signature is `TimeoutFn` (#64).
+- Value + type twin: every error is declared as `export const X: ErrorFactory<"X", P> = taggedError("X")<P>()` plus `export type X = ReturnType<typeof X>`, so one name is both the factory and the error type. Core follows it too: root exports `Timeout` (factory and type), which `/async`'s `timeout()` produces; `/async` does not re-export it (#92), and the `timeout()` signature is `TimeoutFn` (#64).
 - No Option type: `T | undefined` + `fromNullable(x, () => NotFound(...))`.
 
 ## 3. Defects and triage

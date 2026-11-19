@@ -2,12 +2,11 @@
  * `@friday-friday/query` runtime tests, including a REAL query run through query-core's
  * QueryClient (proving `query.error` becomes exactly the tagged error and retry works).
  */
-import { err, ok, type Result, taggedError } from "@friday-friday/core"
+import { err, NotFound, ok, type Result } from "@friday-friday/core"
 import { resultQueryOptions, retryUnless, toQueryFn } from "@friday-friday/query"
 import { QueryClient, type QueryKey, QueryObserver, skipToken } from "@tanstack/query-core"
 import { describe, expect, it } from "vitest"
 
-const NotFound = taggedError("NotFound")<{ id: string }>()
 type NotFoundT = ReturnType<typeof NotFound>
 
 describe("toQueryFn", () => {

@@ -3,12 +3,11 @@
  * `QueryObserverOptions`, so readonly (`as const`) keys and every other option pass through,
  * and the returned key carries TanStack's `DataTag` (Design Report §5.4).
  */
-import { ok, type Result, taggedError } from "@friday-friday/core"
+import { NotFound, ok, type Result } from "@friday-friday/core"
 import { resultQueryOptions, retryUnless } from "@friday-friday/query"
 import { QueryClient } from "@tanstack/query-core"
 import { describe, expectTypeOf, it } from "vitest"
 
-const NotFound = taggedError("NotFound")<{ id: string }>()
 type NotFoundE = ReturnType<typeof NotFound>
 
 const fetchUser = (_signal: AbortSignal): Promise<Result<{ id: string }, NotFoundE>> => Promise.resolve(ok({ id: "1" }))

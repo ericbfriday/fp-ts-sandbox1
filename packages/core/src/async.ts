@@ -38,10 +38,6 @@ export interface SignalOptions {
   readonly signal?: AbortSignal
 }
 
-/** Infrastructure tag for a `timeout()` boundary: core root's `Timeout` (factory + type twin),
- * re-exported so existing `/async` imports keep working (ADR-0005, #87 expand step). */
-export { Timeout }
-
 // ---------------------------------------------------------------------------
 // Async-aware duals of the sync combinators (pure: no cancellation of their own)
 // ---------------------------------------------------------------------------
@@ -287,7 +283,7 @@ export interface TimeoutOptions {
   readonly signal?: AbortSignal
 }
 
-/** The signature of `timeout()`. Named `TimeoutFn` so `Timeout` stays the error's value + type twin. */
+/** The signature of `timeout()`. Its `Timeout` is core root's (ADR-0005); `/async` does not export it (#92). */
 export interface TimeoutFn {
   <T, E>(
     thunk: (signal?: AbortSignal) => AsyncResult<T, E>,

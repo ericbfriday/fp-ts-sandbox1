@@ -12,7 +12,7 @@
  * so each concern runs on its own minimal sub-app, sv's validator is built before any
  * respond() appears in the file, and its explicit type args are kept.
  */
-import { err, ok, Panic, taggedError } from "@friday-friday/core"
+import { err, Forbidden, NotFound, ok, Panic, taggedError } from "@friday-friday/core"
 import { goldenProblems } from "@friday-friday/core/test/wire-golden"
 import { fromWire, PROBLEM_CONTENT_TYPE } from "@friday-friday/core/wire"
 import { onErrorHandler, problem, respond, sv } from "@friday-friday/hono"
@@ -22,8 +22,6 @@ import { HTTPException } from "hono/http-exception"
 import { describe, expect, it } from "vitest"
 import { z } from "zod"
 
-const NotFound = taggedError("NotFound")<{ id: string }>()
-const Forbidden = taggedError("Forbidden")<{ required: string }>()
 const Teapot = taggedError("Teapot")()
 
 const json = async (res: Response): Promise<unknown> => res.json()

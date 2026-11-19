@@ -47,7 +47,7 @@ describe("taggedError", () => {
   })
 
   it("is() is structural: separate factory instances, wire copies and null-prototype objects all match", () => {
-    const Other: typeof NotFound = taggedError("NotFound")<{ resource: string; id: string }>()
+    const Other: typeof NotFound = taggedError("NotFound")<{ readonly resource?: string; readonly id?: string }>()
     const e = Other({ resource: "user", id: "1" })
     expect(NotFound.is(e)).toBe(true)
     expect(Other.is(NotFound({ resource: "user", id: "1" }))).toBe(true)
@@ -88,7 +88,7 @@ describe("taggedError", () => {
   })
 })
 
-const Forbidden_ = taggedError("Forbidden")<{ reason: string }>()
+const Forbidden_ = taggedError("Forbidden")<{ reason?: string }>()
 
 describe("toThrowable", () => {
   it("produces a real Error named after _tag with the tagged error attached as data", () => {

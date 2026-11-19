@@ -3,15 +3,13 @@
  * vocabulary (ADR-0005, #90), not local re-derivations (#64).
  */
 import type { NetworkError, Timeout } from "@friday-friday/core"
-import type { Timeout as AsyncTimeout } from "@friday-friday/core/async"
 import type { FetchError, HttpError } from "@friday-friday/http"
 import type { ValidationFailure } from "@friday-friday/schema"
 import { describe, expectTypeOf, test } from "vitest"
 
 describe("http types", () => {
-  test("FetchError's Timeout arm is core's Timeout type (root and /async are one type)", () => {
+  test("FetchError's Timeout arm is core root's Timeout type", () => {
     expectTypeOf<Extract<FetchError, { readonly _tag: "Timeout" }>>().toEqualTypeOf<Timeout>()
-    expectTypeOf<Extract<FetchError, { readonly _tag: "Timeout" }>>().toEqualTypeOf<AsyncTimeout>()
   })
 
   test("FetchError's NetworkError arm is core's NetworkError, so `reason` is optional", () => {

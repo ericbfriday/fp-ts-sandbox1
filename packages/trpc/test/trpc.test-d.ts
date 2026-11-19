@@ -3,14 +3,11 @@
  * (tRPC types the formatter shape globally, not per procedure — report §5.3 design limit)
  * and the dual-channel procedure shapes.
  */
-import { type Result, taggedError } from "@friday-friday/core"
+import type { Conflict, NotFound, Result } from "@friday-friday/core"
 import type { WireError } from "@friday-friday/core/wire"
 import { errorFormatter, fromTRPC, resultMiddleware, type TRPCTransportError } from "@friday-friday/trpc"
 import { type AnyTRPCMiddlewareFunction, initTRPC, type TRPCError } from "@trpc/server"
 import { describe, expectTypeOf, it } from "vitest"
-
-const NotFound = taggedError("NotFound")<{ id: string }>()
-const Conflict = taggedError("Conflict")<{ field: string }>()
 
 type NotFoundE = ReturnType<typeof NotFound>
 type ConflictE = ReturnType<typeof Conflict>

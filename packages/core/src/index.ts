@@ -67,6 +67,61 @@ export interface ErrorFactory<Tag extends string, P extends object> {
 }
 
 /**
+ * The fixed vocabulary's props by tag (ADR-0005). Core's seven come from the factories below
+ * (their annotations, not their initializers, so this is not circular). Schema owns
+ * `ValidationFailure`, whose `issues` is the one required prop of a fixed tag.
+ */
+interface FixedProps {
+  readonly NotFound: Omit<NotFound, keyof TaggedError<"NotFound">>
+  readonly Conflict: Omit<Conflict, keyof TaggedError<"Conflict">>
+  readonly Forbidden: Omit<Forbidden, keyof TaggedError<"Forbidden">>
+  // oxlint-disable-next-line typescript/no-generated-empty-object-type -- `{}` today (ADR-0005: no props), derived so it can't drift
+  readonly Unauthenticated: Omit<Unauthenticated, keyof TaggedError<"Unauthenticated">>
+  readonly Timeout: Omit<Timeout, keyof TaggedError<"Timeout">>
+  readonly NetworkError: Omit<NetworkError, keyof TaggedError<"NetworkError">>
+  // oxlint-disable-next-line typescript/no-generated-empty-object-type -- `{}` today (ADR-0005: no props), derived so it can't drift
+  readonly DbUnavailable: Omit<DbUnavailable, keyof TaggedError<"DbUnavailable">>
+  readonly ValidationFailure: {
+    readonly issues: ReadonlyArray<{ readonly message: string; readonly path: ReadonlyArray<string | number> }>
+  }
+}
+
+/** The keys of `T` that are not optional. */
+type RequiredKeys<T> = { [K in keyof T]-?: {} extends Pick<T, K> ? never : K }[keyof T]
+
+/** Why prop `K` of `P` breaks ADR-0005 for the fixed tag `Tag` with core props `C`; `never` when it doesn't. */
+type FixedPropViolation<Tag extends string, K, P, C> = K extends RequiredKeys<C>
+  ? K extends RequiredKeys<P> ? Retyped<Tag, K, P, C> : `is required by "${Tag}"`
+  : K extends RequiredKeys<P> ? `must be optional: "${Tag}" is a fixed tag`
+  : Retyped<Tag, K, P, C>
+
+/** A prop core declares must keep core's type (`id?: number` on `NotFound` is a retype). */
+type Retyped<Tag extends string, K, P, C> = K extends keyof P & keyof C
+  ? [P[K]] extends [C[K]] ? never : `must keep core's "${Tag}" type`
+  : never
+
+/**
+ * `taggedError`'s check on `P` for a fixed tag (ADR-0005, #92): every prop is optional unless
+ * core requires it, and every prop core declares keeps core's type. A violation turns the
+ * constraint into `{ "ADR-0005": { [prop]: why } }`, which no props type satisfies.
+ * `{}` always passes, so the `= {}` default type-checks while `Tag` is generic. Known gap:
+ * `taggedError("ValidationFailure")()` compiles, since TS never checks a default against its
+ * constraint at a call site.
+ */
+type FixedTagRule<Tag extends keyof FixedProps, P> = [keyof P] extends [never] ? object : Ruling<
+  {
+    readonly [
+      K in keyof P | RequiredKeys<FixedProps[Tag]> as FixedPropViolation<Tag, K, P, FixedProps[Tag]> extends never ?
+        never
+        : K
+    ]: FixedPropViolation<Tag, K, P, FixedProps[Tag]>
+  }
+>
+
+/** `object` when nothing is wrong; otherwise a type no props object satisfies, naming each bad prop. */
+type Ruling<Violations> = [keyof Violations] extends [never] ? object : { readonly "ADR-0005": Violations }
+
+/**
  * Build a tagged-error factory. Usage (explicit annotation + `ReturnType` twin type):
  *
  * ```ts
@@ -76,10 +131,17 @@ export interface ErrorFactory<Tag extends string, P extends object> {
  * ```
  *
  * For a fixed tag, import core's factory below (ADR-0005); an app tag may require props.
+ * A package that extends a fixed tag may add only optional props and must keep core's prop
+ * types: anything else fails `P`'s constraint, naming each bad prop under `"ADR-0005"` (#92).
+ * App and adapter tags take the second overload, unconstrained.
  *
  * `cause` is kept on the object at runtime (server-side only) but is not part of the
  * public type: sanitizers strip it before any boundary (RFC-0001 §5).
  */
+export function taggedError<const Tag extends keyof FixedProps>(
+  tag: Tag
+): <P extends object & FixedTagRule<Tag, P> = {}>() => ErrorFactory<Tag, P>
+export function taggedError<const Tag extends string>(tag: Tag): <P extends object = {}>() => ErrorFactory<Tag, P>
 export function taggedError<const Tag extends string>(tag: Tag): <P extends object = {}>() => ErrorFactory<Tag, P> {
   return <P extends object = {}>(): ErrorFactory<Tag, P> =>
     Object.assign(

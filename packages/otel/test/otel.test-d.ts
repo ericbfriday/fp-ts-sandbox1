@@ -1,11 +1,10 @@
 /**
  * `@friday-friday/otel` type tests.
  */
-import { taggedError } from "@friday-friday/core"
+import { NotFound, taggedError } from "@friday-friday/core"
 import { traced, tracedSync } from "@friday-friday/otel"
 import { describe, expectTypeOf, it } from "vitest"
 
-const NotFound = taggedError("NotFound")<{ id: string }>()
 const Boom = taggedError("Boom")<{ reason: string }>()
 
 type NotFoundE = ReturnType<typeof NotFound>

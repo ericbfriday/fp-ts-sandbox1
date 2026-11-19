@@ -5,11 +5,10 @@
  * TS 7.0.2 widens Y to `unknown` when a body yields generators with differently-typed `T`
  * without it. Single-source bodies infer without annotation (see the second test).
  */
-import { type AsyncResult, type Err, err, ok, type Result, taggedError } from "@friday-friday/core"
+import { type AsyncResult, type Err, err, NotFound, ok, type Result } from "@friday-friday/core"
 import { $, gen, genAsync } from "@friday-friday/core/gen"
 import { describe, expectTypeOf, test } from "vitest"
 
-const NotFound = taggedError("NotFound")<{ id: string }>()
 type NotFoundT = ReturnType<typeof NotFound>
 
 describe("gen types", () => {
