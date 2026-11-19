@@ -54,76 +54,55 @@ describe("monad laws (andThen with ok as return)", () => {
   })
 })
 
-describe("dual-form equivalence: data-first ≡ data-last", () => {
-  it("map", () => {
-    fc.assert(fc.property(arbResult, arbFn, (r, f) => {
-      expect(map(f)(r)).toStrictEqual(map(r, f))
-    }))
-  })
+/**
+ * One property over every dual export (IDEA §8). All nine share the internal `dual` helper, so
+ * nine separate properties re-proved one fact (#61). This drives each export through its public
+ * signature: a combinator that drops `dual` for a hand-rolled dispatch must still agree.
+ * Identity and call order of `tap`/`tapErr` are pinned in result.test.ts.
+ */
+type DualCase = readonly [name: string, dataFirst: () => unknown, dataLast: () => unknown]
 
-  it("mapErr", () => {
-    const f = (e: string): number => e.length
-    fc.assert(fc.property(arbResult, (r) => {
-      expect(mapErr(f)(r)).toStrictEqual(mapErr(r, f))
-    }))
-  })
+const arbTaggedResult: fc.Arbitrary<Result<number, NotFound | Forbidden | Timeout>> = fc.oneof(
+  fc.integer().map((n) => ok(n)),
+  arbTagged.map((e) => err(e))
+)
+const tagHandlers = {
+  ok: (n: number) => `ok:${n}`,
+  NotFound: (e: NotFound) => `nf:${e.id}`,
+  Forbidden: (e: Forbidden) => `fb:${e.reason}`,
+  Timeout: () => "to"
+}
+const errLength = (e: string): number => e.length
+const recover = (e: string): Result<number, boolean> => e.length > 3 ? ok(e.length) : err(false)
+const onNone = (): string => "none"
 
-  it("andThen", () => {
-    fc.assert(fc.property(arbResult, arbKleisli, (r, f) => {
-      expect(andThen(f)(r)).toStrictEqual(andThen(r, f))
-    }))
-  })
+const arbDualCase: fc.Arbitrary<DualCase> = fc.oneof(
+  fc.tuple(arbResult, arbFn).map(([r, f]): DualCase => ["map", () => map(r, f), () => map(f)(r)]),
+  arbResult.map((r): DualCase => ["mapErr", () => mapErr(r, errLength), () => mapErr(errLength)(r)]),
+  fc.tuple(arbResult, arbKleisli).map(([r, f]): DualCase => ["andThen", () => andThen(r, f), () => andThen(f)(r)]),
+  arbResult.map((r): DualCase => ["orElse", () => orElse(r, recover), () => orElse(recover)(r)]),
+  arbResult.map((r): DualCase => ["tap", () => tap(r, () => {}), () => tap(() => {})(r)]),
+  arbResult.map((r): DualCase => ["tapErr", () => tapErr(r, () => {}), () => tapErr(() => {})(r)]),
+  fc.tuple(arbResult, fc.integer()).map(([r, d]): DualCase => ["unwrapOr", () => unwrapOr(r, d), () => unwrapOr(d)(r)]),
+  fc.tuple(arbResult, arbFn).map(([r, f]): DualCase => {
+    const h = { ok: f, err: errLength }
+    return ["match", () => match(r, h), () => match(h)(r)]
+  }),
+  arbTaggedResult.map((r): DualCase => ["matchTag", () => matchTag(r, tagHandlers), () => matchTag(tagHandlers)(r)]),
+  fc.option(fc.integer(), { nil: undefined }).map((v): DualCase => [
+    "fromNullable",
+    () => fromNullable(v, onNone),
+    () => fromNullable(onNone)(v)
+  ])
+)
 
-  it("orElse", () => {
-    const f = (e: string): Result<number, boolean> => e.length > 3 ? ok(e.length) : err(false)
-    fc.assert(fc.property(arbResult, (r) => {
-      expect(orElse(f)(r)).toStrictEqual(orElse(r, f))
-    }))
-  })
-
-  it("tap / tapErr (same object back, same effects)", () => {
-    fc.assert(fc.property(arbResult, (r) => {
-      const a: Array<unknown> = []
-      const b: Array<unknown> = []
-      expect(tap((v) => void a.push(v))(r)).toBe(tap(r, (v) => void b.push(v)))
-      expect(tapErr((e) => void a.push(e))(r)).toBe(tapErr(r, (e) => void b.push(e)))
-      expect(a).toStrictEqual(b)
-    }))
-  })
-
-  it("unwrapOr", () => {
-    fc.assert(fc.property(arbResult, fc.integer(), (r, d) => {
-      expect(unwrapOr(d)(r)).toBe(unwrapOr(r, d))
-    }))
-  })
-
-  it("match", () => {
-    fc.assert(fc.property(arbResult, arbFn, (r, f) => {
-      const handlers = { ok: f, err: (e: string) => e.length }
-      expect(match(handlers)(r)).toBe(match(r, handlers))
-    }))
-  })
-
-  it("matchTag", () => {
-    const arb: fc.Arbitrary<Result<number, NotFound | Forbidden | Timeout>> = fc.oneof(
-      fc.integer().map((n) => ok(n)),
-      arbTagged.map((e) => err(e))
-    )
-    const handlers = {
-      ok: (n: number) => `ok:${n}`,
-      NotFound: (e: NotFound) => `nf:${e.id}`,
-      Forbidden: (e: Forbidden) => `fb:${e.reason}`,
-      Timeout: () => "to"
-    }
-    fc.assert(fc.property(arb, (r) => {
-      expect(matchTag(handlers)(r)).toBe(matchTag(r, handlers))
-    }))
-  })
-
-  it("fromNullable", () => {
-    const onNone = (): string => "none"
-    fc.assert(fc.property(fc.option(fc.integer(), { nil: undefined }), (v) => {
-      expect(fromNullable(onNone)(v)).toStrictEqual(fromNullable(v, onNone))
-    }))
+describe("dual-form equivalence", () => {
+  it("every dual export: f(arg)(r) ≡ f(r, arg)", () => {
+    fc.assert(
+      fc.property(arbDualCase, ([name, dataFirst, dataLast]) => {
+        expect(dataLast(), name).toStrictEqual(dataFirst())
+      }),
+      { numRuns: 1000 }
+    ) // ~100 per export, as the nine separate properties ran
   })
 })

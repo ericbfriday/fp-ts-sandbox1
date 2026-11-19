@@ -1,7 +1,8 @@
 /**
  * `@friday-friday/next` type tests (Design Report §5.1 / RFC-0001 §6).
  *
- * Pattern: annotated-const assignments are the real inference assertions (see async.test-d.ts).
+ * Pattern: every assertion wraps the call itself in `expectTypeOf(...)`. An annotated const
+ * (`const r: X = f()`) only checks assignability, so it passes when `f` returns `any` (#61).
  */
 import { type AsyncResult, err, matchTag, ok, type Result, taggedError } from "@friday-friday/core"
 import type { InternalDefect } from "@friday-friday/core/wire"
@@ -32,17 +33,17 @@ type UnauthenticatedT = ReturnType<typeof Unauthenticated>
 declare const loaded: Result<number, NotFoundT | ConflictT>
 declare const authed: Result<number, NotFoundT | UnauthenticatedT>
 declare const guarded: Result<number, NotFoundT | ForbiddenT | UnauthenticatedT | ConflictT>
+declare const missing: Result<string, NotFoundT>
 
 describe("next types", () => {
   test("tryAsync maps via the catch handler", () => {
-    const r: AsyncResult<number, NotFoundT> = tryAsync(async () => 1, { catch: () => NotFound({ id: "1" }) })
-    expectTypeOf(r).toEqualTypeOf<AsyncResult<number, NotFoundT>>()
+    expectTypeOf(tryAsync(async () => 1, { catch: () => NotFound({ id: "1" }) })).toEqualTypeOf<
+      AsyncResult<number, NotFoundT>
+    >()
   })
 
   test("toResponse takes the status map and returns a Response", () => {
-    const r: Result<string, NotFoundT> = err(NotFound({ id: "1" }))
-    const res: Response = toResponse(r, { NotFound: 404 })
-    expectTypeOf(res).toEqualTypeOf<Response>()
+    expectTypeOf(toResponse(missing, { NotFound: 404 })).toEqualTypeOf<Response>()
   })
 
   test("orNotFound removes NotFound from E", () => {
@@ -87,8 +88,7 @@ describe("next types", () => {
   test("action returns the ActionState union with ValidationFailure + InternalDefect", async () => {
     const Profile = z.object({ name: z.string() })
     const save = action(Profile, async (input) => ok(input.name))
-    const state: ActionState<string, never> = await save({ ok: null }, new FormData())
-    expectTypeOf(state).toEqualTypeOf<ActionState<string, never>>()
+    expectTypeOf(await save({ ok: null }, new FormData())).toEqualTypeOf<ActionState<string, never>>()
   })
 
   test("action's error lane is E | ValidationFailure | core/wire's fixed-text InternalDefect", () => {
@@ -100,7 +100,6 @@ describe("next types", () => {
   })
 
   test("toResponse takes an optional onDefect reporter", () => {
-    const r: Result<string, NotFoundT> = err(NotFound({ id: "1" }))
-    expectTypeOf(toResponse(r, undefined, { onDefect: (_c: unknown) => {} })).toEqualTypeOf<Response>()
+    expectTypeOf(toResponse(missing, undefined, { onDefect: (_c: unknown) => {} })).toEqualTypeOf<Response>()
   })
 })

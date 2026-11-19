@@ -28,22 +28,18 @@ describe("async types", () => {
   })
 
   test("retry keeps the domain error type", () => {
-    const r: AsyncResult<number, "nf"> = retry(async () => err("nf"), { times: 3 })
-    expectTypeOf(r).toEqualTypeOf<AsyncResult<number, "nf">>()
+    const attempt = (): AsyncResult<number, "nf"> => Promise.resolve(err("nf"))
+    expectTypeOf(retry(attempt, { times: 3 })).toEqualTypeOf<AsyncResult<number, "nf">>()
   })
 
   test("timeout unions E with TimeoutError", () => {
-    const r: AsyncResult<number, "nf" | TimeoutError> = timeout(async () => err("nf"), 100)
-    expectTypeOf(r).toEqualTypeOf<AsyncResult<number, "nf" | TimeoutError>>()
+    const attempt = (): AsyncResult<number, "nf"> => Promise.resolve(err("nf"))
+    expectTypeOf(timeout(attempt, 100)).toEqualTypeOf<AsyncResult<number, "nf" | TimeoutError>>()
   })
 
   test("mapConcurrent returns the values array", () => {
-    const r: AsyncResult<Array<string>, "nf"> = mapConcurrent(
-      [1, 2],
-      async (n: number) => ok(String(n)),
-      { limit: 2 }
-    )
-    expectTypeOf(r).toEqualTypeOf<AsyncResult<Array<string>, "nf">>()
+    const toLabel = (n: number): AsyncResult<string, "nf"> => Promise.resolve(n > 0 ? ok(String(n)) : err("nf"))
+    expectTypeOf(mapConcurrent([1, 2], toLabel, { limit: 2 })).toEqualTypeOf<AsyncResult<Array<string>, "nf">>()
   })
 
   test("tryAsync maps the catch handler's error type", () => {
