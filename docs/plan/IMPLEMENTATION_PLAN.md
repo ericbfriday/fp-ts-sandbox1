@@ -40,24 +40,29 @@ Everything consciously postponed or accepted, with where it lives. Nothing else 
 | Item | Where documented | When it lands |
 |---|---|---|
 | `examples/next-app` (issue #9) | DONE — PR #25 merged | closed 2026-11-17 |
-| ~~Type-instantiation budget fixtures (`tsc --extendedDiagnostics`)~~ DONE for core — `tooling/type-budget/fixture/core-stress.ts`, per-TS-version ceilings in `tooling/type-budget/budget.json`, run by `pnpm run check` on each TS in the matrix | ADR-0004, IDEA §8 | Issue #61. Adapter fixtures (hono `hc`, tRPC routers) not yet added |
-| `no-instanceof-tagged-error`: MemberExpression RHS (e.g. `Errors.NotFound`) unflagged | PR #16 review (spec note) | v1 accepted; revisit on demand |
+| ~~Type-instantiation budget fixtures (`tsc --extendedDiagnostics`)~~ DONE for core — `tooling/type-budget/fixture/core-stress.ts`, per-TS-version ceilings in `tooling/type-budget/budget.json`, run by `pnpm run check` on each TS in the matrix | ADR-0004, IDEA §8 | Issue #61. Adapter fixtures (hono `hc`, tRPC routers) not yet added — **#117** |
+| `no-instanceof-tagged-error`: MemberExpression RHS (e.g. `Errors.NotFound`) unflagged | PR #16 review (spec note) | v1 accepted; revisit on demand — **#124** |
 | ~~`toResponse` problem `title` = raw `_tag`, not a human title~~ RESOLVED — `toResponse` now delegates to core `/wire` `toProblem` (`NotFound` → `Not Found`) | PR #15 review (judgement) | #39 |
-| Problem-body props are denylist (all JSON-safe minus `_tag`/`message`/`cause`), not RFC allowlist wording | PR #15 review (judgement) | Core `/wire` supports `safeProps`; next's `toResponse` does not expose it yet (#39 kept its interface to status map + `onDefect`). Unmapped tags are masked as `InternalDefect`, which closes the leak class |
+| Problem-body props are denylist (all JSON-safe minus `_tag`/`message`/`cause`), not RFC allowlist wording | PR #15 review (judgement) | Core `/wire` supports `safeProps`; next's `toResponse` does not expose it yet (#39 kept its interface to status map + `onDefect`; tracked in **#122**). Unmapped tags are masked as `InternalDefect`, which closes the leak class |
 | `mapConcurrent` runs to completion on early `Err` (no in-flight abort) | async.ts doc | v1 choice |
 | `retry` abort mid-retry returns the LAST Err (or Panic if nothing settled) | async.ts module doc | Deliberate choice |
 | Pure `/async` duals take no `{ signal }` (closure-bound instead) | RFC-0001 §4 errata + decisions note | Errata accepted |
-| Multi-step `gen` bodies need a generator return-type annotation (TS 7.0.2 Y-widening) | gen.ts header + gen.test-d.ts | Re-check at TS 7.1 stable (24 Nov 2026) |
-| TS 7.0.2 root-tsc matchTag order-dependence; const type-param union mangling in `all()` | core src comments + issue #3 | Re-check at TS 7.1 stable |
+| Multi-step `gen` bodies need a generator return-type annotation (TS 7.0.2 Y-widening) | gen.ts header + gen.test-d.ts | Re-check at TS 7.1 stable (24 Nov 2026) — **#115** |
+| TS 7.0.2 root-tsc matchTag order-dependence; const type-param union mangling in `all()` | core src comments + issue #3 | Re-check at TS 7.1 stable — **#115** |
 | `@friday-friday/next`: no plain-Node dist smoke (next@16.4.6 empty exports map) | ADR-0004 + PR #15 | Runtime covered by vitest + examples/next-app (#9) |
 | next adapter `tryAsync` takes no `{ signal }` (matches report §5.1 snippet exactly) | PR #15 review (judgement) | Core tryAsync remains the signal-capable path |
 | ~~`orForbidden` has no dedicated runtime test~~ RESOLVED — loaders.test.ts runs it against the real `forbidden()` (#52); next.test.ts no longer mocks `next/navigation` (#39) | PR #15 review (judgement) | #52, #39 |
 | Phase 5 extras: `effect`, `db`, `env`, codemods, oRPC recipe, `llms.txt` + per-package SKILL.md | Phase 5 (below) | After MVP exit criteria |
-| `toMutationFn` in `@friday-friday/query` (IDEA §5 package map) | IDEA §5; not implemented | **Deferred, no ticket.** Mutations need no throw bridge the way `queryFn` does: a `mutationFn` may return the Result as data and the caller branches on `r.ok`. Revisit if a caller needs `mutation.error === E` (it would be `toQueryFn`'s Err-throws rule over `MutationFunction`) |
-| Core `/interop` subpath (IDEA §5 package map) | IDEA §5; not implemented (core exports `.`, `/async`, `/gen` only) | **Deferred, no ticket.** Prior-art converters (better-result, unthrown, byethrow, neverthrow) stay out of core; the neverthrow migration is the codemod in `tooling/codemods`, Effect is `@friday-friday/effect`. Revisit on a concrete interop request |
-| Examples runtime matrix (Bun/Deno/wrangler) | ADR-0004 | Later-phase CI job |
-| Releases/Changesets/npm publish | ADR-0001 | Deferred until 0.x packages run a quarter in Eric's apps. The pre-publish gate is in place: `pnpm run pack:check` / CI `publish-check` packs every `packages/*` package plus `tooling/eslint-plugin` and runs publint `--strict` + attw `--profile esm-only` on the tarball (#65, #106). Decided (#44 decision 8): the eslint-plugin ships with the first release; the codemod stays internal (`docs/decisions/2026-11-19-tooling-not-shipped.md`) |
-| Per-package AGENTS.md polish (root AGENTS.md is the living guide; per-package notes are pointers, added on demand) | docs/agents/ | On demand — root guide covers all conventions today |
+| `toMutationFn` in `@friday-friday/query` (IDEA §5 package map) | IDEA §5; not implemented | **Deferred, no ticket (listed in #125).** Mutations need no throw bridge the way `queryFn` does: a `mutationFn` may return the Result as data and the caller branches on `r.ok`. Revisit if a caller needs `mutation.error === E` (it would be `toQueryFn`'s Err-throws rule over `MutationFunction`) |
+| Core `/interop` subpath (IDEA §5 package map) | IDEA §5; not implemented (core exports `.`, `/async`, `/gen` only) | **Deferred, no ticket (listed in #125).** Prior-art converters (better-result, unthrown, byethrow, neverthrow) stay out of core; the neverthrow migration is the codemod in `tooling/codemods`, Effect is `@friday-friday/effect`. Revisit on a concrete interop request |
+| Examples runtime matrix (Bun/Deno/wrangler) | ADR-0004 | Later-phase CI job — **#119** |
+| Releases/Changesets/npm publish | ADR-0001 | Deferred until 0.x packages run a quarter in Eric's apps (tracked in **#125**). The pre-publish gate is in place: `pnpm run pack:check` / CI `publish-check` packs every `packages/*` package plus `tooling/eslint-plugin` and runs publint `--strict` + attw `--profile esm-only` on the tarball (#65, #106). Decided (#44 decision 8): the eslint-plugin ships with the first release; the codemod stays internal (`docs/decisions/2026-11-19-tooling-not-shipped.md`) |
+| Per-package AGENTS.md polish (root AGENTS.md is the living guide; per-package notes are pointers, added on demand) | docs/agents/ | On demand — root guide covers all conventions today (tracked in **#125**) |
+| TS 7.1 stable: `@friday-friday/eslint-plugin` pinned to `typescript ~6.0.3` (ADR-0003) | ADR-0003 | Re-test at 7.1 stable — **#116** |
+| hono 5.0.0-rc `onError` changes not covered by a fixture; peer stays `^4.10` | Phase 3, baseline table | **#118** |
+| db: unverified (`U`) driver shapes — Neon serverless, Prisma `meta.target` string, 57P02, P1002, other class 08 | Phase 5 (`db`) | **#120** |
+| TanStack/router#6428 workaround in `tanstack-start` — re-check, drop if fixed | Phase 4 | **#121** |
+| `taggedError("ValidationFailure")()` with no type argument compiles | Phase 1 §2e | **#123** |
 | ~~`AGENTS.md` repo guide~~ RESOLVED — created 2026-11-16 evening with Eric’s explicit authorization (repo root; living doc, update with conventions as they land) | repo root | done |
 
 ## Phases
